@@ -62,6 +62,22 @@ async def api_status():
         }
     }
 
+@app.get("/api/v1/debug/env")
+async def debug_env():
+    """Debug endpoint - Ver qué variables están disponibles (TEMPORAL)"""
+    return {
+        "env_vars": {
+            "SUPABASE_URL": "SET" if os.getenv("SUPABASE_URL") else "NOT_SET",
+            "SUPABASE_URL_value": os.getenv("SUPABASE_URL", "")[:30] + "..." if os.getenv("SUPABASE_URL") else None,
+            "DATABASE_URL": "SET" if os.getenv("DATABASE_URL") else "NOT_SET",
+            "API_HOST": os.getenv("API_HOST", "NOT_SET"),
+            "API_PORT": os.getenv("API_PORT", "NOT_SET"),
+            "PORT": os.getenv("PORT", "NOT_SET"),
+            "ALLOWED_ORIGINS": os.getenv("ALLOWED_ORIGINS", "NOT_SET"),
+        },
+        "all_env_keys": [key for key in os.environ.keys() if not key.startswith("_")]
+    }
+
 # TODO: Agregar rutas para:
 # - /api/v1/orders - Gestión de pedidos
 # - /api/v1/channels - Gestión de canales de venta
