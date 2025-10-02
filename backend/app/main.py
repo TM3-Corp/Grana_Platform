@@ -12,16 +12,19 @@ API_TITLE = os.getenv("API_TITLE", "Grana API")
 API_VERSION = os.getenv("API_VERSION", "1.0.0")
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
 
-# Inicializar cliente Supabase
+# Configuración de Supabase (no inicializamos aquí para evitar errores al arrancar)
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
-supabase: Client = None
-if SUPABASE_URL and SUPABASE_KEY:
+def get_supabase():
+    """Obtener cliente de Supabase (lazy loading)"""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return None
     try:
-        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        return create_client(SUPABASE_URL, SUPABASE_KEY)
     except Exception as e:
-        print(f"⚠️ Error inicializando Supabase: {e}")
+        print(f"⚠️ Error creando cliente Supabase: {e}")
+        return None
 
 # Crear aplicación FastAPI
 app = FastAPI(
@@ -77,10 +80,12 @@ async def api_status():
 @app.get("/api/v1/test-db")
 async def test_database_connection():
     """Endpoint de prueba - Verifica conexión REAL a Supabase"""
+    supabase = get_supabase()
+
     if not supabase:
         raise HTTPException(
             status_code=500,
-            detail="Supabase no está inicializado. Revisa las variables de entorno."
+            detail="Supabase no está configurado. Revisa SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY."
         )
 
     try:
