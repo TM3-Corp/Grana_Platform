@@ -1,0 +1,70 @@
+# ============================================================================
+# .gitignore - Archivos que NUNCA deben subirse a Git
+# ============================================================================
+
+# Credenciales (MUY IMPORTANTE)
+.env
+.env.local
+.env.*.local
+backend/.env
+backend/.env.local
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+
+# Node.js (para cuando hagamos frontend)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.next/
+out/
+.vercel
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporal
+tmp/
+temp/
+*.tmp
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Análisis de Relbase (opcional - pueden ser grandes)
+analisis_canales/*.xlsx
+analisis_canales/*.json
+analisis_canales/progress.json
+
+# Backups
+backup/
+*.backup
+*.bak
