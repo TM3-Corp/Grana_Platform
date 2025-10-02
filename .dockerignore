@@ -1,0 +1,16 @@
+# No copiar estos archivos al contenedor Docker
+backend/venv/
+backend/.env
+.env
+.env.local
+backend/.env.local
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.git/
+.gitignore
+docs/
+*.md
+.DS_Store
+*.log
