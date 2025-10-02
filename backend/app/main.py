@@ -2,14 +2,26 @@
 Grana Platform - Backend API
 Sistema de integración para Grana SpA
 """
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import os
+from supabase import create_client, Client
 
 # Configuración básica
 API_TITLE = os.getenv("API_TITLE", "Grana API")
 API_VERSION = os.getenv("API_VERSION", "1.0.0")
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+
+# Inicializar cliente Supabase
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
+supabase: Client = None
+if SUPABASE_URL and SUPABASE_KEY:
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    except Exception as e:
+        print(f"⚠️ Error inicializando Supabase: {e}")
 
 # Crear aplicación FastAPI
 app = FastAPI(
@@ -62,17 +74,31 @@ async def api_status():
         }
     }
 
-@app.get("/api/v1/debug/env")
-async def debug_env():
-    """Debug endpoint - Ver qué variables están disponibles (TEMPORAL)"""
-    supabase_url = os.getenv("SUPABASE_URL")
-    return {
-        "SUPABASE_URL_exists": bool(supabase_url),
-        "SUPABASE_URL_preview": supabase_url[:30] + "..." if supabase_url else "NOT_SET",
-        "DATABASE_URL_exists": bool(os.getenv("DATABASE_URL")),
-        "API_HOST": os.getenv("API_HOST", "NOT_SET"),
-        "PORT": os.getenv("PORT", "NOT_SET")
-    }
+@app.get("/api/v1/test-db")
+async def test_database_connection():
+    """Endpoint de prueba - Verifica conexión REAL a Supabase"""
+    if not supabase:
+        raise HTTPException(
+            status_code=500,
+            detail="Supabase no está inicializado. Revisa las variables de entorno."
+        )
+
+    try:
+        # Intentar leer canales de venta desde Supabase
+        response = supabase.table("channels").select("*").limit(5).execute()
+
+        return {
+            "status": "success",
+            "message": "✅ Conexión a Supabase exitosa",
+            "database": "connected",
+            "channels_found": len(response.data),
+            "sample_channels": response.data
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error conectando a Supabase: {str(e)}"
+        )
 
 # TODO: Agregar rutas para:
 # - /api/v1/orders - Gestión de pedidos
