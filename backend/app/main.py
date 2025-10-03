@@ -110,6 +110,38 @@ async def debug_status():
         "message": "Si ves esto, FastAPI está funcionando correctamente"
     }
 
+@app.get("/api/v1/channels")
+async def get_channels():
+    """Listar todos los canales de venta"""
+    if not DATABASE_URL:
+        raise HTTPException(
+            status_code=500,
+            detail="DATABASE_URL no está configurado."
+        )
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute("""
+                    SELECT
+                        id, code, name, description, type, is_active,
+                        created_at, updated_at
+                    FROM channels
+                    ORDER BY name
+                """)
+                channels = cursor.fetchall()
+
+                return {
+                    "status": "success",
+                    "count": len(channels),
+                    "data": channels
+                }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error obteniendo canales: {str(e)}"
+        )
+
 @app.get("/api/v1/test-db")
 async def test_database_connection():
     """Endpoint de prueba - Verifica conexión REAL a PostgreSQL"""
@@ -140,9 +172,8 @@ async def test_database_connection():
             detail=f"Error conectando a la base de datos: {str(e)}"
         )
 
-# TODO: Agregar rutas para:
+# TODO: Agregar más rutas:
 # - /api/v1/orders - Gestión de pedidos
-# - /api/v1/channels - Gestión de canales de venta
 # - /api/v1/customers - Gestión de clientes
 # - /api/v1/products - Gestión de productos
 # - /api/v1/sync - Sincronización con plataformas externas
