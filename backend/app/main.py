@@ -5,26 +5,33 @@ Sistema de integración para Grana SpA
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import os
-from supabase import create_client, Client
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from contextlib import contextmanager
 
 # Configuración básica
 API_TITLE = os.getenv("API_TITLE", "Grana API")
 API_VERSION = os.getenv("API_VERSION", "1.0.0")
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
 
-# Configuración de Supabase (no inicializamos aquí para evitar errores al arrancar)
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+# Configuración de base de datos
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-def get_supabase():
-    """Obtener cliente de Supabase (lazy loading)"""
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        return None
+@contextmanager
+def get_db_connection():
+    """Context manager para conexiones a PostgreSQL"""
+    conn = None
     try:
-        return create_client(SUPABASE_URL, SUPABASE_KEY)
+        conn = psycopg2.connect(DATABASE_URL)
+        yield conn
     except Exception as e:
-        print(f"⚠️ Error creando cliente Supabase: {e}")
-        return None
+        print(f"⚠️ Error conectando a la base de datos: {e}")
+        if conn:
+            conn.rollback()
+        raise
+    finally:
+        if conn:
+            conn.close()
 
 # Crear aplicación FastAPI
 app = FastAPI(
@@ -79,30 +86,32 @@ async def api_status():
 
 @app.get("/api/v1/test-db")
 async def test_database_connection():
-    """Endpoint de prueba - Verifica conexión REAL a Supabase"""
-    supabase = get_supabase()
-
-    if not supabase:
+    """Endpoint de prueba - Verifica conexión REAL a PostgreSQL"""
+    if not DATABASE_URL:
         raise HTTPException(
             status_code=500,
-            detail="Supabase no está configurado. Revisa SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY."
+            detail="DATABASE_URL no está configurado."
         )
 
     try:
-        # Intentar leer canales de venta desde Supabase
-        response = supabase.table("channels").select("*").limit(5).execute()
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                # Intentar leer canales de venta
+                cursor.execute("SELECT * FROM channels LIMIT 5")
+                channels = cursor.fetchall()
 
-        return {
-            "status": "success",
-            "message": "✅ Conexión a Supabase exitosa",
-            "database": "connected",
-            "channels_found": len(response.data),
-            "sample_channels": response.data
-        }
+                return {
+                    "status": "success",
+                    "message": "✅ Conexión a PostgreSQL exitosa",
+                    "database": "connected",
+                    "database_url_configured": True,
+                    "channels_found": len(channels),
+                    "sample_channels": channels
+                }
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Error conectando a Supabase: {str(e)}"
+            detail=f"Error conectando a la base de datos: {str(e)}"
         )
 
 # TODO: Agregar rutas para:
