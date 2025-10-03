@@ -5,9 +5,17 @@ Sistema de integración para Grana SpA
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import os
-import psycopg2
-from psycopg2.extras import RealDictCursor
 from contextlib import contextmanager
+
+# Import psycopg2 with error handling
+try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+    PSYCOPG2_AVAILABLE = True
+    PSYCOPG2_ERROR = None
+except Exception as e:
+    PSYCOPG2_AVAILABLE = False
+    PSYCOPG2_ERROR = str(e)
 
 # Configuración básica
 API_TITLE = os.getenv("API_TITLE", "Grana API")
@@ -20,6 +28,9 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 @contextmanager
 def get_db_connection():
     """Context manager para conexiones a PostgreSQL"""
+    if not PSYCOPG2_AVAILABLE:
+        raise Exception(f"psycopg2 no está disponible: {PSYCOPG2_ERROR}")
+
     conn = None
     try:
         conn = psycopg2.connect(DATABASE_URL)
@@ -82,6 +93,21 @@ async def api_status():
             "walmart": bool(os.getenv("WALMART_CLIENT_ID")),
             "cencosud": bool(os.getenv("CENCOSUD_ACCESS_TOKEN"))
         }
+    }
+
+@app.get("/api/v1/debug")
+async def debug_status():
+    """Debug: muestra estado del sistema y librerías"""
+    return {
+        "environment": {
+            "DATABASE_URL_configured": bool(DATABASE_URL),
+            "DATABASE_URL_preview": DATABASE_URL[:50] + "..." if DATABASE_URL else None
+        },
+        "libraries": {
+            "psycopg2_available": PSYCOPG2_AVAILABLE,
+            "psycopg2_error": PSYCOPG2_ERROR
+        },
+        "message": "Si ves esto, FastAPI está funcionando correctamente"
     }
 
 @app.get("/api/v1/test-db")
