@@ -29,7 +29,17 @@ except Exception as e:
 # Configuración básica
 API_TITLE = os.getenv("API_TITLE", "Grana API")
 API_VERSION = os.getenv("API_VERSION", "1.0.0")
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+
+# CORS Configuration
+# Allow localhost for development and any *.vercel.app for production
+def get_allowed_origins():
+    """Get list of allowed origins from environment variable"""
+    origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
+    if origins_str == "*":
+        return ["*"]
+    return [origin.strip() for origin in origins_str.split(",")]
+
+ALLOWED_ORIGINS = get_allowed_origins()
 
 # Configuración de base de datos
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -60,10 +70,25 @@ app = FastAPI(
     description="Sistema de Integración y Visualización de Datos para Grana"
 )
 
-# Configurar CORS
+# Configurar CORS con soporte para dominios dinámicos de Vercel
+# Si ALLOWED_ORIGINS es "*", permite cualquier origen
+# Si no, verifica si el origen está en la lista O termina en .vercel.app
+def custom_cors_origin_check(origin: str) -> bool:
+    """Check if origin is allowed (supports Vercel dynamic subdomains)"""
+    if "*" in ALLOWED_ORIGINS:
+        return True
+    if origin in ALLOWED_ORIGINS:
+        return True
+    # Allow all Vercel preview deployments
+    if origin.endswith(".vercel.app"):
+        return True
+    return False
+
+# Use allow_origin_regex for Vercel's dynamic URLs
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"https://.*\.vercel\.app",  # Allow all Vercel deployments
+    allow_origins=ALLOWED_ORIGINS,  # Also allow specific origins from env
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
