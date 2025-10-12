@@ -173,10 +173,9 @@ export default function ProductsPage() {
 
   // Obtener productos a mostrar según el modo
   const displayedProducts = isSearchActive
-    ? searchResults.map(r => {
-        // Encontrar el producto completo
-        return allProducts.find(p => p.id === r.product.id)!
-      })
+    ? searchResults
+        .map(r => allProducts.find(p => p.id === r.product.id))
+        .filter((p): p is Product => p !== undefined)
     : products
 
   // Calcular estadísticas según el modo
