@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import Pagination from '@/components/Pagination'
 
 interface OrderItem {
   id: number
@@ -41,17 +42,54 @@ export default function OrdersPage() {
   const [error, setError] = useState<string | null>(null)
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [sourceFilter, setSourceFilter] = useState<string>('')
+  const [monthFilter, setMonthFilter] = useState<string>('')
+
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50) // Default: 50 items per page
+  const [totalItems, setTotalItems] = useState(0)
 
   useEffect(() => {
     const fetchOrders = async () => {
+      setLoading(true)
       try {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL
-        const response = await fetch(`${apiUrl}/api/v1/orders/?limit=100`)
+
+        // Build query params for server-side filtering and pagination
+        const params = new URLSearchParams({
+          limit: pageSize.toString(),
+          offset: ((currentPage - 1) * pageSize).toString()
+        })
+
+        if (sourceFilter) {
+          params.append('source', sourceFilter)
+        }
+
+        if (monthFilter) {
+          // Convert month filter (YYYY-MM) to date range
+          const year = monthFilter.split('-')[0]
+          const month = monthFilter.split('-')[1]
+          const fromDate = `${year}-${month}-01`
+
+          // Calculate last day of month
+          const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate()
+          const toDate = `${year}-${month}-${lastDay}`
+
+          params.append('from_date', fromDate)
+          params.append('to_date', toDate)
+        } else {
+          // Default: only show 2025 data
+          params.append('from_date', '2025-01-01')
+          params.append('to_date', '2025-12-31')
+        }
+
+        const response = await fetch(`${apiUrl}/api/v1/orders/?${params}`)
 
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
 
         const data: OrdersResponse = await response.json()
         setOrders(data.data)
+        setTotalItems(data.total)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Error desconocido')
       } finally {
@@ -60,7 +98,7 @@ export default function OrdersPage() {
     }
 
     fetchOrders()
-  }, [])
+  }, [currentPage, pageSize, sourceFilter, monthFilter])
 
   if (loading) {
     return (
@@ -84,13 +122,24 @@ export default function OrdersPage() {
     )
   }
 
-  // Filter orders
-  const filteredOrders = orders.filter(order => {
-    return !sourceFilter || order.source === sourceFilter
-  })
+  // Available sources (hardcoded since we know them)
+  const sources = ['shopify', 'mercadolibre', 'manual']
 
-  // Get unique sources
-  const sources = [...new Set(orders.map(o => o.source))]
+  // Generate months for 2025
+  const months = [
+    '2025-01', '2025-02', '2025-03', '2025-04', '2025-05', '2025-06',
+    '2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12'
+  ]
+
+  // Reset to page 1 when filters change
+  const handleFilterChange = (filterType: 'source' | 'month', value: string) => {
+    setCurrentPage(1)
+    if (filterType === 'source') {
+      setSourceFilter(value)
+    } else {
+      setMonthFilter(value)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -103,7 +152,7 @@ export default function OrdersPage() {
                 🛒 Pedidos
               </h1>
               <p className="mt-2 text-gray-600">
-                {filteredOrders.length} de {orders.length} pedidos
+                Mostrando {orders.length} de {totalItems} pedidos
               </p>
             </div>
             <Link
@@ -114,19 +163,38 @@ export default function OrdersPage() {
             </Link>
           </div>
 
-          {/* Filter */}
-          <div className="flex gap-4">
+          {/* Filters */}
+          <div className="flex gap-4 flex-wrap">
             <select
               value={sourceFilter}
-              onChange={(e) => setSourceFilter(e.target.value)}
+              onChange={(e) => handleFilterChange('source', e.target.value)}
               className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
             >
               <option value="">Todas las fuentes</option>
               {sources.map(source => (
                 <option key={source} value={source}>
-                  {source === 'shopify' ? '🛍️ Shopify' : source}
+                  {source === 'shopify' ? '🛍️ Shopify' :
+                   source === 'mercadolibre' ? '🛒 MercadoLibre' :
+                   source === 'manual' ? '✏️ Manual' : source}
                 </option>
               ))}
+            </select>
+
+            <select
+              value={monthFilter}
+              onChange={(e) => handleFilterChange('month', e.target.value)}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+            >
+              <option value="">Todos los meses (2025)</option>
+              {months.map(month => {
+                const date = new Date(month + '-01')
+                const monthName = date.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })
+                return (
+                  <option key={month} value={month}>
+                    {monthName.charAt(0).toUpperCase() + monthName.slice(1)}
+                  </option>
+                )
+              })}
             </select>
           </div>
         </div>
@@ -160,7 +228,7 @@ export default function OrdersPage() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredOrders.map((order) => (
+              {orders.map((order) => (
                 <tr key={order.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm font-medium text-gray-900">{order.order_number}</div>
@@ -213,8 +281,17 @@ export default function OrdersPage() {
           </table>
         </div>
 
+        {/* Pagination */}
+        <Pagination
+          currentPage={currentPage}
+          totalItems={totalItems}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+        />
+
         {/* Empty State */}
-        {filteredOrders.length === 0 && (
+        {orders.length === 0 && !loading && (
           <div className="bg-white rounded-lg shadow p-12 text-center mt-6">
             <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
@@ -226,33 +303,38 @@ export default function OrdersPage() {
           </div>
         )}
 
-        {/* Stats Summary */}
-        <div className="mt-8 bg-white rounded-lg shadow p-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-            <div>
-              <div className="text-2xl font-bold text-gray-900">{orders.length}</div>
-              <div className="text-sm text-gray-600">Total Pedidos</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-green-600">
-                ${orders.reduce((sum, o) => sum + o.total, 0).toLocaleString('es-CL')}
+        {/* Stats Summary - Current page stats */}
+        {orders.length > 0 && (
+          <div className="mt-8 bg-white rounded-lg shadow p-6">
+            <h3 className="text-sm font-semibold text-gray-700 mb-4">
+              Estadísticas de esta página
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+              <div>
+                <div className="text-2xl font-bold text-gray-900">{orders.length}</div>
+                <div className="text-sm text-gray-600">Pedidos en página</div>
               </div>
-              <div className="text-sm text-gray-600">Ingresos Totales</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-blue-600">
-                {orders.filter(o => o.status === 'completed').length}
+              <div>
+                <div className="text-2xl font-bold text-green-600">
+                  ${orders.reduce((sum, o) => sum + o.total, 0).toLocaleString('es-CL')}
+                </div>
+                <div className="text-sm text-gray-600">Ingresos en página</div>
               </div>
-              <div className="text-sm text-gray-600">Completados</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-yellow-600">
-                {orders.filter(o => o.status === 'pending').length}
+              <div>
+                <div className="text-2xl font-bold text-blue-600">
+                  {orders.filter(o => o.status === 'completed').length}
+                </div>
+                <div className="text-sm text-gray-600">Completados</div>
               </div>
-              <div className="text-sm text-gray-600">Pendientes</div>
+              <div>
+                <div className="text-2xl font-bold text-yellow-600">
+                  {orders.filter(o => o.status === 'pending').length}
+                </div>
+                <div className="text-sm text-gray-600">Pendientes</div>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Order Details Modal */}

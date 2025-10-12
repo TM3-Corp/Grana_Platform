@@ -28,7 +28,7 @@ async def get_products(
     category: Optional[str] = Query(None, description="Filter by category"),
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
     search: Optional[str] = Query(None, description="Search by name or SKU"),
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(100, ge=1, le=5000),  # Aumentado para permitir cargar todos los productos
     offset: int = Query(0, ge=0)
 ):
     """

@@ -2,55 +2,38 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import KPICard from '@/components/charts/KPICard'
+import SalesLineChart from '@/components/charts/SalesLineChart'
+import SourcePieChart from '@/components/charts/SourcePieChart'
+import TopProductsBar from '@/components/charts/TopProductsBar'
 
-interface ProductStats {
-  totals: {
-    all: number
-    active: number
-    with_conversions: number
-  }
-  by_source: Array<{ source: string; count: number }>
-  stock_levels: {
-    out_of_stock: number
-    low_stock: number
-    in_stock: number
-  }
-}
-
-interface OrderStats {
-  totals: {
+interface AnalyticsData {
+  sales_by_period: any[]
+  source_distribution: any[]
+  top_products: any[]
+  kpis: {
     total_orders: number
     total_revenue: number
-    average_order_value: number
-    recent_orders_7d: number
+    avg_ticket: number
   }
-  by_source: Array<{ source: string; count: number; revenue: number }>
-  by_status: Array<{ status: string; count: number }>
+  growth_rates: any[]
 }
 
 export default function DashboardPage() {
-  const [productStats, setProductStats] = useState<ProductStats | null>(null)
-  const [orderStats, setOrderStats] = useState<OrderStats | null>(null)
+  const [data, setData] = useState<AnalyticsData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const fetchStats = async () => {
+    const fetchAnalytics = async () => {
       try {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL
+        const response = await fetch(`${apiUrl}/api/v1/orders/analytics?group_by=month`)
 
-        // Fetch product stats
-        const productsRes = await fetch(`${apiUrl}/api/v1/products/stats`)
-        if (!productsRes.ok) throw new Error(`Products API error: ${productsRes.status}`)
-        const productsData = await productsRes.json()
-        setProductStats(productsData.data)
+        if (!response.ok) throw new Error('Error fetching analytics')
 
-        // Fetch order stats
-        const ordersRes = await fetch(`${apiUrl}/api/v1/orders/stats`)
-        if (!ordersRes.ok) throw new Error(`Orders API error: ${ordersRes.status}`)
-        const ordersData = await ordersRes.json()
-        setOrderStats(ordersData.data)
-
+        const result = await response.json()
+        setData(result.data)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Error desconocido')
       } finally {
@@ -58,7 +41,7 @@ export default function DashboardPage() {
       }
     }
 
-    fetchStats()
+    fetchAnalytics()
   }, [])
 
   if (loading) {
@@ -72,19 +55,21 @@ export default function DashboardPage() {
     )
   }
 
-  if (error) {
+  if (error || !data) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-md">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
           <h2 className="text-red-800 font-semibold text-lg mb-2">Error</h2>
-          <p className="text-red-600">{error}</p>
-          <p className="text-sm text-red-500 mt-2">
-            API URL: {process.env.NEXT_PUBLIC_API_URL}
-          </p>
+          <p className="text-red-600">{error || 'No se pudieron cargar los datos'}</p>
         </div>
       </div>
     )
   }
+
+  // Calculate average growth
+  const avgGrowth = data.growth_rates.length > 0
+    ? data.growth_rates.reduce((sum: number, g: any) => sum + g.growth_rate, 0) / data.growth_rates.length
+    : 0
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -94,213 +79,101 @@ export default function DashboardPage() {
           <div className="flex justify-between items-center">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">
-                🍃 Dashboard - Grana Platform
+                🍃 Dashboard Grana 2025
               </h1>
               <p className="mt-2 text-gray-600">
-                Resumen de ventas y productos
+                Vista general de ventas, productos y tendencias
               </p>
             </div>
             <Link
               href="/"
-              className="text-gray-600 hover:text-gray-900"
+              className="text-gray-600 hover:text-gray-900 transition"
             >
               ← Volver
             </Link>
           </div>
         </div>
 
-        {/* Key Metrics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {/* Total Orders */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Total Pedidos</p>
-                <p className="text-3xl font-bold text-gray-900">
-                  {orderStats?.totals.total_orders || 0}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  {orderStats?.totals.recent_orders_7d || 0} últimos 7 días
-                </p>
-              </div>
-              <div className="bg-blue-100 rounded-full p-3">
-                <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-                </svg>
-              </div>
-            </div>
-          </div>
+        {/* KPI Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <KPICard
+            icon="💰"
+            title="Ingresos Totales"
+            value={`$${(data.kpis.total_revenue / 1000000).toFixed(1)}M CLP`}
+            change={avgGrowth}
+            trend={avgGrowth > 0 ? 'up' : avgGrowth < 0 ? 'down' : 'neutral'}
+          />
 
-          {/* Total Revenue */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Ingresos Totales</p>
-                <p className="text-3xl font-bold text-green-600">
-                  ${(orderStats?.totals.total_revenue || 0).toLocaleString('es-CL')}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Promedio: ${(orderStats?.totals.average_order_value || 0).toLocaleString('es-CL')}
-                </p>
-              </div>
-              <div className="bg-green-100 rounded-full p-3">
-                <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-            </div>
-          </div>
+          <KPICard
+            icon="📦"
+            title="Total Órdenes"
+            value={data.kpis.total_orders.toLocaleString('es-CL')}
+          />
 
-          {/* Total Products */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Productos Activos</p>
-                <p className="text-3xl font-bold text-gray-900">
-                  {productStats?.totals.active || 0}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  {productStats?.totals.all || 0} total
-                </p>
-              </div>
-              <div className="bg-purple-100 rounded-full p-3">
-                <svg className="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                </svg>
-              </div>
-            </div>
-          </div>
-
-          {/* Stock Alerts */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Stock Bajo</p>
-                <p className="text-3xl font-bold text-orange-600">
-                  {(productStats?.stock_levels.low_stock || 0) + (productStats?.stock_levels.out_of_stock || 0)}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  {productStats?.stock_levels.out_of_stock || 0} agotados
-                </p>
-              </div>
-              <div className="bg-orange-100 rounded-full p-3">
-                <svg className="w-8 h-8 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-              </div>
-            </div>
-          </div>
+          <KPICard
+            icon="🎫"
+            title="Ticket Promedio"
+            value={`$${Math.round(data.kpis.avg_ticket).toLocaleString('es-CL')}`}
+          />
         </div>
 
-        {/* Charts Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          {/* Orders by Source */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">
-              📊 Pedidos por Fuente
-            </h2>
-            <div className="space-y-3">
-              {orderStats?.by_source.map((source) => (
-                <div key={source.source} className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-24 text-sm font-medium text-gray-700 capitalize">
-                      {source.source === 'shopify' ? '🛍️ Shopify' : source.source}
-                    </div>
-                    <div className="flex-1 bg-gray-200 rounded-full h-2 min-w-[200px]">
-                      <div
-                        className="bg-green-600 h-2 rounded-full"
-                        style={{
-                          width: `${(source.count / (orderStats?.totals.total_orders || 1)) * 100}%`
-                        }}
-                      ></div>
-                    </div>
-                  </div>
-                  <div className="text-sm text-gray-600 ml-4">
-                    {source.count} pedidos (${source.revenue.toLocaleString('es-CL')})
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+        {/* Main Chart - Sales Line */}
+        <div className="mb-8">
+          <SalesLineChart data={data.sales_by_period} />
+        </div>
 
-          {/* Products by Source */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">
-              📦 Productos por Fuente
-            </h2>
-            <div className="space-y-3">
-              {productStats?.by_source.map((source) => (
-                <div key={source.source || 'manual'} className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-24 text-sm font-medium text-gray-700 capitalize">
-                      {source.source === 'shopify' ? '🛍️ Shopify' : source.source || 'Manual'}
-                    </div>
-                    <div className="flex-1 bg-gray-200 rounded-full h-2 min-w-[200px]">
-                      <div
-                        className="bg-purple-600 h-2 rounded-full"
-                        style={{
-                          width: `${(source.count / (productStats?.totals.all || 1)) * 100}%`
-                        }}
-                      ></div>
-                    </div>
-                  </div>
-                  <div className="text-sm text-gray-600 ml-4">
-                    {source.count} productos
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+        {/* Two-column layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+          <SourcePieChart data={data.source_distribution} />
+          <TopProductsBar data={data.top_products} />
         </div>
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Link
-            href="/dashboard/orders"
-            className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">Ver Pedidos</h3>
-                <p className="text-sm text-gray-600 mt-1">Lista completa de pedidos</p>
-              </div>
-              <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </div>
-          </Link>
+        <div className="bg-white rounded-lg shadow p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            Acciones Rápidas
+          </h2>
 
-          <Link
-            href="/dashboard/products"
-            className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow"
-          >
-            <div className="flex items-center justify-between">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Link
+              href="/dashboard/orders"
+              className="flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition"
+            >
+              <span className="text-2xl">📦</span>
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">Ver Productos</h3>
-                <p className="text-sm text-gray-600 mt-1">Catálogo de productos</p>
+                <div className="font-medium">Ver Órdenes</div>
+                <div className="text-sm text-gray-600">
+                  {data.kpis.total_orders} órdenes
+                </div>
               </div>
-              <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </div>
-          </Link>
+            </Link>
 
-          <a
-            href={`${process.env.NEXT_PUBLIC_API_URL}/docs`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow"
-          >
-            <div className="flex items-center justify-between">
+            <Link
+              href="/dashboard/products"
+              className="flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition"
+            >
+              <span className="text-2xl">🏷️</span>
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">API Docs</h3>
-                <p className="text-sm text-gray-600 mt-1">Documentación de API</p>
+                <div className="font-medium">Ver Productos</div>
+                <div className="text-sm text-gray-600">
+                  Gestionar inventario
+                </div>
               </div>
-              <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-              </svg>
-            </div>
-          </a>
+            </Link>
+
+            <button
+              className="flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition"
+              onClick={() => window.location.reload()}
+            >
+              <span className="text-2xl">🔄</span>
+              <div>
+                <div className="font-medium">Actualizar</div>
+                <div className="text-sm text-gray-600">
+                  Recargar datos
+                </div>
+              </div>
+            </button>
+          </div>
         </div>
 
         {/* API Info */}
