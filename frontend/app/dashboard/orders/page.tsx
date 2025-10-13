@@ -53,7 +53,8 @@ export default function OrdersPage() {
     const fetchOrders = async () => {
       setLoading(true)
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL
+        // Get API URL with fallback to Railway production URL
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://granaplatform-production.up.railway.app'
 
         // Build query params for server-side filtering and pagination
         const params = new URLSearchParams({
@@ -83,7 +84,10 @@ export default function OrdersPage() {
           params.append('to_date', '2025-12-31')
         }
 
-        const response = await fetch(`${apiUrl}/api/v1/orders/?${params}`)
+        const fullUrl = `${apiUrl}/api/v1/orders/?${params}`
+        console.log('🔍 [Orders] Fetching from:', fullUrl)
+
+        const response = await fetch(fullUrl)
 
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
 

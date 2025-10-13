@@ -70,9 +70,13 @@ export default function ProductsPage() {
   useEffect(() => {
     const fetchAllProducts = async () => {
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL
+        // Get API URL with fallback to Railway production URL
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://granaplatform-production.up.railway.app'
         // Cargar todos los productos (sin paginación)
-        const response = await fetch(`${apiUrl}/api/v1/products/?limit=1000`)
+        const fullUrl = `${apiUrl}/api/v1/products/?limit=1000`
+        console.log('🔍 [Products - All] Fetching from:', fullUrl)
+
+        const response = await fetch(fullUrl)
 
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
 
@@ -111,7 +115,8 @@ export default function ProductsPage() {
     const fetchProducts = async () => {
       setLoading(true)
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL
+        // Get API URL with fallback to Railway production URL
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://granaplatform-production.up.railway.app'
 
         // Build query params for server-side filtering and pagination
         const params = new URLSearchParams({
@@ -123,7 +128,10 @@ export default function ProductsPage() {
           params.append('source', sourceFilter)
         }
 
-        const response = await fetch(`${apiUrl}/api/v1/products/?${params}`)
+        const fullUrl = `${apiUrl}/api/v1/products/?${params}`
+        console.log('🔍 [Products - Paginated] Fetching from:', fullUrl)
+
+        const response = await fetch(fullUrl)
 
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
 

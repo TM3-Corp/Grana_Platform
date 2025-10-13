@@ -27,14 +27,26 @@ export default function DashboardPage() {
   useEffect(() => {
     const fetchAnalytics = async () => {
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL
-        const response = await fetch(`${apiUrl}/api/v1/orders/analytics?group_by=month`)
+        // Get API URL with fallback to Railway production URL
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://granaplatform-production.up.railway.app'
 
-        if (!response.ok) throw new Error('Error fetching analytics')
+        // Debug logging
+        console.log('🔍 [Dashboard] API URL:', apiUrl)
+        console.log('🔍 [Dashboard] ENV VAR:', process.env.NEXT_PUBLIC_API_URL)
+
+        const fullUrl = `${apiUrl}/api/v1/orders/analytics?group_by=month`
+        console.log('🔍 [Dashboard] Fetching from:', fullUrl)
+
+        const response = await fetch(fullUrl)
+
+        if (!response.ok) {
+          throw new Error(`Error fetching analytics (${response.status})`)
+        }
 
         const result = await response.json()
         setData(result.data)
       } catch (err) {
+        console.error('❌ [Dashboard] Error:', err)
         setError(err instanceof Error ? err.message : 'Error desconocido')
       } finally {
         setLoading(false)
@@ -179,8 +191,13 @@ export default function DashboardPage() {
         {/* API Info */}
         <div className="mt-8 bg-green-50 border border-green-200 rounded-lg p-4">
           <p className="text-sm text-green-800">
-            <span className="font-semibold">✅ Conectado a:</span> {process.env.NEXT_PUBLIC_API_URL}
+            <span className="font-semibold">✅ Conectado a:</span> {process.env.NEXT_PUBLIC_API_URL || 'https://granaplatform-production.up.railway.app'}
           </p>
+          {!process.env.NEXT_PUBLIC_API_URL && (
+            <p className="text-xs text-green-700 mt-1">
+              (usando URL por defecto)
+            </p>
+          )}
         </div>
       </div>
     </div>
