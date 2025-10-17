@@ -116,6 +116,47 @@ $ git commit -m "feat: add products API endpoint"  # ✅ Production code!
 
 ---
 
+## 🛡️ **Automated Protection: Git Hooks**
+
+### Pre-Commit Hook (Automatically Blocks Session Artifacts)
+
+A git pre-commit hook is installed that **automatically prevents** session artifacts from being committed.
+
+**Installation:**
+```bash
+# Run once after cloning the repo
+./scripts/setup-git-hooks.sh
+```
+
+**What it does:**
+- ❌ Blocks commits containing files in `.claude_sessions/`
+- ❌ Blocks commits matching `session_*.py`, `debug_temp_*`, `exploration_*`
+- ⚠️  Warns about files in `backend/scripts/debug/` (asks for confirmation)
+- ✅ Allows legitimate production code commits
+
+**Example:**
+```bash
+$ echo "test" > .claude_sessions/current/debug.py
+$ git add -f .claude_sessions/current/debug.py
+$ git commit -m "test"
+
+🔍 Checking for session artifacts...
+❌ ERROR: Attempting to commit files from .claude_sessions/
+
+Files blocked:
+.claude_sessions/current/debug.py
+
+💡 TIP: Session work should stay in .claude_sessions/ and never be committed.
+```
+
+**Benefits:**
+- 🚀 No need to remember rules manually
+- 🛡️ Automatic enforcement for everyone on the team
+- 💡 Clear error messages when rules are violated
+- 🔒 Defense-in-depth (works with .gitignore)
+
+---
+
 ## 🏗️ **Project Architecture**
 
 ### Current Stack
