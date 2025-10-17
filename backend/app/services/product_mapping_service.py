@@ -4,18 +4,31 @@ Detects and manages product variants and cross-channel equivalents
 
 Author: TM3
 Date: 2025-10-14
-Updated: 2025-10-17 (refactor: unified database imports)
+Updated: 2025-10-17 (refactor: use repository pattern + catalog module)
 """
 import re
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional
 from difflib import SequenceMatcher
-from app.core.database import get_db_connection
+from app.repositories import ProductRepository, ProductMappingRepository
+from app.domain import catalog
 
 
 class ProductMappingService:
-    """Service for detecting and managing product relationships"""
+    """
+    Service for detecting and managing product relationships
+
+    This service handles:
+    - Product variant detection and management
+    - Cross-channel equivalent detection
+    - SKU parsing and pattern matching
+    - Confidence scoring algorithms
+    """
 
     def __init__(self):
+        # Initialize repositories
+        self.product_repo = ProductRepository()
+        self.mapping_repo = ProductMappingRepository()
+
         # Shopify SKU pattern: [PRODUCT]_U[SIZE][TYPE]
         # Examples: BAKC_U04010 (1 unit), BAKC_U20010 (5 units), BAKC_U64010 (16 units)
         self.shopify_sku_pattern = re.compile(r'^([A-Z]{4})_U(\d{2})(\d{3})$')
@@ -25,14 +38,23 @@ class ProductMappingService:
             '04': 1,    # Individual unit
             '20': 5,    # Display 5 units
             '64': 16,   # Display 16 units
+            '25': 7,    # Display 7 units
+            '15': 5,    # Display 5 units (alt)
+            '54': 18,   # Display 18 units
         }
 
         # Packaging type names
         self.packaging_types = {
             1: 'individual',
             5: 'display_5',
+            7: 'display_7',
             16: 'display_16',
+            18: 'display_18',
         }
+
+    # ========================================
+    # SKU Parsing (Business Logic)
+    # ========================================
 
     def parse_shopify_sku(self, sku: str) -> Optional[Dict]:
         """
@@ -62,9 +84,15 @@ class ProductMappingService:
             'is_base': quantity == 1
         }
 
+    # ========================================
+    # Variant Detection (Business Logic + Repository)
+    # ========================================
+
     def detect_packaging_variants(self, product_id: int) -> List[Dict]:
         """
         Detect potential packaging variants for a given product
+
+        Uses catalog module for official product data and repository for database queries.
 
         Args:
             product_id: ID of the base product
@@ -72,77 +100,64 @@ class ProductMappingService:
         Returns:
             List of potential variant products with confidence scores
         """
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Get the base product
-        cursor.execute("""
-            SELECT id, sku, name, source
-            FROM products
-            WHERE id = %s AND is_active = true
-        """, (product_id,))
-
-        base_product = cursor.fetchone()
-        if not base_product:
-            cursor.close()
-            conn.close()
+        # Get the base product from database
+        base_product = self.product_repo.find_by_id(product_id)
+        if not base_product or not base_product.is_active:
             return []
-
-        base_id, base_sku, base_name, base_source = base_product
 
         # Only works for Shopify products with parseable SKUs
-        if base_source != 'shopify':
-            cursor.close()
-            conn.close()
+        if base_product.source != 'shopify':
             return []
 
-        parsed_base = self.parse_shopify_sku(base_sku)
+        parsed_base = self.parse_shopify_sku(base_product.sku)
         if not parsed_base or not parsed_base['is_base']:
-            cursor.close()
-            conn.close()
             return []
 
-        # Find products with same base code but different quantities
-        base_code = parsed_base['base_code']
-        type_code = parsed_base['type_code']
-
-        cursor.execute("""
-            SELECT id, sku, name, current_stock, sale_price
-            FROM products
-            WHERE source = 'shopify'
-              AND sku LIKE %s
-              AND sku != %s
-              AND is_active = true
-        """, (f'{base_code}_U%{type_code}', base_sku))
+        # Use repository to find potential variants
+        potential_variants = self.mapping_repo.find_potential_variants_by_sku_pattern(
+            base_sku=base_product.sku,
+            base_product_id=product_id
+        )
 
         variants = []
-        for row in cursor.fetchall():
-            variant_id, variant_sku, variant_name, variant_stock, variant_price = row
-
-            parsed_variant = self.parse_shopify_sku(variant_sku)
+        for variant_data in potential_variants:
+            # Parse variant SKU
+            parsed_variant = self.parse_shopify_sku(variant_data['sku'])
             if not parsed_variant or parsed_variant['quantity'] is None:
                 continue
 
             # Calculate confidence based on name similarity
-            name_similarity = SequenceMatcher(None, base_name.lower(), variant_name.lower()).ratio()
+            name_similarity = SequenceMatcher(
+                None,
+                base_product.name.lower(),
+                variant_data['name'].lower()
+            ).ratio()
+
+            # Check if this variant exists in official catalog
+            catalog_product = catalog.get_product_by_sku(variant_data['sku'])
+            if catalog_product:
+                # Boost confidence for catalog products
+                name_similarity = min(1.0, name_similarity + 0.1)
 
             variants.append({
-                'variant_product_id': variant_id,
-                'variant_sku': variant_sku,
-                'variant_name': variant_name,
+                'variant_product_id': variant_data['id'],
+                'variant_sku': variant_data['sku'],
+                'variant_name': variant_data['name'],
                 'quantity_multiplier': parsed_variant['quantity'],
                 'packaging_type': self.packaging_types.get(parsed_variant['quantity'], 'unknown'),
                 'confidence': round(name_similarity, 2),
-                'current_stock': variant_stock,
-                'sale_price': float(variant_price) if variant_price else None
+                'current_stock': variant_data['current_stock'],
+                'sale_price': float(variant_data['sale_price']) if variant_data['sale_price'] else None,
+                'in_catalog': catalog_product is not None
             })
-
-        cursor.close()
-        conn.close()
 
         return sorted(variants, key=lambda x: x['quantity_multiplier'])
 
-    def detect_channel_equivalents(self, product_id: int, min_confidence: float = 0.7) -> List[Dict]:
+    def detect_channel_equivalents(
+        self,
+        product_id: int,
+        min_confidence: float = 0.7
+    ) -> List[Dict]:
         """
         Detect potential cross-channel equivalents for a product
 
@@ -153,62 +168,48 @@ class ProductMappingService:
         Returns:
             List of potential equivalent products from other channels
         """
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Get the source product
-        cursor.execute("""
-            SELECT id, sku, name, source, sale_price
-            FROM products
-            WHERE id = %s AND is_active = true
-        """, (product_id,))
-
-        source_product = cursor.fetchone()
-        if not source_product:
-            cursor.close()
-            conn.close()
+        # Get the source product from database
+        source_product = self.product_repo.find_by_id(product_id)
+        if not source_product or not source_product.is_active:
             return []
-
-        source_id, source_sku, source_name, source_source, source_price = source_product
 
         # Determine target source
-        if source_source == 'shopify':
+        if source_product.source == 'shopify':
             target_source = 'mercadolibre'
-        elif source_source == 'mercadolibre':
+        elif source_product.source == 'mercadolibre':
             target_source = 'shopify'
         else:
-            cursor.close()
-            conn.close()
             return []
 
-        # Get all products from target source
-        cursor.execute("""
-            SELECT id, sku, name, sale_price, current_stock
-            FROM products
-            WHERE source = %s AND is_active = true
-        """, (target_source,))
+        # Get potential equivalents from repository
+        potential_equivalents = self.mapping_repo.find_potential_equivalents_by_source(
+            source_to_match=target_source,
+            exclude_product_id=product_id
+        )
 
         equivalents = []
 
         # Extract key terms from source product name
-        source_terms = self._extract_key_terms(source_name)
+        source_terms = self._extract_key_terms(source_product.name)
 
-        for row in cursor.fetchall():
-            target_id, target_sku, target_name, target_price, target_stock = row
-
+        for target_data in potential_equivalents:
             # Calculate name similarity
-            name_similarity = SequenceMatcher(None, source_name.lower(), target_name.lower()).ratio()
+            name_similarity = SequenceMatcher(
+                None,
+                source_product.name.lower(),
+                target_data['name'].lower()
+            ).ratio()
 
             # Calculate term overlap
-            target_terms = self._extract_key_terms(target_name)
+            target_terms = self._extract_key_terms(target_data['name'])
             common_terms = source_terms.intersection(target_terms)
             term_overlap = len(common_terms) / max(len(source_terms), len(target_terms), 1)
 
             # Calculate price similarity if both have prices
             price_similarity = 0.5  # Default neutral
-            if source_price and target_price:
-                price_diff = abs(float(source_price) - float(target_price))
-                price_avg = (float(source_price) + float(target_price)) / 2
+            if source_product.sale_price and target_data['sale_price']:
+                price_diff = abs(float(source_product.sale_price) - float(target_data['sale_price']))
+                price_avg = (float(source_product.sale_price) + float(target_data['sale_price'])) / 2
                 price_similarity = max(0, 1 - (price_diff / price_avg))
 
             # Combined confidence score
@@ -220,27 +221,32 @@ class ProductMappingService:
 
             if confidence >= min_confidence:
                 equivalents.append({
-                    'target_product_id': target_id,
-                    'target_sku': target_sku,
-                    'target_name': target_name,
-                    'target_source': target_source,
+                    'target_product_id': target_data['id'],
+                    'target_sku': target_data['sku'],
+                    'target_name': target_data['name'],
+                    'target_source': target_data['source'],
                     'confidence': round(confidence, 2),
                     'name_similarity': round(name_similarity, 2),
                     'term_overlap': round(term_overlap, 2),
                     'price_similarity': round(price_similarity, 2),
-                    'current_stock': target_stock,
-                    'sale_price': float(target_price) if target_price else None
+                    'current_stock': target_data['current_stock'],
+                    'sale_price': float(target_data['sale_price']) if target_data['sale_price'] else None
                 })
-
-        cursor.close()
-        conn.close()
 
         return sorted(equivalents, key=lambda x: x['confidence'], reverse=True)
 
     def _extract_key_terms(self, text: str) -> set:
-        """Extract key terms from product name for comparison"""
+        """
+        Extract key terms from product name for comparison
+
+        Args:
+            text: Product name text
+
+        Returns:
+            Set of key terms (normalized, filtered)
+        """
         # Remove common stop words and normalize
-        stop_words = {'de', 'con', 'la', 'el', 'y', 'un', 'una', 'uds', 'gr', 'grs'}
+        stop_words = {'de', 'con', 'la', 'el', 'y', 'un', 'una', 'uds', 'gr', 'grs', 'display', 'pack'}
 
         # Convert to lowercase and split
         words = re.findall(r'\b[a-záéíóúñ]+\b', text.lower())
@@ -249,6 +255,10 @@ class ProductMappingService:
         key_terms = {w for w in words if w not in stop_words and len(w) > 2}
 
         return key_terms
+
+    # ========================================
+    # Consolidated Views (Repository Delegation)
+    # ========================================
 
     def get_consolidated_inventory(self, base_product_id: Optional[int] = None) -> List[Dict]:
         """
@@ -260,47 +270,7 @@ class ProductMappingService:
         Returns:
             List of consolidated inventory records
         """
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        query = """
-            SELECT
-                base_product_id,
-                base_sku,
-                base_name,
-                base_source,
-                base_unit_price,
-                base_direct_stock,
-                num_variants,
-                variant_stock_as_units,
-                total_units_available,
-                stock_status,
-                inventory_value
-            FROM inventory_consolidated
-        """
-
-        if base_product_id:
-            query += " WHERE base_product_id = %s"
-            cursor.execute(query, (base_product_id,))
-        else:
-            query += " ORDER BY stock_status DESC, base_sku"
-            cursor.execute(query)
-
-        columns = [desc[0] for desc in cursor.description]
-        results = []
-
-        for row in cursor.fetchall():
-            record = dict(zip(columns, row))
-            # Convert Decimal to float for JSON serialization
-            for key in ['base_unit_price', 'inventory_value']:
-                if record.get(key) is not None:
-                    record[key] = float(record[key])
-            results.append(record)
-
-        cursor.close()
-        conn.close()
-
-        return results
+        return self.mapping_repo.find_consolidated_inventory(base_product_id)
 
     def get_product_families(self, base_product_id: Optional[int] = None) -> List[Dict]:
         """
@@ -312,50 +282,20 @@ class ProductMappingService:
         Returns:
             List of product family records
         """
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        return self.mapping_repo.find_product_families(base_product_id)
 
-        query = """
-            SELECT
-                base_product_id,
-                base_sku,
-                base_name,
-                variant_product_id,
-                variant_sku,
-                variant_name,
-                quantity_multiplier,
-                packaging_type,
-                variant_stock,
-                variant_stock_as_base_units,
-                variant_price,
-                base_unit_price,
-                variant_unit_price,
-                discount_percentage
-            FROM product_families
+    def get_channel_equivalents(self) -> List[Dict]:
         """
+        Get all channel equivalents with product details
 
-        if base_product_id:
-            query += " WHERE base_product_id = %s"
-            cursor.execute(query, (base_product_id,))
-        else:
-            query += " ORDER BY base_sku, quantity_multiplier"
-            cursor.execute(query)
+        Returns:
+            List of channel equivalent records with joined product data
+        """
+        return self.mapping_repo.find_channel_equivalents()
 
-        columns = [desc[0] for desc in cursor.description]
-        results = []
-
-        for row in cursor.fetchall():
-            record = dict(zip(columns, row))
-            # Convert Decimal to float
-            for key in ['variant_price', 'base_unit_price', 'variant_unit_price', 'discount_percentage']:
-                if record.get(key) is not None:
-                    record[key] = float(record[key])
-            results.append(record)
-
-        cursor.close()
-        conn.close()
-
-        return results
+    # ========================================
+    # CRUD Operations (Repository Delegation)
+    # ========================================
 
     def create_variant_mapping(
         self,
@@ -368,49 +308,40 @@ class ProductMappingService:
         """
         Create a new product variant mapping
 
+        Args:
+            base_product_id: ID of base product
+            variant_product_id: ID of variant product
+            quantity_multiplier: Number of base units in variant
+            packaging_type: Type of packaging
+            is_active: Whether mapping is active
+
         Returns:
             Created variant record or error
         """
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        # Validate products exist
+        base_product = self.product_repo.find_by_id(base_product_id)
+        variant_product = self.product_repo.find_by_id(variant_product_id)
 
-        try:
-            cursor.execute("""
-                INSERT INTO product_variants (
-                    base_product_id,
-                    variant_product_id,
-                    quantity_multiplier,
-                    packaging_type,
-                    is_active
-                )
-                VALUES (%s, %s, %s, %s, %s)
-                RETURNING id
-            """, (base_product_id, variant_product_id, quantity_multiplier, packaging_type, is_active))
-
-            variant_id = cursor.fetchone()[0]
-            conn.commit()
-
-            cursor.close()
-            conn.close()
-
-            return {
-                'success': True,
-                'id': variant_id,
-                'base_product_id': base_product_id,
-                'variant_product_id': variant_product_id,
-                'quantity_multiplier': quantity_multiplier,
-                'packaging_type': packaging_type
-            }
-
-        except Exception as e:
-            conn.rollback()
-            cursor.close()
-            conn.close()
-
+        if not base_product:
             return {
                 'success': False,
-                'error': str(e)
+                'error': f'Base product {base_product_id} not found'
             }
+
+        if not variant_product:
+            return {
+                'success': False,
+                'error': f'Variant product {variant_product_id} not found'
+            }
+
+        # Delegate to repository
+        return self.mapping_repo.create_variant_mapping(
+            base_product_id=base_product_id,
+            variant_product_id=variant_product_id,
+            quantity_multiplier=quantity_multiplier,
+            packaging_type=packaging_type,
+            is_active=is_active
+        )
 
     def create_channel_equivalent(
         self,
@@ -423,139 +354,73 @@ class ProductMappingService:
         """
         Create a new cross-channel equivalent mapping
 
+        Args:
+            shopify_product_id: Shopify product ID
+            mercadolibre_product_id: MercadoLibre product ID
+            equivalence_confidence: Confidence score (0-1)
+            verified: Whether manually verified
+            notes: Optional notes
+
         Returns:
             Created equivalent record or error
         """
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        # Validate products exist and have correct sources
+        shopify_product = self.product_repo.find_by_id(shopify_product_id)
+        ml_product = self.product_repo.find_by_id(mercadolibre_product_id)
 
-        try:
-            cursor.execute("""
-                INSERT INTO channel_equivalents (
-                    shopify_product_id,
-                    mercadolibre_product_id,
-                    equivalence_confidence,
-                    verified,
-                    notes
-                )
-                VALUES (%s, %s, %s, %s, %s)
-                RETURNING id
-            """, (shopify_product_id, mercadolibre_product_id, equivalence_confidence, verified, notes))
-
-            equivalent_id = cursor.fetchone()[0]
-            conn.commit()
-
-            cursor.close()
-            conn.close()
-
-            return {
-                'success': True,
-                'id': equivalent_id,
-                'shopify_product_id': shopify_product_id,
-                'mercadolibre_product_id': mercadolibre_product_id,
-                'equivalence_confidence': equivalence_confidence
-            }
-
-        except Exception as e:
-            conn.rollback()
-            cursor.close()
-            conn.close()
-
+        if not shopify_product:
             return {
                 'success': False,
-                'error': str(e)
+                'error': f'Shopify product {shopify_product_id} not found'
             }
 
+        if not ml_product:
+            return {
+                'success': False,
+                'error': f'MercadoLibre product {mercadolibre_product_id} not found'
+            }
+
+        if shopify_product.source != 'shopify':
+            return {
+                'success': False,
+                'error': f'Product {shopify_product_id} is not a Shopify product'
+            }
+
+        if ml_product.source != 'mercadolibre':
+            return {
+                'success': False,
+                'error': f'Product {mercadolibre_product_id} is not a MercadoLibre product'
+            }
+
+        # Delegate to repository
+        return self.mapping_repo.create_channel_equivalent(
+            shopify_product_id=shopify_product_id,
+            mercadolibre_product_id=mercadolibre_product_id,
+            equivalence_confidence=equivalence_confidence,
+            verified=verified,
+            notes=notes
+        )
+
     def delete_variant_mapping(self, variant_id: int) -> Dict:
-        """Delete a product variant mapping"""
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        try:
-            cursor.execute("DELETE FROM product_variants WHERE id = %s", (variant_id,))
-            conn.commit()
-
-            cursor.close()
-            conn.close()
-
-            return {'success': True}
-
-        except Exception as e:
-            conn.rollback()
-            cursor.close()
-            conn.close()
-
-            return {'success': False, 'error': str(e)}
-
-    def delete_channel_equivalent(self, equivalent_id: int) -> Dict:
-        """Delete a cross-channel equivalent mapping"""
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        try:
-            cursor.execute("DELETE FROM channel_equivalents WHERE id = %s", (equivalent_id,))
-            conn.commit()
-
-            cursor.close()
-            conn.close()
-
-            return {'success': True}
-
-        except Exception as e:
-            conn.rollback()
-            cursor.close()
-            conn.close()
-
-            return {'success': False, 'error': str(e)}
-
-    def get_channel_equivalents(self) -> List[Dict]:
         """
-        Get all channel equivalents with product details
+        Delete a product variant mapping
+
+        Args:
+            variant_id: ID of the variant mapping
 
         Returns:
-            List of channel equivalent records with joined product data
+            Result dict with success status
         """
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        return self.mapping_repo.delete_variant_mapping(variant_id)
 
-        query = """
-            SELECT
-                ce.id,
-                ce.shopify_product_id,
-                ce.mercadolibre_product_id,
-                ce.equivalence_confidence,
-                ce.verified,
-                ce.notes,
-                -- Shopify product details
-                p_shopify.sku as shopify_sku,
-                p_shopify.name as shopify_name,
-                p_shopify.sale_price as shopify_price,
-                p_shopify.current_stock as shopify_stock,
-                -- MercadoLibre product details
-                p_ml.sku as ml_sku,
-                p_ml.name as ml_name,
-                p_ml.sale_price as ml_price,
-                p_ml.current_stock as ml_stock
-            FROM channel_equivalents ce
-            INNER JOIN products p_shopify ON ce.shopify_product_id = p_shopify.id
-            INNER JOIN products p_ml ON ce.mercadolibre_product_id = p_ml.id
-            WHERE p_shopify.is_active = true AND p_ml.is_active = true
-            ORDER BY ce.verified DESC, ce.equivalence_confidence DESC
+    def delete_channel_equivalent(self, equivalent_id: int) -> Dict:
         """
+        Delete a cross-channel equivalent mapping
 
-        cursor.execute(query)
-        columns = [desc[0] for desc in cursor.description]
-        results = []
+        Args:
+            equivalent_id: ID of the channel equivalent
 
-        for row in cursor.fetchall():
-            record = dict(zip(columns, row))
-            # Convert Decimal to float for JSON serialization
-            for key in ['equivalence_confidence', 'shopify_price', 'ml_price']:
-                if record.get(key) is not None:
-                    record[key] = float(record[key])
-            results.append(record)
-
-        cursor.close()
-        conn.close()
-
-        return results
+        Returns:
+            Result dict with success status
+        """
+        return self.mapping_repo.delete_channel_equivalent(equivalent_id)
