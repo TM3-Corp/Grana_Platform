@@ -101,20 +101,40 @@ async def get_orders(
 
         orders = cursor.fetchall()
 
-        # Get order items for each order
-        for order in orders:
+        # Get ALL order items for these orders in ONE QUERY (fix N+1 problem)
+        if orders:
+            order_ids = [order['id'] for order in orders]
+
+            # Use ANY to fetch items for all orders at once
             cursor.execute("""
                 SELECT
+                    oi.order_id,
                     oi.id, oi.product_id, oi.product_sku, oi.product_name,
                     oi.quantity, oi.unit_price, oi.subtotal, oi.tax_amount, oi.total,
                     p.name as product_name_from_catalog,
                     p.unit, p.category
                 FROM order_items oi
                 LEFT JOIN products p ON oi.product_id = p.id
-                WHERE oi.order_id = %s
-                ORDER BY oi.id
-            """, (order['id'],))
-            order['items'] = cursor.fetchall()
+                WHERE oi.order_id = ANY(%s)
+                ORDER BY oi.order_id, oi.id
+            """, (order_ids,))
+
+            all_items = cursor.fetchall()
+
+            # Group items by order_id
+            items_by_order = {}
+            for item in all_items:
+                order_id = item['order_id']
+                if order_id not in items_by_order:
+                    items_by_order[order_id] = []
+                # Remove order_id from item dict before adding
+                item_dict = dict(item)
+                del item_dict['order_id']
+                items_by_order[order_id].append(item_dict)
+
+            # Attach items to their orders
+            for order in orders:
+                order['items'] = items_by_order.get(order['id'], [])
 
         cursor.close()
         conn.close()
