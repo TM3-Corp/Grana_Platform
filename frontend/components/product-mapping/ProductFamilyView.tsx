@@ -1,28 +1,25 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-
-interface Product {
-  id: number;
-  sku: string;
-  name: string;
-  category: string | null;
-  brand: string | null;
-  source: string;
-  sale_price: number | null;
-  current_stock: number | null;
-  min_stock: number | null;
-  is_active: boolean;
-}
+import {
+  filterValidProducts,
+  groupProductsByBaseCode,
+  getProductOfficialCategory,
+  getProductBaseCode,
+  getProductUnitsPerDisplay,
+  getFormat,
+  type Product
+} from '@/lib/product-utils';
 
 interface ProductFamily {
+  base_code: string; // BAKC, GRAL, etc.
   base_name: string;
-  category: string;
+  category: string; // GRANOLAS, BARRAS, CRACKERS, KEEPERS, KRUMS
   products: Product[];
 }
 
 interface SuperCategory {
-  name: string;
+  name: string; // GRANOLAS, BARRAS, CRACKERS, KEEPERS, KRUMS
   icon: string;
   families: ProductFamily[];
 }
@@ -65,23 +62,16 @@ export default function ProductFamilyView() {
     return baseName.trim();
   };
 
-  const getSuperCategory = (productName: string, category: string | null): string => {
-    const name = productName.toLowerCase();
-
-    if (name.includes('barra') || name.includes('barrita') || name.includes('keeper')) {
-      return 'Barras y Snacks';
-    }
-    if (name.includes('cracker') || name.includes('galleta')) {
-      return 'Crackers y Galletas';
-    }
-    if (name.includes('granola')) {
-      return 'Granolas';
-    }
-    if (name.includes('gift card')) {
-      return 'Gift Cards';
-    }
-
-    return 'Otros';
+  const getSuperCategoryIcon = (category: string): string => {
+    const icons: Record<string, string> = {
+      'GRANOLAS': '🥣',
+      'BARRAS': '🍫',
+      'CRACKERS': '🍘',
+      'KEEPERS': '🍬',
+      'KRUMS': '🥨',
+      'OTROS': '📦',
+    };
+    return icons[category] || '📦';
   };
 
   const fetchAndGroupProducts = async () => {
@@ -95,66 +85,68 @@ export default function ProductFamilyView() {
       }
 
       const data = await response.json();
-      const products: Product[] = data.data;
+      let allProducts: Product[] = data.data;
 
-      // Group products by base name (subfamilies)
-      const familyMap = new Map<string, ProductFamily>();
+      // Filter out obsolete ML products
+      const validProducts = filterValidProducts(allProducts);
 
-      products.forEach((product) => {
-        const baseName = getBaseName(product.name);
+      // Group products by base code using official catalog
+      // This automatically consolidates cross-channel products
+      const baseCodeGroups = groupProductsByBaseCode(validProducts);
 
-        if (!familyMap.has(baseName)) {
-          familyMap.set(baseName, {
+      // Create product families from base code groups
+      const families: ProductFamily[] = [];
+
+      baseCodeGroups.forEach((products, baseCode) => {
+        // Only include families with multiple products OR products with multiple channels
+        const uniqueChannels = new Set(products.map(p => p.source));
+
+        if (products.length > 1 || uniqueChannels.size > 1) {
+          // Get category from first product (they should all be the same family)
+          const category = getProductOfficialCategory(products[0]);
+
+          // Get base name from catalog
+          const baseName = baseCode;
+
+          families.push({
+            base_code: baseCode,
             base_name: baseName,
-            category: product.category || 'Sin categoría',
-            products: [],
+            category: category,
+            products: products,
           });
         }
-
-        familyMap.get(baseName)!.products.push(product);
       });
 
-      // Filter families with more than 1 product (actual families with variants)
-      const familiesArray = Array.from(familyMap.values())
-        .filter((family) => family.products.length > 1);
+      // Group families by official category (GRANOLAS, BARRAS, CRACKERS, KEEPERS, KRUMS)
+      const categoryMap = new Map<string, SuperCategory>();
 
-      // Group families into super categories
-      const superCategoryMap = new Map<string, SuperCategory>();
+      families.forEach((family) => {
+        const categoryName = family.category;
 
-      familiesArray.forEach((family) => {
-        const superCatName = getSuperCategory(family.base_name, family.category);
-
-        if (!superCategoryMap.has(superCatName)) {
-          const icon =
-            superCatName === 'Barras y Snacks' ? '🍫' :
-            superCatName === 'Crackers y Galletas' ? '🍘' :
-            superCatName === 'Granolas' ? '🥣' :
-            superCatName === 'Gift Cards' ? '🎁' :
-            '📦';
-
-          superCategoryMap.set(superCatName, {
-            name: superCatName,
-            icon: icon,
+        if (!categoryMap.has(categoryName)) {
+          categoryMap.set(categoryName, {
+            name: categoryName,
+            icon: getSuperCategoryIcon(categoryName),
             families: [],
           });
         }
 
-        superCategoryMap.get(superCatName)!.families.push(family);
+        categoryMap.get(categoryName)!.families.push(family);
       });
 
-      // Sort super categories and their families
-      const superCategoriesArray = Array.from(superCategoryMap.values())
-        .map((superCat) => ({
-          ...superCat,
-          families: superCat.families.sort((a, b) => b.products.length - a.products.length),
+      // Sort categories and their families
+      const categoriesArray = Array.from(categoryMap.values())
+        .map((category) => ({
+          ...category,
+          families: category.families.sort((a, b) => b.products.length - a.products.length),
         }))
         .sort((a, b) => {
-          // Custom order: Barras, Crackers, Granolas, Gift Cards, Otros
-          const order = ['Barras y Snacks', 'Crackers y Galletas', 'Granolas', 'Gift Cards', 'Otros'];
+          // Official order from catalog
+          const order = ['GRANOLAS', 'BARRAS', 'CRACKERS', 'KEEPERS', 'KRUMS', 'OTROS'];
           return order.indexOf(a.name) - order.indexOf(b.name);
         });
 
-      setSuperCategories(superCategoriesArray);
+      setSuperCategories(categoriesArray);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error desconocido');
     } finally {
@@ -184,6 +176,12 @@ export default function ProductFamilyView() {
 
   const getCategoryIcon = (category: string) => {
     const icons: Record<string, string> = {
+      'GRANOLAS': '🥣',
+      'BARRAS': '🍫',
+      'CRACKERS': '🍘',
+      'KEEPERS': '🍬',
+      'KRUMS': '🥨',
+      // Legacy support
       'Barra': '🍫',
       'Barritas': '🍫',
       'Crackers': '🍘',
@@ -288,14 +286,19 @@ export default function ProductFamilyView() {
                         <div className="flex items-center gap-3">
                           <span className="text-2xl">{getCategoryIcon(family.category)}</span>
                           <div>
-                            <h3 className="font-semibold text-gray-900">{family.base_name}</h3>
-                            <p className="text-xs text-gray-600">
-                              {family.products.length} variante(s)
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-semibold text-gray-900">{family.base_code}</h3>
+                              <span className="px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-800">
+                                {family.category}
+                              </span>
+                            </div>
+                            <p className="text-xs text-gray-600 mt-1">
+                              {family.products.length} variante(s) • {new Set(family.products.map(p => p.source)).size} canal(es)
                             </p>
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="text-xs text-gray-600">Stock</div>
+                          <div className="text-xs text-gray-600">Stock Total</div>
                           <div className="font-bold text-blue-600">
                             {family.products.reduce((sum, p) => sum + (p.current_stock || 0), 0).toLocaleString()}
                           </div>
@@ -310,14 +313,15 @@ export default function ProductFamilyView() {
               <div className="p-4 space-y-3 bg-gray-50">
                 {family.products
                   .sort((a, b) => {
-                    // Sort: individual first, then by display size
-                    if (a.name.includes('1 unidad')) return -1;
-                    if (b.name.includes('1 unidad')) return 1;
-                    return a.name.localeCompare(b.name);
+                    // Sort by units per display (1un, 5un, 16un, etc.)
+                    const unitsA = getProductUnitsPerDisplay(a);
+                    const unitsB = getProductUnitsPerDisplay(b);
+                    return unitsA - unitsB;
                   })
                   .map((product) => {
                     const isLowStock = (product.current_stock || 0) < (product.min_stock || 0);
                     const isOversold = (product.current_stock || 0) < 0;
+                    const unitsPerDisplay = getProductUnitsPerDisplay(product);
 
                     return (
                       <div
@@ -336,9 +340,14 @@ export default function ProductFamilyView() {
                               <div>
                                 <h4 className="font-medium text-gray-900">{product.name}</h4>
                                 <p className="text-xs text-gray-600 font-mono mt-1">{product.sku}</p>
-                                <span className="inline-block mt-1 px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-800">
-                                  {product.source}
-                                </span>
+                                <div className="flex gap-2 mt-1">
+                                  <span className="inline-block px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-800">
+                                    {product.source}
+                                  </span>
+                                  <span className="inline-block px-2 py-0.5 text-xs rounded-full bg-green-100 text-green-800">
+                                    {unitsPerDisplay} {unitsPerDisplay === 1 ? 'un' : 'un/display'}
+                                  </span>
+                                </div>
                               </div>
                             </div>
                           </div>

@@ -6,8 +6,10 @@ import ConsolidatedInventoryTable from '@/components/product-mapping/Consolidate
 import ProductFamilyView from '@/components/product-mapping/ProductFamilyView';
 import ChannelEquivalentsView from '@/components/product-mapping/ChannelEquivalentsView';
 import AllProductsTable from '@/components/product-mapping/AllProductsTable';
+import ProductSalesAnalytics from '@/components/product-mapping/ProductSalesAnalytics';
+import { ProductProvider } from '@/contexts/ProductContext';
 
-type ViewMode = 'consolidated' | 'families' | 'channel-equivalents' | 'all-products';
+type ViewMode = 'consolidated' | 'families' | 'channel-equivalents' | 'all-products' | 'sales-analytics';
 
 export default function ProductMappingPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('consolidated');
@@ -15,8 +17,9 @@ export default function ProductMappingPage() {
   return (
     <>
       <Navigation />
-      <div className="min-h-screen bg-gray-50 py-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <ProductProvider>
+        <div className="min-h-screen bg-gray-50 py-8">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Header */}
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-gray-900 mb-2">Mapeo de Productos</h1>
@@ -81,6 +84,16 @@ export default function ProductMappingPage() {
         >
           🏷️ Productos
         </button>
+        <button
+          onClick={() => setViewMode('sales-analytics')}
+          className={`px-6 py-3 font-medium transition-colors ${
+            viewMode === 'sales-analytics'
+              ? 'text-blue-600 border-b-2 border-blue-600'
+              : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          📈 Análisis de Ventas
+        </button>
       </div>
 
       {/* Content */}
@@ -130,6 +143,18 @@ export default function ProductMappingPage() {
               </p>
             </div>
             <AllProductsTable />
+          </div>
+        )}
+
+        {viewMode === 'sales-analytics' && (
+          <div>
+            <div className="mb-4">
+              <h2 className="text-xl font-semibold text-gray-900 mb-1">Análisis de Ventas</h2>
+              <p className="text-sm text-gray-600">
+                Visualiza qué productos se venden más, por formato y canal
+              </p>
+            </div>
+            <ProductSalesAnalytics />
           </div>
         )}
       </div>
@@ -202,8 +227,9 @@ export default function ProductMappingPage() {
           </p>
         </div>
       </div>
+          </div>
         </div>
-      </div>
+      </ProductProvider>
     </>
   );
 }

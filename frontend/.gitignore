@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Windows/WSL Zone Identifiers
+*:Zone.Identifier
+
+# CSV data files (contain business data)
+*.csv
+/public/Archivos_Compartidos/

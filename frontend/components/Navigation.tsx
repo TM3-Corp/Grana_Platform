@@ -30,16 +30,14 @@ export default function Navigation() {
         <div className="flex justify-between h-16">
           {/* Logo */}
           <div className="flex items-center">
-            <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+            <Link href="/" className="flex items-center hover:opacity-80 transition-opacity">
               <Image
                 src="/images/logo_grana.avif"
-                alt="Grana Logo"
+                alt="Grana"
                 width={40}
                 height={40}
                 className="object-contain"
               />
-              <span className="font-bold text-xl text-gray-900">Grana</span>
-              <span className="text-sm text-gray-500 hidden sm:inline">Platform</span>
             </Link>
           </div>
 

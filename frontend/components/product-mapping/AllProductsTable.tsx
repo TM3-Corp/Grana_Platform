@@ -1,18 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { filterValidProducts, type Product as BaseProduct } from '@/lib/product-utils';
 
-interface Product {
-  id: number;
-  sku: string;
-  name: string;
-  category: string | null;
-  brand: string | null;
-  source: string;
-  sale_price: number | null;
-  current_stock: number | null;
-  min_stock: number | null;
-  is_active: boolean;
+interface Product extends BaseProduct {
   units_per_display: number | null;
   displays_per_box: number | null;
   boxes_per_pallet: number | null;
@@ -57,8 +48,10 @@ export default function AllProductsTable() {
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
       const data: ProductsResponse = await response.json();
-      setProducts(data.data);
-      setFilteredProducts(data.data);
+      // Filter out obsolete ML products
+      const validProducts = filterValidProducts(data.data);
+      setProducts(validProducts);
+      setFilteredProducts(validProducts);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error desconocido');
     } finally {
