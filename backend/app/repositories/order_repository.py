@@ -202,10 +202,8 @@ class OrderRepository:
                 if order_id not in items_by_order:
                     items_by_order[order_id] = []
 
-                # Remove order_id before creating OrderItem
-                item_dict = dict(item)
-                del item_dict['order_id']
-                items_by_order[order_id].append(OrderItem(**item_dict))
+                # Keep order_id - OrderItem needs it as a field
+                items_by_order[order_id].append(OrderItem(**dict(item)))
 
             # Build Order objects with items
             orders = []
