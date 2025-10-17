@@ -47,7 +47,7 @@ class OrderItem(BaseModel):
     quantity: int = Field(..., description="Quantity ordered", ge=1)
     unit_price: Decimal = Field(..., description="Price per unit", ge=0)
     subtotal: Decimal = Field(..., description="Subtotal before tax", ge=0)
-    tax_amount: Decimal = Field(Decimal('0'), description="Tax amount", ge=0)
+    tax_amount: Optional[Decimal] = Field(None, description="Tax amount (can be NULL)", ge=0)
     total: Decimal = Field(..., description="Total for line item", ge=0)
 
     # From product catalog (optional, from JOIN)
@@ -171,12 +171,12 @@ class Order(BaseModel):
     customer_id: Optional[int] = Field(None, description="Customer ID")
     channel_id: Optional[int] = Field(None, description="Channel ID")
 
-    # Financial information
-    subtotal: Decimal = Field(..., description="Subtotal before tax/shipping", ge=0)
-    tax_amount: Decimal = Field(Decimal('0'), description="Tax amount", ge=0)
-    shipping_cost: Decimal = Field(Decimal('0'), description="Shipping cost", ge=0)
-    discount_amount: Decimal = Field(Decimal('0'), description="Discount amount", ge=0)
-    total: Decimal = Field(..., description="Total order amount", ge=0)
+    # Financial information (can be NULL in database)
+    subtotal: Optional[Decimal] = Field(None, description="Subtotal before tax/shipping", ge=0)
+    tax_amount: Optional[Decimal] = Field(None, description="Tax amount", ge=0)
+    shipping_cost: Optional[Decimal] = Field(None, description="Shipping cost", ge=0)
+    discount_amount: Optional[Decimal] = Field(None, description="Discount amount", ge=0)
+    total: Optional[Decimal] = Field(None, description="Total order amount", ge=0)
 
     # Status tracking
     status: str = Field(..., description="Order status")
@@ -184,7 +184,7 @@ class Order(BaseModel):
     fulfillment_status: Optional[str] = Field(None, description="Fulfillment status")
 
     # Dates and metadata
-    order_date: date = Field(..., description="Order date")
+    order_date: datetime = Field(..., description="Order date (datetime from database)")
     customer_notes: Optional[str] = Field(None, description="Customer notes")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
@@ -279,15 +279,15 @@ class OrderCreate(BaseModel):
     source: str
     customer_id: Optional[int] = None
     channel_id: Optional[int] = None
-    subtotal: Decimal
-    tax_amount: Decimal = Decimal('0')
-    shipping_cost: Decimal = Decimal('0')
-    discount_amount: Decimal = Decimal('0')
-    total: Decimal
+    subtotal: Optional[Decimal] = None
+    tax_amount: Optional[Decimal] = None
+    shipping_cost: Optional[Decimal] = None
+    discount_amount: Optional[Decimal] = None
+    total: Optional[Decimal] = None
     status: str = "pending"
     payment_status: Optional[str] = "pending"
     fulfillment_status: Optional[str] = "unfulfilled"
-    order_date: date
+    order_date: datetime
     customer_notes: Optional[str] = None
 
 
