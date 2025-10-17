@@ -63,6 +63,46 @@ python scripts/data_loading/import_historical_data.py
 - Multi-source data migration
 - Initial system setup
 
+### `populate_product_variants.py` ✨ NEW
+Populate `product_variants` table from official catalog.
+
+```bash
+python scripts/data_loading/populate_product_variants.py [--dry-run]
+```
+
+**Use cases**:
+- Create packaging variant relationships (1un → 5un, 16un)
+- Link display packages to individual units
+- Populate consolidated inventory data
+
+**What it does**:
+- Groups products by base_code (BAKC, GRAL, etc.)
+- Identifies base products (1 unit) and their variants
+- Creates `product_variants` entries with quantity multipliers
+- Enables consolidated inventory views
+
+**Example**: Links BAKC_U04010 (1 unit) to BAKC_U20010 (5 units) and BAKC_U64010 (16 units)
+
+### `populate_channel_equivalents.py` ✨ NEW
+Populate `channel_equivalents` table with Shopify ↔ MercadoLibre mappings.
+
+```bash
+python scripts/data_loading/populate_channel_equivalents.py [--dry-run]
+```
+
+**Use cases**:
+- Create cross-channel product mappings
+- Link equivalent products between Shopify and MercadoLibre
+- Enable consolidated cross-channel analytics
+
+**What it does**:
+- Maps MercadoLibre SKUs to Shopify SKUs
+- Creates `channel_equivalents` entries with confidence scores
+- All mappings are marked as `verified=true` (manual mappings)
+- Enables cross-channel inventory and sales analysis
+
+**Example**: Maps ML-MLC2929973548 (MercadoLibre) to BAKC_U64010 (Shopify)
+
 ## 🔄 Sync Scripts
 
 **Purpose**: Regular synchronization operations (can be scheduled with cron)
