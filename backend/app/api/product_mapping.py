@@ -4,12 +4,14 @@ Manages product variants and cross-channel equivalents
 
 Author: TM3
 Date: 2025-10-14
+Updated: 2025-10-17 (Added catalog endpoint)
 """
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional
 from pydantic import BaseModel, Field
 
 from app.services.product_mapping_service import ProductMappingService
+from app.domain import catalog
 
 router = APIRouter()
 service = ProductMappingService()
@@ -267,5 +269,91 @@ async def get_channel_equivalents():
     try:
         results = service.get_channel_equivalents()
         return results
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/catalog")
+async def get_official_catalog(
+    category: Optional[str] = Query(None, description="Filter by category (BARRAS, GRANOLAS, etc.)"),
+    base_code: Optional[str] = Query(None, description="Filter by base code (BAKC, GRAL, etc.)")
+):
+    """
+    Get the official Grana product catalog
+
+    This is the single source of truth for all Grana products.
+    Includes official SKUs, categories, and packaging information.
+
+    **Use this instead of hardcoding products in the frontend!**
+    """
+    try:
+        # Get all products
+        if base_code:
+            products = catalog.get_products_by_base_code(base_code)
+        elif category:
+            try:
+                cat_enum = catalog.ProductCategory(category.upper())
+                products = catalog.get_products_by_category(cat_enum)
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid category. Must be one of: {[c.value for c in catalog.ProductCategory]}"
+                )
+        else:
+            products = catalog.get_all_products()
+
+        # Convert to dicts for JSON response
+        return {
+            "status": "success",
+            "total": len(products),
+            "data": [p.to_dict() for p in products]
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/catalog/stats")
+async def get_catalog_stats():
+    """
+    Get statistics about the official product catalog
+
+    Returns counts by category and total unique base codes
+    """
+    try:
+        stats = catalog.get_catalog_stats()
+        return {
+            "status": "success",
+            "data": stats
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/catalog/{sku}")
+async def get_catalog_product(sku: str):
+    """
+    Get a single product from the official catalog by SKU
+
+    Returns 404 if the SKU is not in the official catalog
+    """
+    try:
+        product = catalog.get_product_by_sku(sku)
+
+        if not product:
+            raise HTTPException(
+                status_code=404,
+                detail=f"SKU '{sku}' not found in official catalog"
+            )
+
+        return {
+            "status": "success",
+            "data": product.to_dict()
+        }
+
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
