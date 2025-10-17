@@ -1,10 +1,12 @@
 /**
  * Product utility functions for filtering, validating, and mapping products
- * Uses official catalog from CÓDIGOS GRANA.csv
+ * Refactored to work with API-fetched catalog data instead of hardcoded data
+ *
+ * Author: TM3
+ * Date: 2025-10-17
  */
 
-import { OFFICIAL_CATALOG, getOfficialCategory, getBaseCode, getUnitsPerDisplay, isOfficialProduct } from './product-catalog';
-import { resolveOfficialSKU } from './product-mapping-ml';
+import { OfficialProduct } from './catalog-api';
 
 export interface Product {
   id: number;
@@ -18,6 +20,10 @@ export interface Product {
   min_stock: number | null;
   is_active: boolean;
 }
+
+// ============================================
+// Product Filtering
+// ============================================
 
 /**
  * Filter out obsolete MercadoLibre products
@@ -37,6 +43,10 @@ export function filterValidProducts(products: Product[]): Product[] {
     return true;
   });
 }
+
+// ============================================
+// Name Normalization
+// ============================================
 
 /**
  * Get the base name of a product by removing packaging suffixes
@@ -125,6 +135,10 @@ export function getFormat(name: string): string {
   return '1un'; // default
 }
 
+// ============================================
+// Product Grouping
+// ============================================
+
 /**
  * Group products by their normalized base name (consolidating cross-channel)
  */
@@ -144,29 +158,75 @@ export function groupProductsByBase(products: Product[]): Map<string, Product[]>
   return groups;
 }
 
+// ============================================
+// Catalog Integration (with API-fetched data)
+// ============================================
+
 /**
- * Obtiene el SKU oficial del catálogo para un producto
- * Mapea automáticamente productos de ML y otros canales
+ * Resolve ML SKU to official Shopify SKU using channel equivalents data
+ *
+ * @param sku - ML SKU (e.g., 'ML-MLC1630349929')
+ * @param channelEquivalents - Fetched from /api/v1/product-mapping/channel-equivalents
+ * @returns Official Shopify SKU or original SKU if no mapping found
  */
-export function getProductOfficialSKU(product: Product): string {
-  return resolveOfficialSKU(product.sku, product.name);
+export function resolveOfficialSKU(
+  sku: string,
+  channelEquivalents: Array<{
+    mercadolibre_sku: string;
+    shopify_sku: string;
+  }>
+): string {
+  if (!sku.startsWith('ML-')) {
+    return sku; // Already a Shopify SKU
+  }
+
+  const mapping = channelEquivalents.find(eq => eq.mercadolibre_sku === sku);
+  return mapping ? mapping.shopify_sku : sku;
 }
 
 /**
- * Obtiene la categoría oficial del catálogo para un producto
+ * Get official SKU for a product (resolves ML SKUs)
+ *
+ * @param product - Product object
+ * @param channelEquivalents - Fetched from API
+ * @returns Official SKU
  */
-export function getProductOfficialCategory(product: Product): string {
-  const officialSKU = getProductOfficialSKU(product);
-  const officialCategory = getOfficialCategory(officialSKU);
+export function getProductOfficialSKU(
+  product: Product,
+  channelEquivalents: Array<{
+    mercadolibre_sku: string;
+    shopify_sku: string;
+  }>
+): string {
+  return resolveOfficialSKU(product.sku, channelEquivalents);
+}
 
-  // Si se encuentra en el catálogo, usar esa categoría
-  if (officialCategory) {
-    return officialCategory;
+/**
+ * Get official category for a product from catalog
+ *
+ * @param product - Product object
+ * @param catalog - Official catalog fetched from API
+ * @param channelEquivalents - Channel equivalents fetched from API
+ * @returns Official category or inferred category
+ */
+export function getProductOfficialCategory(
+  product: Product,
+  catalog: OfficialProduct[],
+  channelEquivalents: Array<{
+    mercadolibre_sku: string;
+    shopify_sku: string;
+  }>
+): string {
+  const officialSKU = getProductOfficialSKU(product, channelEquivalents);
+  const catalogProduct = catalog.find(p => p.sku === officialSKU);
+
+  // If found in catalog, use that category
+  if (catalogProduct) {
+    return catalogProduct.category;
   }
 
-  // Fallback: categoría del producto o inferir del nombre
+  // Fallback: use product's category
   if (product.category) {
-    // Normalizar categoría
     const cat = product.category.toLowerCase();
     if (cat.includes('barra')) return 'BARRAS';
     if (cat.includes('cracker') || cat.includes('galleta')) return 'CRACKERS';
@@ -174,7 +234,7 @@ export function getProductOfficialCategory(product: Product): string {
     if (cat.includes('keeper')) return 'KEEPERS';
   }
 
-  // Fallback final: inferir del nombre
+  // Final fallback: infer from name
   const name = product.name.toLowerCase();
   if (name.includes('barra')) return 'BARRAS';
   if (name.includes('cracker') || name.includes('galleta')) return 'CRACKERS';
@@ -185,17 +245,29 @@ export function getProductOfficialCategory(product: Product): string {
 }
 
 /**
- * Obtiene el código base del producto (BAKC, GRAL, etc.)
+ * Get base code from catalog (BAKC, GRAL, etc.)
+ *
+ * @param product - Product object
+ * @param catalog - Official catalog
+ * @param channelEquivalents - Channel equivalents
+ * @returns Base code or extracted from SKU
  */
-export function getProductBaseCode(product: Product): string {
-  const officialSKU = getProductOfficialSKU(product);
-  const baseCode = getBaseCode(officialSKU);
+export function getProductBaseCode(
+  product: Product,
+  catalog: OfficialProduct[],
+  channelEquivalents: Array<{
+    mercadolibre_sku: string;
+    shopify_sku: string;
+  }>
+): string {
+  const officialSKU = getProductOfficialSKU(product, channelEquivalents);
+  const catalogProduct = catalog.find(p => p.sku === officialSKU);
 
-  if (baseCode) {
-    return baseCode;
+  if (catalogProduct) {
+    return catalogProduct.base_code;
   }
 
-  // Fallback: extraer primeras 4 letras del SKU si es formato oficial
+  // Fallback: extract first 4 letters from SKU if it's in official format
   if (officialSKU.includes('_')) {
     return officialSKU.split('_')[0];
   }
@@ -204,30 +276,94 @@ export function getProductBaseCode(product: Product): string {
 }
 
 /**
- * Obtiene las unidades por display del producto
+ * Get units per display from catalog
+ *
+ * @param product - Product object
+ * @param catalog - Official catalog
+ * @param channelEquivalents - Channel equivalents
+ * @returns Units per display
  */
-export function getProductUnitsPerDisplay(product: Product): number {
-  const officialSKU = getProductOfficialSKU(product);
-  return getUnitsPerDisplay(officialSKU);
+export function getProductUnitsPerDisplay(
+  product: Product,
+  catalog: OfficialProduct[],
+  channelEquivalents: Array<{
+    mercadolibre_sku: string;
+    shopify_sku: string;
+  }>
+): number {
+  const officialSKU = getProductOfficialSKU(product, channelEquivalents);
+  const catalogProduct = catalog.find(p => p.sku === officialSKU);
+
+  return catalogProduct ? catalogProduct.units_per_display : 1;
 }
 
 /**
- * Verifica si un producto pertenece al catálogo oficial
+ * Check if product is in official catalog
+ *
+ * @param product - Product object
+ * @param catalog - Official catalog
+ * @param channelEquivalents - Channel equivalents
+ * @returns true if product is official
  */
-export function isProductOfficial(product: Product): boolean {
-  const officialSKU = getProductOfficialSKU(product);
-  return isOfficialProduct(officialSKU);
+export function isProductOfficial(
+  product: Product,
+  catalog: OfficialProduct[],
+  channelEquivalents: Array<{
+    mercadolibre_sku: string;
+    shopify_sku: string;
+  }>
+): boolean {
+  const officialSKU = getProductOfficialSKU(product, channelEquivalents);
+  return catalog.some(p => p.sku === officialSKU);
 }
 
 /**
- * Agrupa productos por su código base (usando catálogo oficial)
- * Esto consolida productos de diferentes canales que son el mismo producto base
+ * Get product base name from catalog
+ *
+ * @param product - Product object
+ * @param catalog - Official catalog
+ * @param channelEquivalents - Channel equivalents
+ * @returns Base product name or normalized name
  */
-export function groupProductsByBaseCode(products: Product[]): Map<string, Product[]> {
+export function getProductBaseName(
+  product: Product,
+  catalog: OfficialProduct[],
+  channelEquivalents: Array<{
+    mercadolibre_sku: string;
+    shopify_sku: string;
+  }>
+): string {
+  const officialSKU = getProductOfficialSKU(product, channelEquivalents);
+  const catalogProduct = catalog.find(p => p.sku === officialSKU);
+
+  if (catalogProduct) {
+    return catalogProduct.product_name;
+  }
+
+  // Fallback: normalize product name
+  return normalizeProductName(product.name);
+}
+
+/**
+ * Group products by base code (using catalog)
+ *
+ * @param products - Array of products
+ * @param catalog - Official catalog
+ * @param channelEquivalents - Channel equivalents
+ * @returns Map of base code to products
+ */
+export function groupProductsByBaseCode(
+  products: Product[],
+  catalog: OfficialProduct[],
+  channelEquivalents: Array<{
+    mercadolibre_sku: string;
+    shopify_sku: string;
+  }>
+): Map<string, Product[]> {
   const groups = new Map<string, Product[]>();
 
   products.forEach(product => {
-    const baseCode = getProductBaseCode(product);
+    const baseCode = getProductBaseCode(product, catalog, channelEquivalents);
 
     if (!groups.has(baseCode)) {
       groups.set(baseCode, []);
@@ -237,18 +373,4 @@ export function groupProductsByBaseCode(products: Product[]): Map<string, Produc
   });
 
   return groups;
-}
-
-/**
- * Obtiene el nombre del producto base desde el catálogo oficial
- */
-export function getProductBaseName(product: Product): string {
-  const officialSKU = getProductOfficialSKU(product);
-
-  if (officialSKU in OFFICIAL_CATALOG) {
-    return OFFICIAL_CATALOG[officialSKU].productName;
-  }
-
-  // Fallback: normalizar nombre del producto
-  return normalizeProductName(product.name);
 }

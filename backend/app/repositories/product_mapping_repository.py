@@ -373,8 +373,7 @@ class ProductMappingRepository:
                     ce.equivalence_confidence,
                     ce.verified,
                     ce.notes,
-                    ce.created_at,
-                    ce.verified_at
+                    ce.created_at
                 FROM channel_equivalents ce
                 JOIN products sp ON ce.shopify_product_id = sp.id
                 JOIN products mp ON ce.mercadolibre_product_id = mp.id
