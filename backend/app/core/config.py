@@ -2,7 +2,7 @@
 Configuración centralizada de la aplicación
 """
 from pydantic_settings import BaseSettings
-from typing import List
+from typing import List, Optional
 
 
 class Settings(BaseSettings):
@@ -22,12 +22,26 @@ class Settings(BaseSettings):
     SUPABASE_ANON_KEY: str
     SUPABASE_SERVICE_ROLE_KEY: str
 
-    # CORS
-    ALLOWED_ORIGINS: List[str] = [
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "https://yourdomain.com",
-    ]
+    # CORS - Can be string (comma-separated) or JSON array
+    # Example: "http://localhost:3000,https://yourdomain.com" or '["http://localhost:3000"]'
+    ALLOWED_ORIGINS: Optional[str] = "http://localhost:3000,http://localhost:3001"
+
+    def get_allowed_origins(self) -> List[str]:
+        """Parse ALLOWED_ORIGINS string into list"""
+        if not self.ALLOWED_ORIGINS:
+            return ["http://localhost:3000"]
+
+        # Try JSON parse first (for array format)
+        import json
+        try:
+            origins = json.loads(self.ALLOWED_ORIGINS)
+            if isinstance(origins, list):
+                return origins
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        # Fall back to comma-separated string
+        return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",")]
 
     # External APIs (opcional por ahora)
     SHOPIFY_PASSWORD: str = ""
