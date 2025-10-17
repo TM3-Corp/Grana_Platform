@@ -8,5 +8,6 @@ Author: TM3
 Date: 2025-10-17
 """
 from app.repositories.product_repository import ProductRepository
+from app.repositories.order_repository import OrderRepository
 
-__all__ = ['ProductRepository']
+__all__ = ['ProductRepository', 'OrderRepository']
