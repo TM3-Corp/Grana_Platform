@@ -68,3 +68,18 @@ analisis_canales/progress.json
 backup/
 *.backup
 *.bak
+
+# ============================================================================
+# CLAUDE CODE SESSIONS - CRITICAL: Never commit session artifacts
+# ============================================================================
+# This directory contains work from Claude Code sessions that should NEVER
+# reach production: debugging code, exploration, temporary tests, session docs.
+# Only proper unit tests and production code should be committed.
+.claude_sessions/
+_session_work/
+_claude_work/
+session_*.py
+session_*.ts
+session_*.md
+debug_temp_*
+exploration_*
