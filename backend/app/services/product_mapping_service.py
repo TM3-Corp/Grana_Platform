@@ -4,11 +4,12 @@ Detects and manages product variants and cross-channel equivalents
 
 Author: TM3
 Date: 2025-10-14
+Updated: 2025-10-17 (refactor: unified database imports)
 """
 import re
 from typing import List, Dict, Optional, Tuple
 from difflib import SequenceMatcher
-from app.database import get_db_connection
+from app.core.database import get_db_connection
 
 
 class ProductMappingService:
