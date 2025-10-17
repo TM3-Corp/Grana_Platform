@@ -80,8 +80,8 @@ class Product(BaseModel):
     cost_price: Optional[Decimal] = Field(None, description="Cost/purchase price", ge=0)
     sale_price: Optional[Decimal] = Field(None, description="Sale price", ge=0)
 
-    # Inventory
-    current_stock: int = Field(0, description="Current stock level", ge=0)
+    # Inventory (allow negative for back-orders/corrections)
+    current_stock: int = Field(0, description="Current stock level (can be negative for back-orders)")
     min_stock: int = Field(0, description="Minimum stock threshold", ge=0)
 
     # Metadata
