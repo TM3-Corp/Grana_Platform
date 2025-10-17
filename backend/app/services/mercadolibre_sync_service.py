@@ -2,18 +2,19 @@
 MercadoLibre Sync Service
 Syncs products and orders from MercadoLibre to database
 
+Refactored to use repository pattern for data access.
+
 Author: TM3
 Date: 2025-10-04
+Updated: 2025-10-17 (Repository pattern)
 """
-import os
 from typing import Dict, List, Optional
 from datetime import datetime
 import logging
-import psycopg2
-from psycopg2.extras import RealDictCursor
 
 from app.connectors.mercadolibre_connector import MercadoLibreConnector
 from app.services.order_processing_service import OrderProcessingService
+from app.repositories.mercadolibre_repository import MercadoLibreRepository
 
 logger = logging.getLogger(__name__)
 
@@ -27,16 +28,15 @@ class MercadoLibreSyncService:
     - Order sync from ML sales
     - Customer data from ML buyers
     - Data transformation to our schema
+
+    Uses MercadoLibreRepository for data access.
     """
 
     def __init__(self, db_connection_string: str):
         self.db_connection_string = db_connection_string
         self.connector = MercadoLibreConnector()
         self.order_processor = OrderProcessingService(db_connection_string)
-
-    def get_db_connection(self):
-        """Get database connection"""
-        return psycopg2.connect(self.db_connection_string)
+        self.ml_repo = MercadoLibreRepository()
 
     async def sync_products(self) -> Dict:
         """
@@ -60,65 +60,36 @@ class MercadoLibreSyncService:
                     'message': 'No active listings found'
                 }
 
-            conn = self.get_db_connection()
-            cursor = conn.cursor(cursor_factory=RealDictCursor)
-
             synced = 0
             failed = 0
 
             for listing in listings:
                 try:
                     # Check if product already exists
-                    cursor.execute("""
-                        SELECT id FROM products
-                        WHERE external_id = %s AND source = 'mercadolibre'
-                    """, (listing['id'],))
-
-                    existing = cursor.fetchone()
+                    existing = self.ml_repo.find_product_by_external_id(listing['id'])
 
                     if existing:
                         # Update existing product
-                        cursor.execute("""
-                            UPDATE products SET
-                                name = %s,
-                                sale_price = %s,
-                                current_stock = %s,
-                                is_active = %s,
-                                updated_at = NOW()
-                            WHERE external_id = %s AND source = 'mercadolibre'
-                        """, (
-                            listing['title'],
-                            listing.get('price', 0),
-                            listing.get('available_quantity', 0),
-                            listing.get('status') == 'active',
-                            listing['id']
-                        ))
+                        self.ml_repo.update_product(
+                            external_id=listing['id'],
+                            name=listing['title'],
+                            sale_price=listing.get('price', 0),
+                            current_stock=listing.get('available_quantity', 0),
+                            is_active=listing.get('status') == 'active'
+                        )
                     else:
                         # Create new product
                         # Generate SKU from ML item ID if no custom SKU
                         sku = listing.get('sku') or f"ML-{listing['id']}"
 
-                        cursor.execute("""
-                            INSERT INTO products (
-                                external_id, source, sku, name,
-                                sale_price, current_stock,
-                                is_active, created_at, updated_at
-                            ) VALUES (
-                                %s, 'mercadolibre', %s, %s, %s, %s, %s, NOW(), NOW()
-                            )
-                            ON CONFLICT (sku) DO UPDATE SET
-                                name = EXCLUDED.name,
-                                sale_price = EXCLUDED.sale_price,
-                                current_stock = EXCLUDED.current_stock,
-                                updated_at = NOW()
-                        """, (
-                            listing['id'],
-                            sku,
-                            listing['title'],
-                            listing.get('price', 0),
-                            listing.get('available_quantity', 0),
-                            listing.get('status') == 'active'
-                        ))
+                        self.ml_repo.upsert_product(
+                            external_id=listing['id'],
+                            sku=sku,
+                            name=listing['title'],
+                            sale_price=listing.get('price', 0),
+                            current_stock=listing.get('available_quantity', 0),
+                            is_active=listing.get('status') == 'active'
+                        )
 
                     synced += 1
 
@@ -126,10 +97,6 @@ class MercadoLibreSyncService:
                     logger.error(f"Failed to sync product {listing.get('id')}: {e}")
                     failed += 1
                     continue
-
-            conn.commit()
-            cursor.close()
-            conn.close()
 
             logger.info(f"Product sync complete: {synced} synced, {failed} failed")
 
@@ -344,43 +311,14 @@ class MercadoLibreSyncService:
         Returns:
             Dict with sync stats
         """
-        conn = self.get_db_connection()
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-
         try:
-            # Get product stats
-            cursor.execute("""
-                SELECT COUNT(*) as total
-                FROM products
-                WHERE source = 'mercadolibre'
-            """)
-            products = cursor.fetchone()
+            # Use repository to get stats
+            return self.ml_repo.get_sync_stats()
 
-            # Get order stats
-            cursor.execute("""
-                SELECT COUNT(*) as total
-                FROM orders
-                WHERE source = 'mercadolibre'
-            """)
-            orders = cursor.fetchone()
-
-            # Get recent sync logs
-            cursor.execute("""
-                SELECT sync_type, status, records_processed, records_failed,
-                       completed_at
-                FROM sync_logs
-                WHERE source = 'mercadolibre'
-                ORDER BY completed_at DESC
-                LIMIT 10
-            """)
-            recent_syncs = cursor.fetchall()
-
+        except Exception as e:
+            logger.error(f"Failed to get sync stats: {e}")
             return {
-                'products_synced': products['total'] if products else 0,
-                'orders_synced': orders['total'] if orders else 0,
-                'recent_syncs': [dict(row) for row in recent_syncs] if recent_syncs else []
+                'products_synced': 0,
+                'orders_synced': 0,
+                'recent_syncs': []
             }
-
-        finally:
-            cursor.close()
-            conn.close()
