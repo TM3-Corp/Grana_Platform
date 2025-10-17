@@ -2,11 +2,18 @@
 Configuración centralizada de la aplicación
 """
 from pydantic_settings import BaseSettings
+from pydantic import ConfigDict
 from typing import List, Optional
 
 
 class Settings(BaseSettings):
     """Configuración de la aplicación"""
+
+    model_config = ConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        extra="ignore"  # Allow extra environment variables without error
+    )
 
     # API Settings
     API_TITLE: str = "Grana API"
@@ -51,10 +58,6 @@ class Settings(BaseSettings):
     WALMART_CLIENT_ID: str = ""
     WALMART_CLIENT_SECRET: str = ""
     CENCOSUD_ACCESS_TOKEN: str = ""
-
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
 
 
 settings = Settings()
