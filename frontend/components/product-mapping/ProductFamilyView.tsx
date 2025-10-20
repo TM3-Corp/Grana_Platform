@@ -98,23 +98,21 @@ export default function ProductFamilyView() {
       const families: ProductFamily[] = [];
 
       baseCodeGroups.forEach((products, baseCode) => {
-        // Only include families with multiple products OR products with multiple channels
+        // Include ALL product families (including single products)
         const uniqueChannels = new Set(products.map(p => p.source));
 
-        if (products.length > 1 || uniqueChannels.size > 1) {
-          // Get category from first product (they should all be the same family)
-          const category = getProductOfficialCategory(products[0]);
+        // Get category from first product (they should all be the same family)
+        const category = getProductOfficialCategory(products[0]);
 
-          // Get base name from catalog
-          const baseName = baseCode;
+        // Get base name from catalog
+        const baseName = baseCode;
 
-          families.push({
-            base_code: baseCode,
-            base_name: baseName,
-            category: category,
-            products: products,
-          });
-        }
+        families.push({
+          base_code: baseCode,
+          base_name: baseName,
+          category: category,
+          products: products,
+        });
       });
 
       // Group families by official category (GRANOLAS, BARRAS, CRACKERS, KEEPERS, KRUMS)
