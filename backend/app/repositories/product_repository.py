@@ -19,6 +19,39 @@ class ProductRepository:
     Returns Product domain models, not raw dictionaries.
     """
 
+    @staticmethod
+    def _map_row_to_product(row: dict) -> Product:
+        """
+        Helper method to map database row to Product domain model.
+
+        Database has units_per_box, but domain model expects detailed conversion hierarchy.
+        We map units_per_box to units_per_display and set other fields to None.
+        """
+        return Product(
+            id=row['id'],
+            external_id=row['external_id'],
+            source=row['source'],
+            sku=row['sku'],
+            name=row['name'],
+            description=row['description'],
+            category=row['category'],
+            brand=row['brand'],
+            unit=row['unit'],
+            units_per_display=row.get('units_per_box'),
+            displays_per_box=None,
+            boxes_per_pallet=None,
+            display_name=None,
+            box_name=None,
+            pallet_name=None,
+            cost_price=row['cost_price'],
+            sale_price=row['sale_price'],
+            current_stock=row['current_stock'],
+            min_stock=row['min_stock'],
+            is_active=row['is_active'],
+            created_at=row['created_at'],
+            updated_at=row.get('updated_at')
+        )
+
     def find_by_id(self, product_id: int) -> Optional[Product]:
         """
         Find product by ID
@@ -36,9 +69,7 @@ class ProductRepository:
             cursor.execute("""
                 SELECT
                     id, external_id, source, sku, name, description,
-                    category, brand, unit,
-                    units_per_display, displays_per_box, boxes_per_pallet,
-                    display_name, box_name, pallet_name,
+                    category, brand, unit, units_per_box,
                     cost_price, sale_price, current_stock, min_stock,
                     is_active, created_at, updated_at
                 FROM products
@@ -46,7 +77,10 @@ class ProductRepository:
             """, (product_id,))
 
             row = cursor.fetchone()
-            return Product(**row) if row else None
+            if not row:
+                return None
+
+            return self._map_row_to_product(row)
 
         finally:
             cursor.close()
@@ -69,9 +103,7 @@ class ProductRepository:
             cursor.execute("""
                 SELECT
                     id, external_id, source, sku, name, description,
-                    category, brand, unit,
-                    units_per_display, displays_per_box, boxes_per_pallet,
-                    display_name, box_name, pallet_name,
+                    category, brand, unit, units_per_box,
                     cost_price, sale_price, current_stock, min_stock,
                     is_active, created_at, updated_at
                 FROM products
@@ -79,7 +111,10 @@ class ProductRepository:
             """, (sku,))
 
             row = cursor.fetchone()
-            return Product(**row) if row else None
+            if not row:
+                return None
+
+            return self._map_row_to_product(row)
 
         finally:
             cursor.close()
@@ -147,9 +182,7 @@ class ProductRepository:
             cursor.execute(f"""
                 SELECT
                     id, external_id, source, sku, name, description,
-                    category, brand, unit,
-                    units_per_display, displays_per_box, boxes_per_pallet,
-                    display_name, box_name, pallet_name,
+                    category, brand, unit, units_per_box,
                     cost_price, sale_price, current_stock, min_stock,
                     is_active, created_at, updated_at
                 FROM products
@@ -159,7 +192,7 @@ class ProductRepository:
             """, params + [limit, offset])
 
             rows = cursor.fetchall()
-            products = [Product(**row) for row in rows]
+            products = [self._map_row_to_product(row) for row in rows]
 
             return products, total
 
@@ -184,9 +217,7 @@ class ProductRepository:
             cursor.execute("""
                 SELECT
                     id, external_id, source, sku, name, description,
-                    category, brand, unit,
-                    units_per_display, displays_per_box, boxes_per_pallet,
-                    display_name, box_name, pallet_name,
+                    category, brand, unit, units_per_box,
                     cost_price, sale_price, current_stock, min_stock,
                     is_active, created_at, updated_at
                 FROM products
@@ -195,7 +226,7 @@ class ProductRepository:
             """, (source,))
 
             rows = cursor.fetchall()
-            return [Product(**row) for row in rows]
+            return [self._map_row_to_product(row) for row in rows]
 
         finally:
             cursor.close()
@@ -219,9 +250,7 @@ class ProductRepository:
                 cursor.execute("""
                     SELECT
                         id, external_id, source, sku, name, description,
-                        category, brand, unit,
-                        units_per_display, displays_per_box, boxes_per_pallet,
-                        display_name, box_name, pallet_name,
+                        category, brand, unit, units_per_box,
                         cost_price, sale_price, current_stock, min_stock,
                         is_active, created_at, updated_at
                     FROM products
@@ -232,9 +261,7 @@ class ProductRepository:
                 cursor.execute("""
                     SELECT
                         id, external_id, source, sku, name, description,
-                        category, brand, unit,
-                        units_per_display, displays_per_box, boxes_per_pallet,
-                        display_name, box_name, pallet_name,
+                        category, brand, unit, units_per_box,
                         cost_price, sale_price, current_stock, min_stock,
                         is_active, created_at, updated_at
                     FROM products
@@ -243,7 +270,7 @@ class ProductRepository:
                 """)
 
             rows = cursor.fetchall()
-            return [Product(**row) for row in rows]
+            return [self._map_row_to_product(row) for row in rows]
 
         finally:
             cursor.close()
@@ -350,12 +377,11 @@ class ProductRepository:
             stock_levels = cursor.fetchone()
 
             # Products with conversion data
+            # Database only has units_per_box field
             cursor.execute("""
                 SELECT COUNT(*) as count
                 FROM products
-                WHERE units_per_display IS NOT NULL
-                    AND displays_per_box IS NOT NULL
-                    AND boxes_per_pallet IS NOT NULL
+                WHERE units_per_box IS NOT NULL
             """)
             with_conversions = cursor.fetchone()['count']
 
