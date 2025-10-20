@@ -366,10 +366,10 @@ class ProductMappingRepository:
                     sp.current_stock as shopify_stock,
                     sp.sale_price as shopify_price,
                     ce.mercadolibre_product_id,
-                    mp.sku as mercadolibre_sku,
-                    mp.name as mercadolibre_name,
-                    mp.current_stock as mercadolibre_stock,
-                    mp.sale_price as mercadolibre_price,
+                    mp.sku as ml_sku,
+                    mp.name as ml_name,
+                    mp.current_stock as ml_stock,
+                    mp.sale_price as ml_price,
                     ce.equivalence_confidence,
                     ce.verified,
                     ce.notes,
@@ -413,8 +413,8 @@ class ProductMappingRepository:
                         sp.sku as shopify_sku,
                         sp.name as shopify_name,
                         ce.mercadolibre_product_id,
-                        mp.sku as mercadolibre_sku,
-                        mp.name as mercadolibre_name,
+                        mp.sku as ml_sku,
+                        mp.name as ml_name,
                         ce.equivalence_confidence,
                         ce.verified
                     FROM channel_equivalents ce
@@ -430,8 +430,8 @@ class ProductMappingRepository:
                         sp.sku as shopify_sku,
                         sp.name as shopify_name,
                         ce.mercadolibre_product_id,
-                        mp.sku as mercadolibre_sku,
-                        mp.name as mercadolibre_name,
+                        mp.sku as ml_sku,
+                        mp.name as ml_name,
                         ce.equivalence_confidence,
                         ce.verified
                     FROM channel_equivalents ce
