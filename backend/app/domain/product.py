@@ -56,7 +56,7 @@ class Product(BaseModel):
     # Primary identification
     id: int = Field(..., description="Internal product ID")
     external_id: Optional[str] = Field(None, description="External system ID")
-    source: str = Field(..., description="Source platform (shopify, mercadolibre, etc.)")
+    source: Optional[str] = Field(None, description="Source platform (shopify, mercadolibre, etc.)")
     sku: str = Field(..., description="Stock Keeping Unit")
     name: str = Field(..., description="Product name")
 
@@ -160,7 +160,7 @@ class Product(BaseModel):
 class ProductCreate(BaseModel):
     """Schema for creating a new product"""
     external_id: Optional[str] = None
-    source: str
+    source: Optional[str] = None
     sku: str
     name: str
     description: Optional[str] = None
