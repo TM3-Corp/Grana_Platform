@@ -16,6 +16,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Grana Platform - Sistema de Gestión",
   description: "Plataforma de integración y análisis de datos para Grana SpA",
+  icons: {
+    icon: '/images/granooo.jpg',
+    apple: '/images/granooo.jpg',
+  },
 };
 
 export default function RootLayout({
