@@ -25,17 +25,47 @@ interface Order {
   created_at: string;
 }
 
+interface SKUSales {
+  sku: string;
+  product_name: string;
+  package_type: string;
+  units_per_display: number;
+  totalRevenue: number;
+  totalUnits: number;
+  byChannel: { channel: string; units: number; revenue: number }[];
+  // Master box metrics (calculated from units / units_per_display)
+  totalMasterBoxes: number;
+}
+
+interface SubfamilySales {
+  base_code: string;
+  product_name: string;
+  totalRevenue: number;
+  totalUnits: number;
+  totalMasterBoxes: number;
+  skus: SKUSales[];
+}
+
 interface FamilySales {
   family: string;
   totalRevenue: number;
   totalUnits: number;
-  products: {
-    name: string;
-    revenue: number;
-    units: number;
-    byFormat: { format: string; units: number; revenue: number }[];
-    byChannel: { channel: string; units: number; revenue: number }[];
-  }[];
+  totalMasterBoxes: number;
+  subfamilies: SubfamilySales[];
+}
+
+type AnalysisView = 'family' | 'channel';
+
+interface ChannelSales {
+  channel: string;
+  totalRevenue: number;
+  totalUnits: number;
+  totalOrders: number;
+  avgTicket: number;
+  avgUnitsPerOrder: number;
+  byCategory: { category: string; revenue: number; units: number; orders: number }[];
+  byPackageType: { packageType: string; revenue: number; units: number }[];
+  topProducts: { sku: string; name: string; revenue: number; units: number }[];
 }
 
 export default function ProductSalesAnalytics() {
@@ -43,19 +73,48 @@ export default function ProductSalesAnalytics() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [familySales, setFamilySales] = useState<FamilySales[]>([]);
+  const [channelSales, setChannelSales] = useState<ChannelSales[]>([]);
   const [selectedFamily, setSelectedFamily] = useState<string | null>(null);
+  const [selectedSubfamily, setSelectedSubfamily] = useState<string | null>(null);
+  const [selectedSKU, setSelectedSKU] = useState<string | null>(null);
+  const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
   const [daysFilter, setDaysFilter] = useState<number | null>(null); // null = no data loaded yet
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  const [analysisView, setAnalysisView] = useState<AnalysisView>('family');
+
+  // Catalog data for SKU metadata
+  const [catalog, setCatalog] = useState<Map<string, any>>(new Map());
 
   // Simple cache to avoid re-fetching same data
   const [ordersCache, setOrdersCache] = useState<Map<number, Order[]>>(new Map());
 
+  // Load catalog on mount
+  useEffect(() => {
+    const loadCatalog = async () => {
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://granaplatform-production.up.railway.app';
+        const response = await fetch(`${apiUrl}/api/v1/product-mapping/catalog`);
+        if (response.ok) {
+          const data = await response.json();
+          const catalogMap = new Map();
+          data.data.forEach((product: any) => {
+            catalogMap.set(product.sku, product);
+          });
+          setCatalog(catalogMap);
+        }
+      } catch (err) {
+        console.error('Error loading catalog:', err);
+      }
+    };
+    loadCatalog();
+  }, []);
+
   // Load data when user selects a period
   useEffect(() => {
-    if (daysFilter !== null && !productsLoading && products.length > 0) {
+    if (daysFilter !== null && !productsLoading && products.length > 0 && catalog.size > 0) {
       fetchAndProcessSales();
     }
-  }, [daysFilter]);
+  }, [daysFilter, catalog]);
 
   const getFamilyIcon = (family: string): string => {
     const icons: Record<string, string> = {
@@ -90,13 +149,15 @@ export default function ProductSalesAnalytics() {
         const startDateStr = startDate.toISOString().split('T')[0]; // YYYY-MM-DD
 
         // Dynamic limit based on period to ensure we get all data
-        let limit = 100; // Default for 7 days
+        // IMPORTANT: Higher limits needed to include ALL channels (LOKAL, Shopify, ML, Relbase)
+        // Orders are sorted by date DESC, so we need enough to reach older orders
+        let limit = 500; // Default for 7 days (increased to catch all channels)
         if (daysFilter! >= 365) {
-          limit = 2000; // Full year needs more data
+          limit = 8000; // Full year - need high limit to include all 7,233 orders
         } else if (daysFilter! >= 90) {
-          limit = 1100; // 90 days needs ~1000+ orders
+          limit = 3000; // 90 days - need to reach LOKAL (Mar-Oct) and older Shopify/ML orders
         } else if (daysFilter! >= 30) {
-          limit = 300; // 30 days needs ~250 orders
+          limit = 1500; // 30 days - ensure all channels included despite Relbase dominance
         }
 
         console.log(`Fetching orders from ${startDateStr} (${daysFilter} days) with limit=${limit}`);
@@ -117,14 +178,12 @@ export default function ProductSalesAnalytics() {
         setOrdersCache(prev => new Map(prev).set(daysFilter!, orders));
       }
 
-      // Aggregate sales by base product code (from official catalog)
-      const salesByBase = new Map<string, {
-        baseCode: string;
-        baseName: string;
-        family: string;
+      // Aggregate sales by SKU (hierarchical: Category → Subfamily → SKU → Channel)
+      const salesBySKU = new Map<string, {
+        sku: string;
+        catalogData: any;
         totalUnits: number;
         totalRevenue: number;
-        byFormat: Map<string, { units: number; revenue: number }>;
         byChannel: Map<string, { units: number; revenue: number }>;
       }>();
 
@@ -134,74 +193,83 @@ export default function ProductSalesAnalytics() {
             const product = skuMap.get(item.product_sku);
             if (!product) return; // Skip if product not found
 
-            const baseCode = getProductBaseCode(product);
-            const baseName = getProductBaseName(product);
-            const format = getFormat(product.name);
+            const sku = product.sku;
             const channel = product.source || 'unknown';
-            const family = getProductOfficialCategory(product);
 
-            if (!salesByBase.has(baseCode)) {
-              salesByBase.set(baseCode, {
-                baseCode: baseCode,
-                baseName: baseName,
-                family: family,
+            if (!salesBySKU.has(sku)) {
+              salesBySKU.set(sku, {
+                sku: sku,
+                catalogData: catalog.get(sku),
                 totalUnits: 0,
                 totalRevenue: 0,
-                byFormat: new Map(),
                 byChannel: new Map(),
               });
             }
 
-            const baseData = salesByBase.get(baseCode)!;
-            baseData.totalUnits += item.quantity;
-            baseData.totalRevenue += item.quantity * item.unit_price;
-
-            // By format
-            if (!baseData.byFormat.has(format)) {
-              baseData.byFormat.set(format, { units: 0, revenue: 0 });
-            }
-            const formatData = baseData.byFormat.get(format)!;
-            formatData.units += item.quantity;
-            formatData.revenue += item.quantity * item.unit_price;
+            const skuData = salesBySKU.get(sku)!;
+            skuData.totalUnits += item.quantity;
+            skuData.totalRevenue += item.quantity * item.unit_price;
 
             // By channel
-            if (!baseData.byChannel.has(channel)) {
-              baseData.byChannel.set(channel, { units: 0, revenue: 0 });
+            if (!skuData.byChannel.has(channel)) {
+              skuData.byChannel.set(channel, { units: 0, revenue: 0 });
             }
-            const channelData = baseData.byChannel.get(channel)!;
+            const channelData = skuData.byChannel.get(channel)!;
             channelData.units += item.quantity;
             channelData.revenue += item.quantity * item.unit_price;
           });
         }
       });
 
-      // Group by family
-      const familyMap = new Map<string, FamilySales>();
+      // Group by base_code (subfamily)
+      const subfamilyMap = new Map<string, {
+        base_code: string;
+        category: string;
+        product_name: string;
+        totalRevenue: number;
+        totalUnits: number;
+        totalMasterBoxes: number;
+        skus: Map<string, any>;
+      }>();
 
-      salesByBase.forEach((baseData) => {
-        if (!familyMap.has(baseData.family)) {
-          familyMap.set(baseData.family, {
-            family: baseData.family,
+      salesBySKU.forEach((skuData) => {
+        const catalogProduct = skuData.catalogData;
+        if (!catalogProduct) return; // Skip if not in official catalog
+
+        const base_code = catalogProduct.base_code;
+        const category = catalogProduct.category;
+
+        if (!subfamilyMap.has(base_code)) {
+          subfamilyMap.set(base_code, {
+            base_code: base_code,
+            category: category,
+            product_name: catalogProduct.product_name.split(' ').slice(0, -1).join(' ') || catalogProduct.product_name, // Remove last word (format)
             totalRevenue: 0,
             totalUnits: 0,
-            products: [],
+            totalMasterBoxes: 0,
+            skus: new Map(),
           });
         }
 
-        const familyData = familyMap.get(baseData.family)!;
-        familyData.totalRevenue += baseData.totalRevenue;
-        familyData.totalUnits += baseData.totalUnits;
+        const subfamilyData = subfamilyMap.get(base_code)!;
+        subfamilyData.totalRevenue += skuData.totalRevenue;
+        subfamilyData.totalUnits += skuData.totalUnits;
 
-        familyData.products.push({
-          name: baseData.baseName,
-          revenue: baseData.totalRevenue,
-          units: baseData.totalUnits,
-          byFormat: Array.from(baseData.byFormat.entries()).map(([format, data]) => ({
-            format,
-            units: data.units,
-            revenue: data.revenue,
-          })),
-          byChannel: Array.from(baseData.byChannel.entries()).map(([channel, data]) => ({
+        // Calculate master boxes for this SKU
+        const units_per_display = catalogProduct.units_per_display || 1;
+        const masterBoxes = skuData.totalUnits / units_per_display;
+        subfamilyData.totalMasterBoxes += masterBoxes;
+
+        // Add SKU to subfamily
+        subfamilyData.skus.set(skuData.sku, {
+          sku: skuData.sku,
+          product_name: catalogProduct.product_name,
+          package_type: catalogProduct.package_type,
+          units_per_display: units_per_display,
+          totalRevenue: skuData.totalRevenue,
+          totalUnits: skuData.totalUnits,
+          totalMasterBoxes: masterBoxes,
+          byChannel: Array.from(skuData.byChannel.entries()).map(([channel, data]) => ({
             channel,
             units: data.units,
             revenue: data.revenue,
@@ -209,15 +277,179 @@ export default function ProductSalesAnalytics() {
         });
       });
 
-      // Sort families and products
+      // Group by category (family)
+      const familyMap = new Map<string, FamilySales>();
+
+      subfamilyMap.forEach((subfamilyData) => {
+        const category = subfamilyData.category;
+
+        if (!familyMap.has(category)) {
+          familyMap.set(category, {
+            family: category,
+            totalRevenue: 0,
+            totalUnits: 0,
+            totalMasterBoxes: 0,
+            subfamilies: [],
+          });
+        }
+
+        const familyData = familyMap.get(category)!;
+        familyData.totalRevenue += subfamilyData.totalRevenue;
+        familyData.totalUnits += subfamilyData.totalUnits;
+        familyData.totalMasterBoxes += subfamilyData.totalMasterBoxes;
+
+        familyData.subfamilies.push({
+          base_code: subfamilyData.base_code,
+          product_name: subfamilyData.product_name,
+          totalRevenue: subfamilyData.totalRevenue,
+          totalUnits: subfamilyData.totalUnits,
+          totalMasterBoxes: subfamilyData.totalMasterBoxes,
+          skus: Array.from(subfamilyData.skus.values())
+            .sort((a, b) => b.totalRevenue - a.totalRevenue),
+        });
+      });
+
+      // Sort families and subfamilies
       const familiesArray = Array.from(familyMap.values())
         .map(family => ({
           ...family,
-          products: family.products.sort((a, b) => b.revenue - a.revenue),
+          subfamilies: family.subfamilies.sort((a, b) => b.totalRevenue - a.totalRevenue),
         }))
         .sort((a, b) => b.totalRevenue - a.totalRevenue);
 
       setFamilySales(familiesArray);
+
+      // ============================================================================
+      // CHANNEL ANALYSIS AGGREGATION
+      // ============================================================================
+
+      const channelMap = new Map<string, {
+        channel: string;
+        totalRevenue: number;
+        totalUnits: number;
+        orderIds: Set<string>;
+        byCategory: Map<string, { revenue: number; units: number; orderIds: Set<string> }>;
+        byPackageType: Map<string, { revenue: number; units: number }>;
+        productSales: Map<string, { sku: string; name: string; revenue: number; units: number }>;
+      }>();
+
+      // Aggregate by channel from orders
+      orders.forEach(order => {
+        if (order.items) {
+          order.items.forEach(item => {
+            const product = skuMap.get(item.product_sku);
+
+            // Determine channel based on product SKU pattern:
+            // 1. ML- prefix = MercadoLibre sale
+            // 2. Official SKU (BAKC_, GRAL_, etc.) from products table with source = channel
+            // 3. WEB_ prefix = Shopify sale
+            // 4. ANU- prefix or other = Relbase direct sale
+
+            let channel = 'relbase'; // Default
+
+            const sku = item.product_sku;
+
+            // Check SKU patterns
+            if (sku.startsWith('ML-')) {
+              channel = 'mercadolibre';
+            } else if (sku.startsWith('WEB_')) {
+              channel = 'shopify';
+            } else if (product && product.source && product.source !== 'CATALOG') {
+              // Use product.source for official SKUs
+              channel = product.source;
+            } else if (order.source && order.source !== 'relbase') {
+              // Fallback to order source if not relbase
+              channel = order.source;
+            }
+
+            const catalogProduct = catalog.get(product?.sku || item.product_sku);
+
+            if (!channelMap.has(channel)) {
+              channelMap.set(channel, {
+                channel,
+                totalRevenue: 0,
+                totalUnits: 0,
+                orderIds: new Set(),
+                byCategory: new Map(),
+                byPackageType: new Map(),
+                productSales: new Map(),
+              });
+            }
+
+            const channelData = channelMap.get(channel)!;
+            channelData.totalRevenue += item.quantity * item.unit_price;
+            channelData.totalUnits += item.quantity;
+            channelData.orderIds.add(order.order_number);
+
+            // By category
+            if (catalogProduct) {
+              const category = catalogProduct.category;
+              if (!channelData.byCategory.has(category)) {
+                channelData.byCategory.set(category, { revenue: 0, units: 0, orderIds: new Set() });
+              }
+              const categoryData = channelData.byCategory.get(category)!;
+              categoryData.revenue += item.quantity * item.unit_price;
+              categoryData.units += item.quantity;
+              categoryData.orderIds.add(order.order_number);
+
+              // By package type
+              const packageType = catalogProduct.package_type;
+              if (!channelData.byPackageType.has(packageType)) {
+                channelData.byPackageType.set(packageType, { revenue: 0, units: 0 });
+              }
+              const packageData = channelData.byPackageType.get(packageType)!;
+              packageData.revenue += item.quantity * item.unit_price;
+              packageData.units += item.quantity;
+
+              // Product sales
+              const productKey = product.sku;
+              if (!channelData.productSales.has(productKey)) {
+                channelData.productSales.set(productKey, {
+                  sku: product.sku,
+                  name: catalogProduct.product_name || product.name,
+                  revenue: 0,
+                  units: 0,
+                });
+              }
+              const productData = channelData.productSales.get(productKey)!;
+              productData.revenue += item.quantity * item.unit_price;
+              productData.units += item.quantity;
+            }
+          });
+        }
+      });
+
+      // Convert to ChannelSales array
+      const channelsArray: ChannelSales[] = Array.from(channelMap.values())
+        .map(channelData => ({
+          channel: channelData.channel,
+          totalRevenue: channelData.totalRevenue,
+          totalUnits: channelData.totalUnits,
+          totalOrders: channelData.orderIds.size,
+          avgTicket: channelData.totalRevenue / channelData.orderIds.size,
+          avgUnitsPerOrder: channelData.totalUnits / channelData.orderIds.size,
+          byCategory: Array.from(channelData.byCategory.entries())
+            .map(([category, data]) => ({
+              category,
+              revenue: data.revenue,
+              units: data.units,
+              orders: data.orderIds.size,
+            }))
+            .sort((a, b) => b.revenue - a.revenue),
+          byPackageType: Array.from(channelData.byPackageType.entries())
+            .map(([packageType, data]) => ({
+              packageType,
+              revenue: data.revenue,
+              units: data.units,
+            }))
+            .sort((a, b) => b.revenue - a.revenue),
+          topProducts: Array.from(channelData.productSales.values())
+            .sort((a, b) => b.revenue - a.revenue)
+            .slice(0, 10),
+        }))
+        .sort((a, b) => b.totalRevenue - a.totalRevenue);
+
+      setChannelSales(channelsArray);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error desconocido');
     } finally {
@@ -243,6 +475,8 @@ export default function ProductSalesAnalytics() {
   const getChannelColor = (channel: string) => {
     if (channel === 'shopify') return 'bg-green-100 text-green-800';
     if (channel === 'mercadolibre') return 'bg-yellow-100 text-yellow-800';
+    if (channel === 'relbase') return 'bg-blue-100 text-blue-800';
+    if (channel === 'lokal') return 'bg-purple-100 text-purple-800';
     return 'bg-gray-100 text-gray-800';
   };
 
@@ -270,6 +504,32 @@ export default function ProductSalesAnalytics() {
 
   return (
     <div className="space-y-6">
+      {/* Analysis View Tabs */}
+      <div className="bg-white border border-gray-300 rounded-lg p-2">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setAnalysisView('family')}
+            className={`flex-1 px-6 py-3 rounded-lg font-semibold transition-all ${
+              analysisView === 'family'
+                ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-md'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            📊 Análisis por Familia
+          </button>
+          <button
+            onClick={() => setAnalysisView('channel')}
+            className={`flex-1 px-6 py-3 rounded-lg font-semibold transition-all ${
+              analysisView === 'channel'
+                ? 'bg-gradient-to-r from-green-500 to-blue-500 text-white shadow-md'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            🔄 Análisis por Canal
+          </button>
+        </div>
+      </div>
+
       {/* Period Filter - ALWAYS VISIBLE */}
       <div className="bg-white border border-gray-300 rounded-lg p-4">
         <div className="flex items-center justify-between">
@@ -355,7 +615,9 @@ export default function ProductSalesAnalytics() {
       {/* Data Display - Only show when we have data */}
       {!loading && familySales.length > 0 && (
         <>
-
+      {/* ANALYSIS BY FAMILY */}
+      {analysisView === 'family' && (
+        <>
       {/* Stats Summary */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-gradient-to-r from-blue-50 to-blue-100 border border-blue-200 rounded-lg p-6">
@@ -372,9 +634,9 @@ export default function ProductSalesAnalytics() {
         </div>
       </div>
 
-      {/* Family Sales */}
+      {/* Family Sales - Hierarchical View */}
       {familySales.map((family, idx) => {
-        const isExpanded = selectedFamily === family.family;
+        const isFamilyExpanded = selectedFamily === family.family;
         const revenuePercentage = (family.totalRevenue / totalRevenue) * 100;
 
         return (
@@ -382,7 +644,11 @@ export default function ProductSalesAnalytics() {
             {/* Family Header */}
             <div
               className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white p-6 cursor-pointer hover:from-indigo-600 hover:to-purple-600 transition-all"
-              onClick={() => setSelectedFamily(isExpanded ? null : family.family)}
+              onClick={() => {
+                setSelectedFamily(isFamilyExpanded ? null : family.family);
+                setSelectedSubfamily(null); // Reset subfamily when collapsing
+                setSelectedSKU(null); // Reset SKU when collapsing
+              }}
             >
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-4">
@@ -390,109 +656,171 @@ export default function ProductSalesAnalytics() {
                   <div>
                     <h2 className="text-2xl font-bold">{family.family}</h2>
                     <p className="text-sm opacity-90 mt-1">
-                      {family.products.length} producto{family.products.length !== 1 ? 's' : ''}
+                      {family.subfamilies.length} subfamilia{family.subfamilies.length !== 1 ? 's' : ''}
                     </p>
                   </div>
                 </div>
                 <div className="text-right">
                   <div className="text-3xl font-bold">{formatCurrency(family.totalRevenue)}</div>
                   <div className="text-sm opacity-90">{revenuePercentage.toFixed(1)}% del total</div>
-                  <div className="text-sm opacity-75 mt-1">{family.totalUnits.toLocaleString()} unidades</div>
+                  <div className="grid grid-cols-2 gap-2 mt-2 text-xs opacity-90">
+                    <div>
+                      <span className="opacity-75">Unidades:</span> <span className="font-semibold">{family.totalUnits.toLocaleString()}</span>
+                    </div>
+                    <div>
+                      <span className="opacity-75">Cajas:</span> <span className="font-semibold">{family.totalMasterBoxes.toFixed(1)}</span>
+                    </div>
+                  </div>
                   <div className="text-xs opacity-75 mt-2">
-                    {isExpanded ? '▲ Ocultar' : '▼ Ver productos'}
+                    {isFamilyExpanded ? '▲ Ocultar' : '▼ Ver subfamilias'}
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Products within Family */}
-            {isExpanded && (
+            {/* Subfamilies within Family */}
+            {isFamilyExpanded && (
               <div className="p-4 space-y-3 bg-gray-50">
-                {family.products.map((product, pidx) => {
-                  const productRevenuePercentage = (product.revenue / family.totalRevenue) * 100;
+                {family.subfamilies.map((subfamily, sfidx) => {
+                  const isSubfamilyExpanded = selectedSubfamily === subfamily.base_code;
+                  const subfamilyRevenuePercentage = (subfamily.totalRevenue / family.totalRevenue) * 100;
 
                   return (
-                    <div key={pidx} className="bg-white border border-gray-300 rounded-lg p-4 shadow-sm">
-                      <div className="flex justify-between items-start mb-4">
-                        <div>
-                          <h3 className="font-semibold text-gray-900 text-lg">{product.name}</h3>
-                          <p className="text-sm text-gray-600 mt-1">
-                            {product.units.toLocaleString()} unidades • {formatCurrency(product.revenue)}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-2xl font-bold text-indigo-600">
-                            {productRevenuePercentage.toFixed(1)}%
+                    <div key={sfidx} className="bg-white border border-gray-300 rounded-lg overflow-hidden shadow-sm">
+                      {/* Subfamily Header */}
+                      <div
+                        className="bg-gradient-to-r from-blue-50 to-purple-50 p-4 cursor-pointer hover:from-blue-100 hover:to-purple-100 transition-all border-b border-gray-200"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedSubfamily(isSubfamilyExpanded ? null : subfamily.base_code);
+                          setSelectedSKU(null); // Reset SKU when collapsing
+                        }}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <h3 className="font-semibold text-gray-900 text-lg">{subfamily.product_name}</h3>
+                              <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs font-mono rounded">
+                                {subfamily.base_code}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-600">
+                              {subfamily.skus.length} SKU{subfamily.skus.length !== 1 ? 's' : ''} • {formatCurrency(subfamily.totalRevenue)}
+                            </p>
                           </div>
-                          <div className="text-xs text-gray-500">de la familia</div>
+                          <div className="text-right">
+                            <div className="text-xl font-bold text-indigo-600">
+                              {subfamilyRevenuePercentage.toFixed(1)}%
+                            </div>
+                            <div className="text-xs text-gray-500">de la familia</div>
+                            <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
+                              <div className="bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                {subfamily.totalUnits.toLocaleString()} un
+                              </div>
+                              <div className="bg-purple-100 text-purple-800 px-2 py-1 rounded">
+                                {subfamily.totalMasterBoxes.toFixed(1)} cajas
+                              </div>
+                            </div>
+                            <div className="text-[10px] text-gray-500 mt-1">
+                              {isSubfamilyExpanded ? '▲ Ocultar SKUs' : '▼ Ver SKUs'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Revenue Bar */}
+                        <div className="w-full bg-gray-200 rounded-full h-2 mt-3">
+                          <div
+                            className="bg-gradient-to-r from-indigo-500 to-purple-500 h-2 rounded-full"
+                            style={{ width: `${subfamilyRevenuePercentage}%` }}
+                          />
                         </div>
                       </div>
 
-                      {/* Revenue Bar */}
-                      <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
-                        <div
-                          className="bg-gradient-to-r from-indigo-500 to-purple-500 h-2 rounded-full"
-                          style={{ width: `${productRevenuePercentage}%` }}
-                        />
-                      </div>
+                      {/* SKUs within Subfamily */}
+                      {isSubfamilyExpanded && (
+                        <div className="p-3 space-y-2 bg-gray-50">
+                          {subfamily.skus.map((sku, skuidx) => {
+                            const isSKUExpanded = selectedSKU === sku.sku;
+                            const skuRevenuePercentage = (sku.totalRevenue / subfamily.totalRevenue) * 100;
 
-                      <div className="grid md:grid-cols-2 gap-4">
-                        {/* By Format */}
-                        <div>
-                          <h4 className="font-medium text-gray-700 mb-2 text-sm">📦 Por Formato</h4>
-                          <div className="space-y-2">
-                            {product.byFormat
-                              .sort((a, b) => b.revenue - a.revenue)
-                              .map((format, fidx) => {
-                                const formatPercentage = (format.revenue / product.revenue) * 100;
-                                return (
-                                  <div key={fidx} className="flex items-center justify-between">
-                                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${getFormatColor(format.format)}`}>
-                                      {format.format}
-                                    </span>
-                                    <div className="flex-1 mx-3 bg-gray-200 rounded-full h-2">
-                                      <div
-                                        className="bg-blue-500 h-2 rounded-full"
-                                        style={{ width: `${formatPercentage}%` }}
-                                      />
+                            return (
+                              <div key={skuidx} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                                {/* SKU Header */}
+                                <div
+                                  className="p-3 cursor-pointer hover:bg-gray-50 transition-all"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedSKU(isSKUExpanded ? null : sku.sku);
+                                  }}
+                                >
+                                  <div className="flex justify-between items-start">
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <span className="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs font-mono rounded">
+                                          {sku.sku}
+                                        </span>
+                                        <span className={`px-2 py-0.5 text-xs font-semibold rounded ${getFormatColor(sku.package_type)}`}>
+                                          {sku.package_type}
+                                        </span>
+                                      </div>
+                                      <p className="text-sm text-gray-900 font-medium">{sku.product_name}</p>
+                                      <p className="text-xs text-gray-600 mt-1">
+                                        {sku.units_per_display} unidades por display
+                                      </p>
                                     </div>
-                                    <div className="text-xs text-gray-600 w-24 text-right">
-                                      {format.units} un • {formatCurrency(format.revenue)}
+                                    <div className="text-right">
+                                      <div className="text-lg font-bold text-gray-900">
+                                        {formatCurrency(sku.totalRevenue)}
+                                      </div>
+                                      <div className="text-xs text-gray-500">{skuRevenuePercentage.toFixed(1)}%</div>
+                                      <div className="grid grid-cols-2 gap-1 mt-2 text-[10px]">
+                                        <div className="bg-green-100 text-green-800 px-1.5 py-0.5 rounded">
+                                          {sku.totalUnits} un
+                                        </div>
+                                        <div className="bg-orange-100 text-orange-800 px-1.5 py-0.5 rounded">
+                                          {sku.totalMasterBoxes.toFixed(1)} cajas
+                                        </div>
+                                      </div>
+                                      <div className="text-[9px] text-gray-500 mt-1">
+                                        {isSKUExpanded ? '▲' : '▼'} {isSKUExpanded ? 'Ocultar' : 'Ver canales'}
+                                      </div>
                                     </div>
                                   </div>
-                                );
-                              })}
-                          </div>
-                        </div>
+                                </div>
 
-                        {/* By Channel */}
-                        <div>
-                          <h4 className="font-medium text-gray-700 mb-2 text-sm">🔄 Por Canal</h4>
-                          <div className="space-y-2">
-                            {product.byChannel
-                              .sort((a, b) => b.revenue - a.revenue)
-                              .map((channel, cidx) => {
-                                const channelPercentage = (channel.revenue / product.revenue) * 100;
-                                return (
-                                  <div key={cidx} className="flex items-center justify-between">
-                                    <span className={`px-3 py-1 rounded-full text-xs font-medium capitalize ${getChannelColor(channel.channel)}`}>
-                                      {channel.channel}
-                                    </span>
-                                    <div className="flex-1 mx-3 bg-gray-200 rounded-full h-2">
-                                      <div
-                                        className="bg-green-500 h-2 rounded-full"
-                                        style={{ width: `${channelPercentage}%` }}
-                                      />
-                                    </div>
-                                    <div className="text-xs text-gray-600 w-24 text-right">
-                                      {channel.units} un • {formatCurrency(channel.revenue)}
-                                    </div>
+                                {/* Channels for this SKU */}
+                                {isSKUExpanded && (
+                                  <div className="p-3 pt-0 space-y-2">
+                                    <h4 className="text-xs font-semibold text-gray-700 mb-2">🔄 Ventas por Canal</h4>
+                                    {sku.byChannel
+                                      .sort((a, b) => b.revenue - a.revenue)
+                                      .map((channel, cidx) => {
+                                        const channelPercentage = (channel.revenue / sku.totalRevenue) * 100;
+                                        return (
+                                          <div key={cidx} className="flex items-center justify-between bg-gray-50 p-2 rounded">
+                                            <span className={`px-2 py-1 rounded-full text-xs font-medium capitalize ${getChannelColor(channel.channel)}`}>
+                                              {channel.channel}
+                                            </span>
+                                            <div className="flex-1 mx-3 bg-gray-200 rounded-full h-2">
+                                              <div
+                                                className="bg-green-500 h-2 rounded-full"
+                                                style={{ width: `${channelPercentage}%` }}
+                                              />
+                                            </div>
+                                            <div className="text-xs text-gray-600 text-right">
+                                              <div>{channel.units} un</div>
+                                              <div className="font-semibold">{formatCurrency(channel.revenue)}</div>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
                                   </div>
-                                );
-                              })}
-                          </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
-                      </div>
+                      )}
                     </div>
                   );
                 })}
@@ -501,6 +829,149 @@ export default function ProductSalesAnalytics() {
           </div>
         );
       })}
+        </>
+      )}
+      {/* END ANALYSIS BY FAMILY */}
+
+      {/* ANALYSIS BY CHANNEL */}
+      {analysisView === 'channel' && channelSales.length > 0 && (
+        <>
+      {/* Channel Comparison Overview */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {channelSales.map((channel, idx) => {
+          const totalChannelRevenue = channelSales.reduce((sum, c) => sum + c.totalRevenue, 0);
+          const revenuePercentage = (channel.totalRevenue / totalChannelRevenue) * 100;
+
+          return (
+            <div key={idx} className="bg-white border-2 border-gray-300 rounded-xl overflow-hidden shadow-md">
+              {/* Channel Header */}
+              <div className={`p-6 text-white ${
+                channel.channel === 'shopify'
+                  ? 'bg-gradient-to-r from-green-500 to-emerald-600'
+                  : channel.channel === 'mercadolibre'
+                  ? 'bg-gradient-to-r from-yellow-500 to-orange-500'
+                  : channel.channel === 'relbase'
+                  ? 'bg-gradient-to-r from-blue-500 to-indigo-600'
+                  : channel.channel === 'lokal'
+                  ? 'bg-gradient-to-r from-purple-500 to-violet-600'
+                  : 'bg-gradient-to-r from-gray-500 to-gray-600'
+              }`}>
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="text-4xl">
+                    {channel.channel === 'shopify' ? '🛒' :
+                     channel.channel === 'mercadolibre' ? '🏪' :
+                     channel.channel === 'relbase' ? '🧾' :
+                     channel.channel === 'lokal' ? '🏬' : '📦'}
+                  </span>
+                  <div>
+                    <h3 className="text-2xl font-bold capitalize">{channel.channel}</h3>
+                    <p className="text-sm opacity-90">{revenuePercentage.toFixed(1)}% del total</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-white rounded-lg p-3 shadow-sm">
+                    <div className="text-xs text-gray-600 mb-1">Ingresos</div>
+                    <div className="text-xl font-bold text-gray-900">{formatCurrency(channel.totalRevenue)}</div>
+                  </div>
+                  <div className="bg-white rounded-lg p-3 shadow-sm">
+                    <div className="text-xs text-gray-600 mb-1">Órdenes</div>
+                    <div className="text-xl font-bold text-gray-900">{channel.totalOrders.toLocaleString()}</div>
+                  </div>
+                  <div className="bg-white rounded-lg p-3 shadow-sm">
+                    <div className="text-xs text-gray-600 mb-1">Ticket Promedio</div>
+                    <div className="text-lg font-bold text-gray-900">{formatCurrency(channel.avgTicket)}</div>
+                  </div>
+                  <div className="bg-white rounded-lg p-3 shadow-sm">
+                    <div className="text-xs text-gray-600 mb-1">Unidades/Orden</div>
+                    <div className="text-lg font-bold text-gray-900">{channel.avgUnitsPerOrder.toFixed(1)}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Channel Details */}
+              <div className="p-4 space-y-4">
+                {/* Categories Performance */}
+                <div>
+                  <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <span>📊</span> Categorías Más Vendidas
+                  </h4>
+                  <div className="space-y-2">
+                    {channel.byCategory.slice(0, 5).map((cat, cidx) => {
+                      const catPercentage = (cat.revenue / channel.totalRevenue) * 100;
+                      return (
+                        <div key={cidx} className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="text-sm font-medium text-gray-900">{cat.category}</div>
+                            <div className="text-xs text-gray-600">{cat.units} un • {cat.orders} órdenes</div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="w-24 bg-gray-200 rounded-full h-2">
+                              <div
+                                className="bg-indigo-500 h-2 rounded-full"
+                                style={{ width: `${catPercentage}%` }}
+                              />
+                            </div>
+                            <div className="text-xs font-semibold text-gray-700 w-12 text-right">
+                              {catPercentage.toFixed(0)}%
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Package Types */}
+                <div>
+                  <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <span>📦</span> Formatos Preferidos
+                  </h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    {channel.byPackageType.slice(0, 6).map((pkg, pidx) => {
+                      const pkgPercentage = (pkg.units / channel.totalUnits) * 100;
+                      return (
+                        <div key={pidx} className="bg-gray-50 rounded-lg p-2 border border-gray-200">
+                          <div className="text-xs font-semibold text-gray-700 mb-1">{pkg.packageType}</div>
+                          <div className="flex items-center justify-between">
+                            <div className="text-xs text-gray-600">{pkg.units} un</div>
+                            <div className="text-xs font-bold text-indigo-600">{pkgPercentage.toFixed(0)}%</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Top Products */}
+                <div>
+                  <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <span>🏆</span> Top 5 Productos
+                  </h4>
+                  <div className="space-y-2">
+                    {channel.topProducts.slice(0, 5).map((prod, pidx) => (
+                      <div key={pidx} className="flex items-center justify-between bg-gray-50 rounded-lg p-2 border border-gray-200">
+                        <div className="flex-1">
+                          <div className="text-xs font-mono text-gray-600">{prod.sku}</div>
+                          <div className="text-sm font-medium text-gray-900 truncate">{prod.name}</div>
+                        </div>
+                        <div className="text-right ml-2">
+                          <div className="text-sm font-bold text-gray-900">{formatCurrency(prod.revenue)}</div>
+                          <div className="text-xs text-gray-600">{prod.units} un</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+        </>
+      )}
+      {/* END ANALYSIS BY CHANNEL */}
+
         </>
       )}
     </div>

@@ -14,7 +14,7 @@ env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(env_path)
 
 # Import API routers
-from app.api import conversion, shopify, products, orders, mercadolibre, product_mapping
+from app.api import conversion, shopify, products, orders, mercadolibre, product_mapping, relbase
 
 # Import psycopg2 with error handling
 try:
@@ -101,6 +101,7 @@ app.include_router(mercadolibre.router, prefix="/api/v1/mercadolibre", tags=["Me
 app.include_router(products.router, prefix="/api/v1/products", tags=["Products"])
 app.include_router(orders.router, prefix="/api/v1/orders", tags=["Orders"])
 app.include_router(product_mapping.router, prefix="/api/v1/product-mapping", tags=["Product Mapping"])
+app.include_router(relbase.router, prefix="/api/v1/relbase", tags=["Relbase"])
 
 @app.get("/")
 async def root():

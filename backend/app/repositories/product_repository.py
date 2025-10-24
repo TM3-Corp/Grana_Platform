@@ -6,7 +6,7 @@ Handles all database queries for products and returns Product domain models.
 Author: TM3
 Date: 2025-10-17
 """
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict
 from app.domain.product import Product
 from app.core.database import get_db_connection_dict
 
@@ -395,6 +395,126 @@ class ProductRepository:
                 'by_category': by_category,
                 'stock_levels': stock_levels
             }
+
+        finally:
+            cursor.close()
+            conn.close()
+
+    def get_hierarchical_families(self) -> List[Dict]:
+        """
+        Get product families in hierarchical structure
+
+        Returns products grouped by:
+        - category (Familia): GRANOLAS, BARRAS, CRACKERS, KEEPERS
+        - subfamily (Subfamilia): e.g., "Granola Low Carb Almendras"
+        - format (Formato): e.g., "260g", "X1", "X5"
+
+        Returns:
+            List of family dictionaries with nested structure
+        """
+        conn = get_db_connection_dict()
+        cursor = conn.cursor()
+
+        try:
+            # Query to get hierarchical structure
+            # Only show the 4 main families: GRANOLAS, BARRAS, CRACKERS, KEEPERS
+            cursor.execute("""
+                WITH hierarchy AS (
+                    SELECT
+                        category,
+                        COALESCE(subfamily, 'Sin Clasificar') as subfamily,
+                        COALESCE(format, 'Unidad') as format,
+                        sku,
+                        name,
+                        current_stock,
+                        sale_price,
+                        package_type,
+                        units_per_package,
+                        master_box_sku,
+                        master_box_name
+                    FROM products
+                    WHERE is_active = true
+                    AND category IN ('GRANOLAS', 'BARRAS', 'CRACKERS', 'KEEPERS')
+                )
+                SELECT
+                    category,
+                    subfamily,
+                    format,
+                    COUNT(*) as product_count,
+                    SUM(COALESCE(current_stock, 0)) as total_stock,
+                    json_agg(
+                        json_build_object(
+                            'sku', sku,
+                            'name', name,
+                            'stock', current_stock,
+                            'price', sale_price,
+                            'package_type', package_type,
+                            'units_per_package', units_per_package,
+                            'master_box_sku', master_box_sku,
+                            'master_box_name', master_box_name
+                        )
+                    ) as products
+                FROM hierarchy
+                GROUP BY category, subfamily, format
+                ORDER BY category, subfamily, format
+            """)
+
+            results = cursor.fetchall()
+
+            # Group by category → subfamily → format
+            families_dict = {}
+
+            for row in results:
+                category = row['category']
+                subfamily = row['subfamily']
+                format_name = row['format']
+
+                # Initialize category if needed
+                if category not in families_dict:
+                    families_dict[category] = {
+                        'name': category,
+                        'subfamilies': {},
+                        'total_stock': 0
+                    }
+
+                # Initialize subfamily if needed
+                if subfamily not in families_dict[category]['subfamilies']:
+                    families_dict[category]['subfamilies'][subfamily] = {
+                        'name': subfamily,
+                        'formats': [],
+                        'total_stock': 0
+                    }
+
+                # Add format
+                families_dict[category]['subfamilies'][subfamily]['formats'].append({
+                    'name': format_name,
+                    'product_count': row['product_count'],
+                    'total_stock': row['total_stock'],
+                    'products': row['products']
+                })
+
+                # Update stock totals
+                families_dict[category]['subfamilies'][subfamily]['total_stock'] += row['total_stock']
+                families_dict[category]['total_stock'] += row['total_stock']
+
+            # Convert to list format
+            families_list = []
+            for category, category_data in families_dict.items():
+                subfamily_list = []
+                for subfamily_name, subfamily_data in category_data['subfamilies'].items():
+                    subfamily_list.append({
+                        'name': subfamily_name,
+                        'formats': subfamily_data['formats'],
+                        'total_stock': subfamily_data['total_stock']
+                    })
+
+                families_list.append({
+                    'name': category,
+                    'subfamilies': subfamily_list,
+                    'total_stock': category_data['total_stock']
+                })
+
+            return families_list
 
         finally:
             cursor.close()

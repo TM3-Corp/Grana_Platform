@@ -357,3 +357,24 @@ async def get_catalog_product(sku: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/families/hierarchical")
+async def get_hierarchical_families():
+    """
+    Get product families in hierarchical structure
+
+    Returns:
+    - Familia (Category): GRANOLAS, BARRAS, CRACKERS, KEEPERS
+    - Subfamilia (Product variant): e.g., "Granola Low Carb Almendras"
+    - Formato (Format): e.g., "260g", "X1", "X5"
+    - Aggregated stock and sales data
+    """
+    try:
+        results = service.get_hierarchical_families()
+        return {
+            "status": "success",
+            "data": results
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

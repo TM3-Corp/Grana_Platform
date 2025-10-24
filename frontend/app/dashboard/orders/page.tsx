@@ -147,7 +147,7 @@ export default function OrdersPage() {
     )
   }
 
-  const sources = ['shopify', 'mercadolibre', 'manual']
+  const sources = ['shopify', 'mercadolibre', 'relbase', 'lokal', 'manual']
   const months = [
     '2025-01', '2025-02', '2025-03', '2025-04', '2025-05', '2025-06',
     '2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12'
@@ -217,8 +217,10 @@ export default function OrdersPage() {
                 <option value="">Todas las fuentes</option>
                 {sources.map(source => (
                   <option key={source} value={source}>
-                    {source === 'shopify' ? '🛍️ Shopify' :
-                     source === 'mercadolibre' ? '🛒 MercadoLibre' :
+                    {source === 'shopify' ? '🛒 Shopify' :
+                     source === 'mercadolibre' ? '🏪 MercadoLibre' :
+                     source === 'relbase' ? '🧾 Relbase' :
+                     source === 'lokal' ? '🏬 LOKAL' :
                      source === 'manual' ? '✏️ Manual' : source}
                   </option>
                 ))}
@@ -292,7 +294,11 @@ export default function OrdersPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 capitalize">
-                        {order.source === 'shopify' ? '🛍️ Shopify' : order.source}
+                        {order.source === 'shopify' ? '🛒 Shopify' :
+                         order.source === 'mercadolibre' ? '🏪 MercadoLibre' :
+                         order.source === 'relbase' ? '🧾 Relbase' :
+                         order.source === 'lokal' ? '🏬 LOKAL' :
+                         order.source === 'manual' ? '✏️ Manual' : order.source}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -430,7 +436,13 @@ export default function OrdersPage() {
                   <div className="bg-gray-50 rounded-xl p-4 space-y-2">
                     <div className="flex justify-between text-sm">
                       <span className="font-medium">Fuente:</span>
-                      <span className="capitalize">{selectedOrder.source === 'shopify' ? '🛍️ Shopify' : selectedOrder.source}</span>
+                      <span className="capitalize">
+                        {selectedOrder.source === 'shopify' ? '🛒 Shopify' :
+                         selectedOrder.source === 'mercadolibre' ? '🏪 MercadoLibre' :
+                         selectedOrder.source === 'relbase' ? '🧾 Relbase' :
+                         selectedOrder.source === 'lokal' ? '🏬 LOKAL' :
+                         selectedOrder.source === 'manual' ? '✏️ Manual' : selectedOrder.source}
+                      </span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="font-medium">Canal:</span>

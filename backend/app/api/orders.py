@@ -21,7 +21,7 @@ async def get_orders(
     payment_status: Optional[str] = Query(None, description="Filter by payment status"),
     from_date: Optional[str] = Query(None, description="Filter orders from this date (ISO format)"),
     to_date: Optional[str] = Query(None, description="Filter orders until this date (ISO format)"),
-    limit: int = Query(50, ge=1, le=5000),
+    limit: int = Query(50, ge=1, le=10000),
     offset: int = Query(0, ge=0)
 ):
     """

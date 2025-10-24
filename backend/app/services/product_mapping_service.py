@@ -424,3 +424,18 @@ class ProductMappingService:
             Result dict with success status
         """
         return self.mapping_repo.delete_channel_equivalent(equivalent_id)
+
+    def get_hierarchical_families(self) -> List[Dict]:
+        """
+        Get product families in hierarchical structure
+
+        Returns products grouped by:
+        - Categoria (Family): GRANOLAS, BARRAS, CRACKERS, KEEPERS
+        - Subfamilia (Product variant): e.g., "Granola Low Carb Almendras"
+        - Formato (Format): e.g., "260g", "X1", "X5"
+
+        Returns:
+            List of family dictionaries with nested structure
+        """
+        families = self.product_repo.get_hierarchical_families()
+        return families
