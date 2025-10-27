@@ -15,6 +15,7 @@ export default function Navigation() {
     { name: 'Dashboard', href: '/dashboard', icon: '📊' },
     { name: 'Pedidos', href: '/dashboard/orders', icon: '📦' },
     { name: 'Inventario', href: '/dashboard/product-mapping', icon: '🏷️' },
+    { name: 'Auditoría', href: '/dashboard/audit', icon: '🔍' },
   ];
 
   const isActive = (href: string) => {
