@@ -427,21 +427,21 @@ class OrderRepository:
 
             source_distribution = cursor.fetchall()
 
-            # 3. Top products
+            # 3. Top products (using product_sku with fallback to product_id)
             cursor.execute(f"""
                 SELECT
-                    p.name,
-                    p.sku,
+                    COALESCE(p.name, oi.product_name) as name,
+                    COALESCE(p.sku, oi.product_sku) as sku,
                     COUNT(DISTINCT o.id) as order_count,
                     SUM(oi.quantity) as units_sold,
                     SUM(oi.total) as revenue
                 FROM order_items oi
                 JOIN orders o ON o.id = oi.order_id
-                JOIN products p ON p.id = oi.product_id
+                LEFT JOIN products p ON p.sku = oi.product_sku
                 WHERE 1=1 {date_filter.replace('order_date', 'o.order_date')}
-                GROUP BY p.id, p.name, p.sku
+                GROUP BY COALESCE(p.name, oi.product_name), COALESCE(p.sku, oi.product_sku)
                 ORDER BY revenue DESC
-                LIMIT 5
+                LIMIT 10
             """, params)
 
             top_products = cursor.fetchall()

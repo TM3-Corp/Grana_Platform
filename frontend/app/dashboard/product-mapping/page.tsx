@@ -6,10 +6,10 @@ import ConsolidatedInventoryTable from '@/components/product-mapping/Consolidate
 import ProductFamilyView from '@/components/product-mapping/ProductFamilyView';
 import ChannelEquivalentsView from '@/components/product-mapping/ChannelEquivalentsView';
 import AllProductsTable from '@/components/product-mapping/AllProductsTable';
-import ProductSalesAnalytics from '@/components/product-mapping/ProductSalesAnalytics';
+import InventoryUpdater from '@/components/inventory/InventoryUpdater';
 import { ProductProvider } from '@/contexts/ProductContext';
 
-type ViewMode = 'consolidated' | 'families' | 'channel-equivalents' | 'all-products' | 'sales-analytics';
+type ViewMode = 'consolidated' | 'families' | 'channel-equivalents' | 'all-products' | 'updater';
 
 export default function ProductMappingPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('consolidated');
@@ -85,14 +85,14 @@ export default function ProductMappingPage() {
           🏷️ Productos
         </button>
         <button
-          onClick={() => setViewMode('sales-analytics')}
+          onClick={() => setViewMode('updater')}
           className={`px-6 py-3 font-medium transition-colors ${
-            viewMode === 'sales-analytics'
+            viewMode === 'updater'
               ? 'text-blue-600 border-b-2 border-blue-600'
               : 'text-gray-600 hover:text-gray-900'
           }`}
         >
-          📈 Análisis de Ventas
+          🔄 Actualización
         </button>
       </div>
 
@@ -146,15 +146,9 @@ export default function ProductMappingPage() {
           </div>
         )}
 
-        {viewMode === 'sales-analytics' && (
+        {viewMode === 'updater' && (
           <div>
-            <div className="mb-4">
-              <h2 className="text-xl font-semibold text-gray-900 mb-1">Análisis de Ventas</h2>
-              <p className="text-sm text-gray-600">
-                Visualiza qué productos se venden más, por formato y canal
-              </p>
-            </div>
-            <ProductSalesAnalytics />
+            <InventoryUpdater />
           </div>
         )}
       </div>

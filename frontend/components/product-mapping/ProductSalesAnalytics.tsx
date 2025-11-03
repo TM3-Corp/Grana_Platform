@@ -20,6 +20,7 @@ interface Order {
   id: number;
   order_number: string;
   source: string;
+  channel_name: string;
   status: string;
   items: OrderItem[];
   created_at: string;
@@ -54,7 +55,7 @@ interface FamilySales {
   subfamilies: SubfamilySales[];
 }
 
-type AnalysisView = 'family' | 'channel';
+type AnalysisView = 'family' | 'source' | 'channel';
 
 interface ChannelSales {
   channel: string;
@@ -73,7 +74,8 @@ export default function ProductSalesAnalytics() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [familySales, setFamilySales] = useState<FamilySales[]>([]);
-  const [channelSales, setChannelSales] = useState<ChannelSales[]>([]);
+  const [sourceSales, setSourceSales] = useState<ChannelSales[]>([]);
+  const [businessChannelSales, setBusinessChannelSales] = useState<ChannelSales[]>([]);
   const [selectedFamily, setSelectedFamily] = useState<string | null>(null);
   const [selectedSubfamily, setSelectedSubfamily] = useState<string | null>(null);
   const [selectedSKU, setSelectedSKU] = useState<string | null>(null);
@@ -320,10 +322,10 @@ export default function ProductSalesAnalytics() {
       setFamilySales(familiesArray);
 
       // ============================================================================
-      // CHANNEL ANALYSIS AGGREGATION
+      // SOURCE ANALYSIS AGGREGATION (shopify, relbase, mercadolibre, lokal)
       // ============================================================================
 
-      const channelMap = new Map<string, {
+      const sourceMap = new Map<string, {
         channel: string;
         totalRevenue: number;
         totalUnits: number;
@@ -333,40 +335,40 @@ export default function ProductSalesAnalytics() {
         productSales: Map<string, { sku: string; name: string; revenue: number; units: number }>;
       }>();
 
-      // Aggregate by channel from orders
+      // Aggregate by source from orders
       orders.forEach(order => {
         if (order.items) {
           order.items.forEach(item => {
             const product = skuMap.get(item.product_sku);
 
-            // Determine channel based on product SKU pattern:
+            // Determine source based on product SKU pattern:
             // 1. ML- prefix = MercadoLibre sale
             // 2. Official SKU (BAKC_, GRAL_, etc.) from products table with source = channel
             // 3. WEB_ prefix = Shopify sale
             // 4. ANU- prefix or other = Relbase direct sale
 
-            let channel = 'relbase'; // Default
+            let source = 'relbase'; // Default
 
             const sku = item.product_sku;
 
             // Check SKU patterns
             if (sku.startsWith('ML-')) {
-              channel = 'mercadolibre';
+              source = 'mercadolibre';
             } else if (sku.startsWith('WEB_')) {
-              channel = 'shopify';
+              source = 'shopify';
             } else if (product && product.source && product.source !== 'CATALOG') {
               // Use product.source for official SKUs
-              channel = product.source;
+              source = product.source;
             } else if (order.source && order.source !== 'relbase') {
               // Fallback to order source if not relbase
-              channel = order.source;
+              source = order.source;
             }
 
             const catalogProduct = catalog.get(product?.sku || item.product_sku);
 
-            if (!channelMap.has(channel)) {
-              channelMap.set(channel, {
-                channel,
+            if (!sourceMap.has(source)) {
+              sourceMap.set(source, {
+                channel: source,
                 totalRevenue: 0,
                 totalUnits: 0,
                 orderIds: new Set(),
@@ -376,7 +378,119 @@ export default function ProductSalesAnalytics() {
               });
             }
 
-            const channelData = channelMap.get(channel)!;
+            const sourceData = sourceMap.get(source)!;
+            sourceData.totalRevenue += item.quantity * item.unit_price;
+            sourceData.totalUnits += item.quantity;
+            sourceData.orderIds.add(order.order_number);
+
+            // By category
+            if (catalogProduct) {
+              const category = catalogProduct.category;
+              if (!sourceData.byCategory.has(category)) {
+                sourceData.byCategory.set(category, { revenue: 0, units: 0, orderIds: new Set() });
+              }
+              const categoryData = sourceData.byCategory.get(category)!;
+              categoryData.revenue += item.quantity * item.unit_price;
+              categoryData.units += item.quantity;
+              categoryData.orderIds.add(order.order_number);
+
+              // By package type
+              const packageType = catalogProduct.package_type;
+              if (!sourceData.byPackageType.has(packageType)) {
+                sourceData.byPackageType.set(packageType, { revenue: 0, units: 0 });
+              }
+              const packageData = sourceData.byPackageType.get(packageType)!;
+              packageData.revenue += item.quantity * item.unit_price;
+              packageData.units += item.quantity;
+
+              // Product sales
+              const productKey = product.sku;
+              if (!sourceData.productSales.has(productKey)) {
+                sourceData.productSales.set(productKey, {
+                  sku: product.sku,
+                  name: catalogProduct.product_name || product.name,
+                  revenue: 0,
+                  units: 0,
+                });
+              }
+              const productData = sourceData.productSales.get(productKey)!;
+              productData.revenue += item.quantity * item.unit_price;
+              productData.units += item.quantity;
+            }
+          });
+        }
+      });
+
+      // Convert to ChannelSales array for sources
+      const sourcesArray: ChannelSales[] = Array.from(sourceMap.values())
+        .map(sourceData => ({
+          channel: sourceData.channel,
+          totalRevenue: sourceData.totalRevenue,
+          totalUnits: sourceData.totalUnits,
+          totalOrders: sourceData.orderIds.size,
+          avgTicket: sourceData.totalRevenue / sourceData.orderIds.size,
+          avgUnitsPerOrder: sourceData.totalUnits / sourceData.orderIds.size,
+          byCategory: Array.from(sourceData.byCategory.entries())
+            .map(([category, data]) => ({
+              category,
+              revenue: data.revenue,
+              units: data.units,
+              orders: data.orderIds.size,
+            }))
+            .sort((a, b) => b.revenue - a.revenue),
+          byPackageType: Array.from(sourceData.byPackageType.entries())
+            .map(([packageType, data]) => ({
+              packageType,
+              revenue: data.revenue,
+              units: data.units,
+            }))
+            .sort((a, b) => b.revenue - a.revenue),
+          topProducts: Array.from(sourceData.productSales.values())
+            .sort((a, b) => b.revenue - a.revenue)
+            .slice(0, 10),
+        }))
+        .sort((a, b) => b.totalRevenue - a.totalRevenue);
+
+      setSourceSales(sourcesArray);
+
+      // ============================================================================
+      // BUSINESS CHANNEL ANALYSIS AGGREGATION (Corporativo, Distribuidor, E-commerce, etc.)
+      // ============================================================================
+
+      const businessChannelMap = new Map<string, {
+        channel: string;
+        totalRevenue: number;
+        totalUnits: number;
+        orderIds: Set<string>;
+        byCategory: Map<string, { revenue: number; units: number; orderIds: Set<string> }>;
+        byPackageType: Map<string, { revenue: number; units: number }>;
+        productSales: Map<string, { sku: string; name: string; revenue: number; units: number }>;
+      }>();
+
+      // Aggregate by business channel from orders
+      orders.forEach(order => {
+        if (order.items) {
+          order.items.forEach(item => {
+            const product = skuMap.get(item.product_sku);
+
+            // Use channel_name from order (business channel like "Corporativo", "Distribuidor", etc.)
+            const businessChannel = order.channel_name || 'Sin Canal Asignado';
+
+            const catalogProduct = catalog.get(product?.sku || item.product_sku);
+
+            if (!businessChannelMap.has(businessChannel)) {
+              businessChannelMap.set(businessChannel, {
+                channel: businessChannel,
+                totalRevenue: 0,
+                totalUnits: 0,
+                orderIds: new Set(),
+                byCategory: new Map(),
+                byPackageType: new Map(),
+                productSales: new Map(),
+              });
+            }
+
+            const channelData = businessChannelMap.get(businessChannel)!;
             channelData.totalRevenue += item.quantity * item.unit_price;
             channelData.totalUnits += item.quantity;
             channelData.orderIds.add(order.order_number);
@@ -402,11 +516,11 @@ export default function ProductSalesAnalytics() {
               packageData.units += item.quantity;
 
               // Product sales
-              const productKey = product.sku;
+              const productKey = product?.sku || item.product_sku;
               if (!channelData.productSales.has(productKey)) {
                 channelData.productSales.set(productKey, {
-                  sku: product.sku,
-                  name: catalogProduct.product_name || product.name,
+                  sku: productKey,
+                  name: catalogProduct.product_name || product?.name || item.product_sku,
                   revenue: 0,
                   units: 0,
                 });
@@ -419,8 +533,8 @@ export default function ProductSalesAnalytics() {
         }
       });
 
-      // Convert to ChannelSales array
-      const channelsArray: ChannelSales[] = Array.from(channelMap.values())
+      // Convert to ChannelSales array for business channels
+      const businessChannelsArray: ChannelSales[] = Array.from(businessChannelMap.values())
         .map(channelData => ({
           channel: channelData.channel,
           totalRevenue: channelData.totalRevenue,
@@ -449,7 +563,7 @@ export default function ProductSalesAnalytics() {
         }))
         .sort((a, b) => b.totalRevenue - a.totalRevenue);
 
-      setChannelSales(channelsArray);
+      setBusinessChannelSales(businessChannelsArray);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error desconocido');
     } finally {
@@ -518,14 +632,24 @@ export default function ProductSalesAnalytics() {
             📊 Análisis por Familia
           </button>
           <button
-            onClick={() => setAnalysisView('channel')}
+            onClick={() => setAnalysisView('source')}
             className={`flex-1 px-6 py-3 rounded-lg font-semibold transition-all ${
-              analysisView === 'channel'
+              analysisView === 'source'
                 ? 'bg-gradient-to-r from-green-500 to-blue-500 text-white shadow-md'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             }`}
           >
-            🔄 Análisis por Canal
+            🔄 Análisis por Fuente
+          </button>
+          <button
+            onClick={() => setAnalysisView('channel')}
+            className={`flex-1 px-6 py-3 rounded-lg font-semibold transition-all ${
+              analysisView === 'channel'
+                ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-md'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            📊 Análisis por Canal
           </button>
         </div>
       </div>
@@ -833,13 +957,13 @@ export default function ProductSalesAnalytics() {
       )}
       {/* END ANALYSIS BY FAMILY */}
 
-      {/* ANALYSIS BY CHANNEL */}
-      {analysisView === 'channel' && channelSales.length > 0 && (
+      {/* ANALYSIS BY SOURCE */}
+      {analysisView === 'source' && sourceSales.length > 0 && (
         <>
-      {/* Channel Comparison Overview */}
+      {/* Source Comparison Overview */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {channelSales.map((channel, idx) => {
-          const totalChannelRevenue = channelSales.reduce((sum, c) => sum + c.totalRevenue, 0);
+        {sourceSales.map((channel, idx) => {
+          const totalChannelRevenue = sourceSales.reduce((sum, c) => sum + c.totalRevenue, 0);
           const revenuePercentage = (channel.totalRevenue / totalChannelRevenue) * 100;
 
           return (
@@ -970,7 +1094,159 @@ export default function ProductSalesAnalytics() {
       </div>
         </>
       )}
-      {/* END ANALYSIS BY CHANNEL */}
+      {/* END ANALYSIS BY SOURCE */}
+
+      {/* ANALYSIS BY BUSINESS CHANNEL */}
+      {analysisView === 'channel' && businessChannelSales.length > 0 && (
+        <>
+      {/* Business Channel Comparison Overview */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {businessChannelSales.map((channel, idx) => {
+          const totalChannelRevenue = businessChannelSales.reduce((sum, c) => sum + c.totalRevenue, 0);
+          const revenuePercentage = (channel.totalRevenue / totalChannelRevenue) * 100;
+
+          return (
+            <div key={idx} className="bg-white border-2 border-gray-300 rounded-xl overflow-hidden shadow-md">
+              {/* Business Channel Header */}
+              <div className={`p-6 text-white ${
+                channel.channel === 'Corporativo'
+                  ? 'bg-gradient-to-r from-blue-500 to-indigo-600'
+                  : channel.channel === 'Distribuidor'
+                  ? 'bg-gradient-to-r from-purple-500 to-violet-600'
+                  : channel.channel === 'E-commerce' || channel.channel === 'ECOMMERCE'
+                  ? 'bg-gradient-to-r from-green-500 to-emerald-600'
+                  : channel.channel === 'Retail' || channel.channel === 'RETAIL'
+                  ? 'bg-gradient-to-r from-orange-500 to-red-600'
+                  : channel.channel === 'Emporio/Tiendas Locales' || channel.channel === 'LOKAL'
+                  ? 'bg-gradient-to-r from-yellow-500 to-orange-500'
+                  : channel.channel === 'Emporios y Cafeterías'
+                  ? 'bg-gradient-to-r from-pink-500 to-rose-600'
+                  : channel.channel === 'Tienda Web Shopify'
+                  ? 'bg-gradient-to-r from-green-600 to-teal-600'
+                  : channel.channel === 'MercadoLibre'
+                  ? 'bg-gradient-to-r from-yellow-400 to-yellow-600'
+                  : 'bg-gradient-to-r from-gray-500 to-gray-600'
+              }`}>
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="text-4xl">
+                    {channel.channel === 'Corporativo' ? '🏢' :
+                     channel.channel === 'Distribuidor' ? '🚚' :
+                     channel.channel === 'E-commerce' || channel.channel === 'ECOMMERCE' ? '🛒' :
+                     channel.channel === 'Retail' || channel.channel === 'RETAIL' ? '🏪' :
+                     channel.channel === 'Emporio/Tiendas Locales' || channel.channel === 'LOKAL' ? '🏬' :
+                     channel.channel === 'Emporios y Cafeterías' ? '☕' :
+                     channel.channel === 'Tienda Web Shopify' ? '🛍️' :
+                     channel.channel === 'MercadoLibre' ? '🏪' :
+                     channel.channel === 'Sin Canal Asignado' ? '❓' : '📦'}
+                  </span>
+                  <div>
+                    <h3 className="text-2xl font-bold">{channel.channel}</h3>
+                    <p className="text-sm opacity-90">{revenuePercentage.toFixed(1)}% del total</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-white rounded-lg p-3 shadow-sm">
+                    <div className="text-xs text-gray-600 mb-1">Ingresos</div>
+                    <div className="text-xl font-bold text-gray-900">{formatCurrency(channel.totalRevenue)}</div>
+                  </div>
+                  <div className="bg-white rounded-lg p-3 shadow-sm">
+                    <div className="text-xs text-gray-600 mb-1">Órdenes</div>
+                    <div className="text-xl font-bold text-gray-900">{channel.totalOrders.toLocaleString()}</div>
+                  </div>
+                  <div className="bg-white rounded-lg p-3 shadow-sm">
+                    <div className="text-xs text-gray-600 mb-1">Ticket Promedio</div>
+                    <div className="text-lg font-bold text-gray-900">{formatCurrency(channel.avgTicket)}</div>
+                  </div>
+                  <div className="bg-white rounded-lg p-3 shadow-sm">
+                    <div className="text-xs text-gray-600 mb-1">Unidades/Orden</div>
+                    <div className="text-lg font-bold text-gray-900">{channel.avgUnitsPerOrder.toFixed(1)}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Business Channel Details */}
+              <div className="p-4 space-y-4">
+                {/* Categories Performance */}
+                <div>
+                  <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <span>📊</span> Categorías Más Vendidas
+                  </h4>
+                  <div className="space-y-2">
+                    {channel.byCategory.slice(0, 5).map((cat, cidx) => {
+                      const catPercentage = (cat.revenue / channel.totalRevenue) * 100;
+                      return (
+                        <div key={cidx} className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="text-sm font-medium text-gray-900">{cat.category}</div>
+                            <div className="text-xs text-gray-600">{cat.units} un • {cat.orders} órdenes</div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="w-24 bg-gray-200 rounded-full h-2">
+                              <div
+                                className="bg-indigo-500 h-2 rounded-full"
+                                style={{ width: `${catPercentage}%` }}
+                              />
+                            </div>
+                            <div className="text-xs font-semibold text-gray-700 w-12 text-right">
+                              {catPercentage.toFixed(0)}%
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Package Types */}
+                <div>
+                  <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <span>📦</span> Formatos Preferidos
+                  </h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    {channel.byPackageType.slice(0, 6).map((pkg, pidx) => {
+                      const pkgPercentage = (pkg.units / channel.totalUnits) * 100;
+                      return (
+                        <div key={pidx} className="bg-gray-50 rounded-lg p-2 border border-gray-200">
+                          <div className="text-xs font-semibold text-gray-700 mb-1">{pkg.packageType}</div>
+                          <div className="flex items-center justify-between">
+                            <div className="text-xs text-gray-600">{pkg.units} un</div>
+                            <div className="text-xs font-bold text-indigo-600">{pkgPercentage.toFixed(0)}%</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Top Products */}
+                <div>
+                  <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <span>🏆</span> Top 5 Productos
+                  </h4>
+                  <div className="space-y-2">
+                    {channel.topProducts.slice(0, 5).map((prod, pidx) => (
+                      <div key={pidx} className="flex items-center justify-between bg-gray-50 rounded-lg p-2 border border-gray-200">
+                        <div className="flex-1">
+                          <div className="text-xs font-mono text-gray-600">{prod.sku}</div>
+                          <div className="text-sm font-medium text-gray-900 truncate">{prod.name}</div>
+                        </div>
+                        <div className="text-right ml-2">
+                          <div className="text-sm font-bold text-gray-900">{formatCurrency(prod.revenue)}</div>
+                          <div className="text-xs text-gray-600">{prod.units} un</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+        </>
+      )}
+      {/* END ANALYSIS BY BUSINESS CHANNEL */}
 
         </>
       )}

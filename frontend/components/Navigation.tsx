@@ -12,10 +12,9 @@ export default function Navigation() {
   const { data: session } = useSession();
 
   const navigation = [
-    { name: 'Dashboard', href: '/dashboard', icon: '📊' },
-    { name: 'Pedidos', href: '/dashboard/orders', icon: '📦' },
+    { name: 'Ventas', href: '/dashboard', icon: '📈' },
     { name: 'Inventario', href: '/dashboard/product-mapping', icon: '🏷️' },
-    { name: 'Auditoría', href: '/dashboard/audit', icon: '🔍' },
+    { name: 'Pedidos', href: '/dashboard/orders', icon: '📦' },
   ];
 
   const isActive = (href: string) => {

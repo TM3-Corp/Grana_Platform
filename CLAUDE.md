@@ -234,3 +234,283 @@ If unsure → Put it in `.claude_sessions/` first. You can always move it to pro
 ---
 
 **Remember:** Session work in `.claude_sessions/` is your playground. Production code is sacred and should only contain what actually needs to run in production or be maintained long-term.
+
+---
+
+## 🎯 **Platform Vision: Business Intelligence Layer Over RelBase**
+
+### **The Core Problem We're Solving**
+
+Grana uses **RelBase** as their invoicing system (facturador). RelBase has limitations:
+
+1. **Limited reporting capabilities** - Can't do multidimensional analysis
+2. **Human classification errors** - $408.8M in invoices without channel_id assigned
+3. **No pivot table functionality** - Can't group by format + channel + customer simultaneously
+4. **Read-only API** - We can only GET data, cannot modify/correct it in RelBase
+
+**Our Solution:** Build a Business Intelligence platform that reads from RelBase and applies business rules to visualize data correctly, even when source data has errors.
+
+---
+
+## 📊 **RelBase Data Structure (CRITICAL)**
+
+### **How RelBase Stores Data**
+
+**In facturas/boletas JSON:**
+```python
+{
+  "id": 39833042,
+  "channel_id": 3906,          # ✅ EXISTS: Number (1448, 1459, 3768, etc.)
+  "channel_name": None,        # ❌ ALWAYS NULL - not provided
+  "customer_id": 7344922,      # ✅ EXISTS: Number
+  "customer_name": None,       # ❌ ALWAYS NULL - not provided
+  "amount_total": 77859,
+  "created_at": "2025-10-17",
+  "products": [...]
+}
+```
+
+### **Getting Human-Readable Names**
+
+Names come from **separate API calls**:
+
+```python
+# 1. Channel names: GET /api/v1/canal_ventas
+{
+  "data": {
+    "channels": [
+      {"id": 1448, "name": "ECOMMERCE"},
+      {"id": 1459, "name": "RETAIL"},
+      {"id": 3768, "name": "CORPORATIVO"},
+      {"id": 3906, "name": "DISTRIBUIDOR"},
+      {"id": 1544, "name": "EMPORIOS Y CAFETERIAS"}
+    ]
+  }
+}
+
+# 2. Customer names: GET /api/v1/clientes/{customer_id}
+{
+  "data": {
+    "id": 596810,
+    "name": "CENCOSUD RETAIL S.A.",  # ← Here's the name
+    "rut": "81201000-K"
+  }
+}
+```
+
+**Key Insight:** RelBase invoices only have IDs. We must query the API separately to get names.
+
+---
+
+## 🏗️ **Business Intelligence Architecture**
+
+### **Data Flow**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 1. RelBase (Source of Truth - Read Only)                   │
+│    • Facturas/Boletas with channel_id + customer_id        │
+│    • Has errors: 345 invoices ($408.8M) without channel    │
+│    • Limited reporting: can't pivot/group effectively      │
+└─────────────────┬───────────────────────────────────────────┘
+                  │
+                  │ GET /api/v1/* (read-only)
+                  ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 2. Our Platform (Business Intelligence Layer)              │
+│    • Reads data from RelBase API                           │
+│    • Applies business rules to correct classifications     │
+│    • Maps: customer_id → correct channel_id                │
+│    • Groups products into families                         │
+│    • Enables multidimensional analysis                     │
+└─────────────────┬───────────────────────────────────────────┘
+                  │
+                  │ Frontend displays corrected data
+                  ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 3. Visualizations (Executive Dashboard)                    │
+│    • Pivot tables by: format × channel × customer × date   │
+│    • Hierarchical product view (families → SKUs)           │
+│    • Corrected channel assignments (even if RelBase wrong) │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🌳 **Product Families & Hierarchical Analysis**
+
+### **The Problem**
+
+RelBase shows SKU-level sales:
+```
+Top Products in RelBase:
+1. BAMC_U04010 (Barra Low Carb Manzana Canela x1) - 50,000 units
+2. BAMC_U20010 (Barra Low Carb Manzana Canela x5) - 10,000 units
+3. BAMC_C02810 (Barra Low Carb Manzana Canela caja master) - 500 units
+```
+
+**Question:** "What's our best-selling product?"
+**Wrong Answer:** "BAMC_U04010"
+**Right Answer:** "Barra Low Carb Manzana Canela" (across all formats)
+
+### **Product Family Concept**
+
+A **Product Family** groups all SKU variants of the same base product:
+
+```
+Family: "Barra Low Carb Manzana Canela"
+├── BAMC_U04010 (1 unidad)    → 50,000 units
+├── BAMC_U20010 (5 unidades)  → 10,000 units
+└── BAMC_C02810 (caja master) → 500 units
+────────────────────────────────────────────
+TOTAL FAMILY                  → 60,500 units
+```
+
+**Source of Truth:** `/public/Archivos_Compartidos/Códigos_Grana_Final.csv`
+- Maps SKU → Product Family
+- Maps SKU → Format (1U, 5U, caja master)
+
+### **Analysis Hierarchy**
+
+Our platform enables analysis at multiple levels:
+
+```
+Level 1: PRODUCT FAMILY
+│  "Barra Low Carb Manzana Canela" - $X total revenue
+│
+├─ Level 2: BY FORMAT
+│  ├─ 1 unidad (BAMC_U04010) - $Y
+│  ├─ 5 unidades (BAMC_U20010) - $Z
+│  └─ Caja master (BAMC_C02810) - $W
+│
+├─ Level 3: BY CHANNEL
+│  ├─ E-commerce - $A
+│  ├─ Retail - $B
+│  ├─ Corporativo - $C
+│  └─ Distribuidor - $D
+│
+└─ Level 4: BY CUSTOMER
+   ├─ Shopify - $E
+   ├─ Walmart - $F
+   ├─ Cencosud - $G
+   └─ Newrest - $H
+```
+
+**Time Filters:** Last 30 days, Last 90 days, Month, Quarter, Year
+
+---
+
+## 🔧 **Business Rules Layer**
+
+### **Correcting RelBase Classification Errors**
+
+**Problem Identified:**
+- 345 invoices ($408.8M) have `channel_id = null` in RelBase
+- Top 3 customers account for 96% of uncategorized sales:
+  - Customer 1997707 (NEWREST) - $186M → Should be **CORPORATIVO**
+  - Customer 596810 (CENCOSUD) - $160M → Should be **RETAIL**
+  - Customer 2358971 (Walmart) - $45.9M → Should be **RETAIL**
+
+**Solution: Customer → Channel Mapping Table**
+
+We create a mapping in our platform:
+
+```sql
+-- Table: customer_channel_rules
+CREATE TABLE customer_channel_rules (
+  customer_id INTEGER,
+  channel_id INTEGER,
+  channel_name TEXT,
+  rule_reason TEXT,
+  created_at TIMESTAMP
+);
+
+-- Example rules:
+INSERT INTO customer_channel_rules VALUES
+  (1997707, 3768, 'CORPORATIVO', 'Newrest is airline catering = corporate'),
+  (596810, 1459, 'RETAIL', 'Cencosud is supermarket chain = retail'),
+  (2358971, 1459, 'RETAIL', 'Walmart is supermarket chain = retail');
+```
+
+**Application Logic:**
+
+```python
+# When displaying data:
+if order.channel_id is None:
+    # Apply business rule
+    mapped_channel = customer_channel_rules.get(order.customer_id)
+    if mapped_channel:
+        display_channel = mapped_channel.channel_name
+    else:
+        display_channel = "SIN CLASIFICAR"  # Show as uncategorized
+else:
+    # Use RelBase channel
+    display_channel = channels.get(order.channel_id)
+```
+
+This allows us to:
+- ✅ Display data correctly in dashboards
+- ✅ Apply executive-level business logic
+- ✅ NOT modify source data in RelBase (read-only)
+- ✅ Maintain audit trail of our classification rules
+
+---
+
+## 📈 **Example Use Cases**
+
+### **Use Case 1: Executive wants to know top product by channel**
+
+**In RelBase:** Can only see "BAMC_U04010 sold 50k units in 2025"
+
+**In Our Platform:**
+```
+Family: Barra Low Carb Manzana Canela
+Total: 60,500 units | $2.1M revenue
+
+By Channel:
+├─ E-commerce: 35,000 units (58%) | $1.2M
+├─ Retail: 20,000 units (33%) | $700K
+└─ Corporativo: 5,500 units (9%) | $200K
+
+By Format (E-commerce only):
+├─ 1 unidad: 30,000 units
+└─ 5 unidades: 5,000 units
+
+Top Customer (E-commerce): Shopify - $950K
+```
+
+### **Use Case 2: Analyze Walmart sales by product family**
+
+**Query:** "Show me what Walmart bought in Q1 2025, grouped by product family"
+
+**Our Platform:**
+```
+Walmart Chile S.A. (Customer 2358971)
+Channel: RETAIL (auto-assigned by our rules)
+Period: Q1 2025
+Total: $45.9M
+
+Top Families:
+1. Barra Low Carb Manzana Canela - $12M
+   ├─ Caja master (BAMC_C02810) - $10M
+   └─ 1 unidad (BAMC_U04010) - $2M
+
+2. Barra Low Carb Cranberry - $8M
+   └─ Caja master - $8M
+
+3. Keeper Mix - $6M
+```
+
+---
+
+## 🎯 **Platform Goals**
+
+1. **Provide executive insights** RelBase can't deliver
+2. **Correct classification errors** through business rules
+3. **Enable multidimensional analysis** (product family × format × channel × customer × time)
+4. **Maintain data integrity** by not modifying source (RelBase)
+5. **Serve as single source of truth** for visualizations and reporting
+
+---
+
+**Remember:** We're building a **Business Intelligence layer**, not just a data viewer. We apply business logic to make sense of imperfect source data.

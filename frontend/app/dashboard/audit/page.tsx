@@ -69,6 +69,7 @@ export default function AuditPage() {
   const [selectedChannel, setSelectedChannel] = useState<string>('');
   const [selectedCustomer, setSelectedCustomer] = useState<string>('');
   const [selectedSKU, setSelectedSKU] = useState<string>('');
+  const [skuSearchInput, setSkuSearchInput] = useState<string>('');
   const [showNullsOnly, setShowNullsOnly] = useState(false);
   const [showNotInCatalogOnly, setShowNotInCatalogOnly] = useState(false);
 
@@ -79,6 +80,32 @@ export default function AuditPage() {
 
   // Grouping
   const [groupBy, setGroupBy] = useState<string>('');
+
+  // Effects must be called before any conditional returns
+  useEffect(() => {
+    if (status === 'authenticated') {
+      fetchFilters();
+      fetchSummary();
+    }
+  }, [status]);
+
+  useEffect(() => {
+    if (status === 'authenticated') {
+      fetchData();
+    }
+  }, [status, selectedSource, selectedChannel, selectedCustomer, selectedSKU, showNullsOnly, showNotInCatalogOnly, currentPage]);
+
+  // Debounce SKU search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (skuSearchInput !== selectedSKU) {
+        setSelectedSKU(skuSearchInput);
+        setCurrentPage(1);
+      }
+    }, 500); // 500ms debounce
+
+    return () => clearTimeout(timer);
+  }, [skuSearchInput]);
 
   if (status === 'loading') {
     return (
@@ -91,15 +118,6 @@ export default function AuditPage() {
   if (status === 'unauthenticated') {
     redirect('/login');
   }
-
-  useEffect(() => {
-    fetchFilters();
-    fetchSummary();
-  }, []);
-
-  useEffect(() => {
-    fetchData();
-  }, [selectedSource, selectedChannel, selectedCustomer, selectedSKU, showNullsOnly, showNotInCatalogOnly, currentPage]);
 
   const fetchFilters = async () => {
     try {
@@ -158,6 +176,7 @@ export default function AuditPage() {
     setSelectedChannel('');
     setSelectedCustomer('');
     setSelectedSKU('');
+    setSkuSearchInput('');
     setShowNullsOnly(false);
     setShowNotInCatalogOnly(false);
     setCurrentPage(1);
@@ -210,7 +229,7 @@ export default function AuditPage() {
               <div className="text-sm text-gray-600 mb-1">SKUs Únicos</div>
               <div className="text-2xl font-bold text-gray-900">{summary.product_mapping.unique_skus}</div>
               <div className="text-xs text-gray-500 mt-1">
-                {summary.product_mapping.in_catalog} en catálogo · {summary.product_mapping.not_in_catalog} sin mapear
+                {summary.product_mapping.mapped_skus} mapeados · {summary.product_mapping.not_in_catalog} sin mapear
               </div>
             </div>
 
@@ -282,19 +301,21 @@ export default function AuditPage() {
               </select>
             </div>
 
-            {/* SKU Filter */}
+            {/* SKU Search */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">SKU</label>
-              <select
-                value={selectedSKU}
-                onChange={(e) => { setSelectedSKU(e.target.value); setCurrentPage(1); }}
+              <label className="block text-sm font-medium text-gray-700 mb-1">Buscar SKU</label>
+              <input
+                type="text"
+                value={skuSearchInput}
+                onChange={(e) => setSkuSearchInput(e.target.value)}
+                placeholder="Escribe para buscar SKU..."
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Todos los SKUs</option>
-                {filters.skus.map((sku) => (
-                  <option key={sku} value={sku}>{sku}</option>
-                ))}
-              </select>
+              />
+              {skuSearchInput && (
+                <div className="mt-1 text-xs text-gray-500">
+                  Buscando: "{skuSearchInput}"
+                </div>
+              )}
             </div>
           </div>
 
@@ -333,7 +354,8 @@ export default function AuditPage() {
               <option value="order_source">Fuente</option>
               <option value="channel_name">Canal</option>
               <option value="customer_name">Cliente</option>
-              <option value="sku">SKU</option>
+              <option value="sku">SKU Original</option>
+              <option value="sku_primario">SKU Primario</option>
               <option value="category">Categoría</option>
               <option value="family">Familia</option>
               <option value="format">Formato</option>
@@ -374,7 +396,8 @@ export default function AuditPage() {
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Canal</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU Original</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU Primario</th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Producto</th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoría</th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Familia</th>
@@ -409,6 +432,40 @@ export default function AuditPage() {
                               <div className={item.sku_null ? 'text-red-600 font-medium' : 'text-gray-900'}>
                                 {item.sku || 'SIN SKU'}
                               </div>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm">
+                              {item.sku_primario ? (
+                                <div>
+                                  <div className="text-gray-900 font-medium">{item.sku_primario}</div>
+                                  {item.sku !== item.sku_primario && (
+                                    <div className="text-xs text-gray-500 mt-0.5">
+                                      {item.match_type === 'pack_prefix_removed' && `Pack ${item.pack_quantity}`}
+                                      {item.match_type === 'anu_prefix_removed' && 'ANU-'}
+                                      {item.match_type === 'anu_prefix_removed+caja_master' && 'ANU- + CM'}
+                                      {item.match_type === 'anu_prefix_removed+web_suffix' && 'ANU- + _WEB'}
+                                      {item.match_type === 'anu_prefix_removed+web_suffix+caja_master' && 'ANU- + _WEB + CM'}
+                                      {item.match_type === 'pack_prefix_removed+caja_master' && `Pack ${item.pack_quantity} + CM`}
+                                      {item.match_type === 'caja_master' && 'Caja Master'}
+                                      {item.match_type === 'web_suffix_removed' && '_WEB'}
+                                      {item.match_type === 'web_suffix_removed+caja_master' && '_WEB + CM'}
+                                      {item.match_type === 'trailing_20_to_10' && '20→10'}
+                                      {item.match_type === 'trailing_20_to_10+caja_master' && '20→10 + CM'}
+                                      {item.match_type === 'extra_digits_removed' && 'Extra dígitos'}
+                                      {item.match_type === 'extra_digits_removed+caja_master' && 'Extra dígitos + CM'}
+                                      {item.match_type === 'cracker_1ues_variant' && '1UES→135g'}
+                                      {item.match_type === 'cracker_1ues_variant+caja_master' && '1UES→135g + CM'}
+                                      {item.match_type === 'special_crsm_bandeja' && 'Bandeja'}
+                                      {item.match_type === 'special_crsm_bandeja+caja_master' && 'Bandeja + CM'}
+                                      {item.match_type === 'keeper_pioneros_mapped' && 'KEEPER_PIONEROS'}
+                                      {item.match_type === 'keeper_pioneros_mapped+caja_master' && 'KEEPER_PIONEROS + CM'}
+                                      {item.match_type === 'language_variant_c02010_to_c02020' && 'ES→EN'}
+                                      {item.match_type === 'language_variant_c02010_to_c02020+caja_master' && 'ES→EN + CM'}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="text-gray-400">-</div>
+                              )}
                             </td>
                             <td className="px-4 py-3 text-sm text-gray-900">
                               {item.product_name}
