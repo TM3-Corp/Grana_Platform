@@ -9,8 +9,9 @@ psycopg2-binary==2.9.9
 sqlalchemy==2.0.23
 alembic==1.12.1
 
-# Supabase
-supabase>=2.20.0
+# Supabase - Pinned to versions compatible with Pydantic 2.5
+supabase==2.22.0
+supabase-auth==2.22.0
 
 # API Integrations
 httpx>=0.26.0
