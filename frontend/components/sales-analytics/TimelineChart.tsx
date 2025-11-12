@@ -19,12 +19,14 @@ interface TimelineDataPoint {
 interface TimelineChartProps {
   data: TimelineDataPoint[] | null
   groupBy: string | null
+  timePeriod: 'auto' | 'day' | 'week' | 'month' | 'quarter' | 'year'
+  onTimePeriodChange: (period: 'auto' | 'day' | 'week' | 'month' | 'quarter' | 'year') => void
   loading?: boolean
 }
 
 type MetricType = 'revenue' | 'units' | 'orders'
 
-export default function TimelineChart({ data, groupBy, loading }: TimelineChartProps) {
+export default function TimelineChart({ data, groupBy, timePeriod, onTimePeriodChange, loading }: TimelineChartProps) {
   const [selectedMetric, setSelectedMetric] = useState<MetricType>('revenue')
 
   if (loading) {
@@ -196,49 +198,77 @@ export default function TimelineChart({ data, groupBy, loading }: TimelineChartP
   return (
     <div className="bg-white rounded-2xl shadow-lg hover:shadow-xl transition-shadow duration-300 p-6 mb-10">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-semibold text-gray-900">
-          📈 Evolución de Ventas
-        </h2>
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold text-gray-900">
+            📈 Evolución de Ventas
+          </h2>
 
-        {/* Metric Toggle */}
-        <div className="flex gap-2">
-          <button
-            onClick={() => setSelectedMetric('revenue')}
-            className={`
-              px-4 py-2 rounded-lg text-sm font-medium transition-colors
-              ${selectedMetric === 'revenue'
-                ? 'bg-green-500 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }
-            `}
-          >
-            Ingresos
-          </button>
-          <button
-            onClick={() => setSelectedMetric('units')}
-            className={`
-              px-4 py-2 rounded-lg text-sm font-medium transition-colors
-              ${selectedMetric === 'units'
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }
-            `}
-          >
-            Unidades
-          </button>
-          <button
-            onClick={() => setSelectedMetric('orders')}
-            className={`
-              px-4 py-2 rounded-lg text-sm font-medium transition-colors
-              ${selectedMetric === 'orders'
-                ? 'bg-purple-500 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }
-            `}
-          >
-            Órdenes
-          </button>
+          {/* Metric Toggle */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => setSelectedMetric('revenue')}
+              className={`
+                px-4 py-2 rounded-lg text-sm font-medium transition-colors
+                ${selectedMetric === 'revenue'
+                  ? 'bg-green-500 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }
+              `}
+            >
+              Ingresos
+            </button>
+            <button
+              onClick={() => setSelectedMetric('units')}
+              className={`
+                px-4 py-2 rounded-lg text-sm font-medium transition-colors
+                ${selectedMetric === 'units'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }
+              `}
+            >
+              Unidades
+            </button>
+            <button
+              onClick={() => setSelectedMetric('orders')}
+              className={`
+                px-4 py-2 rounded-lg text-sm font-medium transition-colors
+                ${selectedMetric === 'orders'
+                  ? 'bg-purple-500 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }
+              `}
+            >
+              Órdenes
+            </button>
+          </div>
+        </div>
+
+        {/* Time Period Selector */}
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-medium text-gray-700">⏱️ Agrupación:</span>
+          <div className="flex gap-1">
+            {['auto', 'day', 'week', 'month', 'quarter', 'year'].map((period) => (
+              <button
+                key={period}
+                onClick={() => onTimePeriodChange(period as any)}
+                className={`
+                  px-3 py-1.5 rounded-lg text-xs font-medium transition-colors
+                  ${timePeriod === period
+                    ? 'bg-gray-800 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }
+                `}
+              >
+                {period === 'auto' ? 'Auto' :
+                 period === 'day' ? 'Diario' :
+                 period === 'week' ? 'Semanal' :
+                 period === 'month' ? 'Mensual' :
+                 period === 'quarter' ? 'Trimestral' : 'Anual'}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

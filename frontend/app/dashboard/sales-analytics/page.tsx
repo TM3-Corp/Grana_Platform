@@ -273,8 +273,6 @@ export default function SalesAnalyticsPage() {
         onCustomFromDateChange={setCustomFromDate}
         customToDate={customToDate}
         onCustomToDateChange={setCustomToDate}
-        timePeriod={timePeriod}
-        onTimePeriodChange={setTimePeriod}
         selectedCategories={selectedCategories}
         onCategoriesChange={setSelectedCategories}
         selectedChannels={selectedChannels}
@@ -319,6 +317,8 @@ export default function SalesAnalyticsPage() {
         <TimelineChart
           data={data?.timeline || null}
           groupBy={groupBy}
+          timePeriod={timePeriod}
+          onTimePeriodChange={setTimePeriod}
           loading={loading}
         />
 
