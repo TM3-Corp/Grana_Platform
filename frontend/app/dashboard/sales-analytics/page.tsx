@@ -325,6 +325,7 @@ export default function SalesAnalyticsPage() {
         <TimelineChart
           data={data?.timeline || null}
           groupBy={groupBy}
+          stackBy={stackBy}
           timePeriod={timePeriod}
           onTimePeriodChange={setTimePeriod}
           loading={loading}
