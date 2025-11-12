@@ -23,40 +23,160 @@ def load_product_mapping():
     product_map = {}
     catalog_skus = set()
     catalog_master_skus = set()
+    conversion_map = {}  # Track conversion factors and SKU primario
+    all_valid_skus = set()  # ALL valid SKUs from CSV (both normal and caja master)
 
     try:
+        # FIRST PASS: Collect all valid SKUs
         with open(csv_path, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
             for row in reader:
+                sku = row.get('SKU', '').strip()
+                if sku:
+                    all_valid_skus.add(sku)
+                master_sku = row.get('SKU CAJA MÁSTER', '').strip()
+                if master_sku:
+                    all_valid_skus.add(master_sku)
+
+        # SECOND PASS: Build product map and conversion map
+        with open(csv_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                # Parse conversion data
+                units_per_display = row.get('UNIDADES POR DISPLAY', '').strip()
+                items_por_cm = row.get('Items por CM', '').strip()
+
                 # Normal SKU
                 sku = row.get('SKU', '').strip()
                 if sku:
                     catalog_skus.add(sku)
+
+                    # Calculate what the primario WOULD be
+                    base_code = sku.split('_')[0] if '_' in sku else sku
+                    potential_primario = f"{base_code}_U04010" if sku.endswith('10') else f"{base_code}_U04020"
+
+                    # CRITICAL: Only use it if it actually exists in the CSV
+                    # If it doesn't exist, the SKU is its own primario
+                    sku_primario = potential_primario if potential_primario in all_valid_skus else sku
+
+                    # For normal SKUs, use UNIDADES POR DISPLAY (not Items por CM)
+                    conversion_factor = int(units_per_display) if units_per_display and units_per_display.isdigit() else 1
+
                     product_map[sku] = {
                         'category': row.get('CATEGORÍA', ''),
                         'family': row.get('PRODUCTO', ''),
                         'format': row.get('TIPO ENVASE UNID', ''),
                         'product_name': row.get('PRODUCTO', ''),
                         'in_catalog': True,
-                        'tipo': 'Normal'
+                        'tipo': 'Normal',
+                        'conversion_factor': conversion_factor,
+                        'sku_primario': sku_primario
+                    }
+
+                    # Store in conversion map
+                    conversion_map[sku] = {
+                        'factor': conversion_factor,
+                        'primario': sku_primario,
+                        'base_code': base_code
                     }
 
                 # CAJA MÁSTER SKU
                 master_sku = row.get('SKU CAJA MÁSTER', '').strip()
                 if master_sku:
                     catalog_master_skus.add(master_sku)
+
+                    # Calculate what the primario WOULD be
+                    base_code = master_sku.split('_')[0] if '_' in master_sku else master_sku
+                    potential_primario = f"{base_code}_U04010" if master_sku.endswith('10') else f"{base_code}_U04020"
+
+                    # CRITICAL: Only use it if it actually exists in the CSV
+                    # If it doesn't exist, the SKU is its own primario
+                    sku_primario = potential_primario if potential_primario in all_valid_skus else master_sku
+
+                    # Caja master uses Items por CM for conversion
+                    cm_conversion = int(items_por_cm) if items_por_cm and items_por_cm.isdigit() else 1
+
                     product_map[master_sku] = {
                         'category': row.get('CATEGORÍA', ''),
                         'family': row.get('NOMBRE CAJA MÁSTER', ''),
                         'format': 'CAJA MASTER',
                         'product_name': row.get('NOMBRE CAJA MÁSTER', ''),
                         'in_catalog': True,
-                        'tipo': 'Caja Master'
+                        'tipo': 'Caja Master',
+                        'conversion_factor': cm_conversion,
+                        'sku_primario': sku_primario
+                    }
+
+                    # Store in conversion map
+                    conversion_map[master_sku] = {
+                        'factor': cm_conversion,
+                        'primario': sku_primario,
+                        'base_code': base_code
                     }
     except FileNotFoundError:
         print(f"Warning: Product catalog CSV not found at {csv_path}")
 
-    return product_map, catalog_skus, catalog_master_skus
+    return product_map, catalog_skus, catalog_master_skus, conversion_map
+
+
+def get_sku_primario(sku: str, conversion_map: dict) -> str:
+    """
+    Get the SKU Primario (base/primary SKU) for any SKU variant.
+    Returns the X1 variant (_U04010 for Spanish, _U04020 for English) if it exists.
+    If it doesn't exist in the catalog, returns the SKU itself.
+
+    CRITICAL: We NEVER invent SKU codes that don't exist in the catalog.
+
+    Example:
+        BAKC_U20010 → BAKC_U04010 (primary exists in catalog)
+        GRAL_U26010 → GRAL_U26010 (GRAL_U04010 doesn't exist, so use itself)
+    """
+    if not sku:
+        return None
+
+    # Check if we have it in conversion map (this is the authoritative source)
+    if sku in conversion_map:
+        return conversion_map[sku]['primario']
+
+    # Fallback: If SKU not in conversion map, it's its own primario
+    # We NEVER invent codes that don't exist
+    return sku
+
+
+def calculate_units(sku: str, quantity: int, conversion_map: dict) -> int:
+    """
+    Calculate total units based on SKU and quantity.
+
+    Formula: Units = Quantity × Conversion Factor
+
+    Examples:
+        - BAKC_U04010 (X1): 10 × 1 = 10 units
+        - BAKC_U20010 (X5): 10 × 5 = 50 units
+        - BAKC_C02810 (CM X5): 17 × 140 = 2,380 units
+    """
+    if not sku or quantity is None:
+        return 0
+
+    # Get conversion factor from map
+    if sku in conversion_map:
+        conversion_factor = conversion_map[sku]['factor']
+        return quantity * conversion_factor
+
+    # Fallback: Try to determine from SKU pattern
+    # X1 variants (_U04010, _U04020) = 1 unit
+    if '_U04' in sku:
+        return quantity * 1
+
+    # X5 variants (_U20010, _U20020) = 5 units
+    if '_U20' in sku:
+        return quantity * 5
+
+    # X16 variants (_U64010, _U64020) = 16 units
+    if '_U64' in sku:
+        return quantity * 16
+
+    # Default to 1:1 if unknown
+    return quantity
 
 
 def map_sku_with_quantity(sku, product_name, product_map, catalog_skus, catalog_master_skus, source=None):
@@ -233,12 +353,15 @@ def map_sku_with_quantity(sku, product_name, product_map, catalog_skus, catalog_
 
 @router.get("/data")
 async def get_audit_data(
-    source: Optional[str] = Query(None, description="Filter by source (relbase, shopify, mercadolibre)"),
-    channel: Optional[str] = Query(None, description="Filter by channel name"),
-    customer: Optional[str] = Query(None, description="Filter by customer name"),
-    sku: Optional[str] = Query(None, description="Filter by SKU"),
+    source: Optional[List[str]] = Query(None, description="Filter by source (relbase, shopify, mercadolibre) - supports multiple"),
+    category: Optional[List[str]] = Query(None, description="Filter by product category/familia (BARRAS, CRACKERS, GRANOLAS, KEEPERS) - supports multiple"),
+    channel: Optional[List[str]] = Query(None, description="Filter by channel name - supports multiple"),
+    customer: Optional[List[str]] = Query(None, description="Filter by customer name - supports multiple"),
+    sku: Optional[str] = Query(None, description="Search in multiple fields: Cliente, Producto, Pedido, Canal, Formato, SKU Original, SKU Primario"),
     has_nulls: Optional[bool] = Query(None, description="Show only records with NULL values"),
     not_in_catalog: Optional[bool] = Query(None, description="Show only SKUs not in catalog"),
+    from_date: Optional[str] = Query(None, description="Start date for filtering (YYYY-MM-DD format)"),
+    to_date: Optional[str] = Query(None, description="End date for filtering (YYYY-MM-DD format)"),
     limit: int = Query(1000, ge=1, le=10000, description="Max rows to return"),
     offset: int = Query(0, ge=0, description="Offset for pagination")
 ):
@@ -251,13 +374,21 @@ async def get_audit_data(
     - Channel info (with priority: assigned > RelBase > NULL)
     - Product info (SKU, name, category, family, format)
     - Validation flags (NULL checks, catalog checks)
+
+    The 'sku' parameter now searches across multiple fields:
+    - Customer name (Cliente)
+    - Product name (Producto)
+    - Order number (Pedido)
+    - Channel name (Canal)
+    - Product SKU (SKU Original)
+    - Format and SKU Primario (filtered post-enrichment)
     """
 
     if not DATABASE_URL:
         raise HTTPException(status_code=500, detail="DATABASE_URL not configured")
 
     # Load product catalog with CAJA MÁSTER support
-    product_catalog, catalog_skus, catalog_master_skus = load_product_mapping()
+    product_catalog, catalog_skus, catalog_master_skus, conversion_map = load_product_mapping()
 
     try:
         with psycopg2.connect(DATABASE_URL) as conn:
@@ -267,22 +398,84 @@ async def get_audit_data(
                 where_clauses = []
                 params = []
 
+                # Multi-value filters using IN operator
                 if source:
-                    where_clauses.append("o.source = %s")
-                    params.append(source)
+                    placeholders = ','.join(['%s'] * len(source))
+                    where_clauses.append(f"o.source IN ({placeholders})")
+                    params.extend(source)
+
+                # Category filter: Use CSV as source of truth instead of products table
+                # This ensures consistency between filtering and enrichment
+                # IMPORTANT: We need to get ALL unique SKUs from DB first, map them,
+                # then filter by category to handle SKU variants (ANU- prefix, _WEB suffix, etc.)
+                category_filter_skus = None
+                if category:
+                    # Step 1: Get all unique SKUs from DB
+                    cursor.execute("""
+                        SELECT DISTINCT oi.product_sku, oi.product_name, o.source
+                        FROM orders o
+                        JOIN order_items oi ON oi.order_id = o.id
+                        WHERE oi.product_sku IS NOT NULL
+                          AND oi.product_sku != ''
+                    """)
+                    all_db_skus = cursor.fetchall()
+
+                    # Step 2: Map each SKU and filter by category
+                    category_filter_skus = set()
+                    for row in all_db_skus:
+                        db_sku = row['product_sku']
+                        product_name = row['product_name'] or ''
+                        sku_source = row.get('source', '')
+
+                        # Map SKU using same logic as enrichment
+                        official_sku, _, _, product_info, _ = map_sku_with_quantity(
+                            db_sku, product_name, product_catalog, catalog_skus, catalog_master_skus, sku_source
+                        )
+
+                        # Check if mapped SKU belongs to selected categories
+                        if official_sku and product_info:
+                            sku_category = product_info.get('category', '')
+                            if sku_category in category:
+                                category_filter_skus.add(db_sku)  # Add DB SKU (not official SKU)
+
+                    # Step 3: Apply filter
+                    if category_filter_skus:
+                        placeholders = ','.join(['%s'] * len(category_filter_skus))
+                        where_clauses.append(f"oi.product_sku IN ({placeholders})")
+                        params.extend(list(category_filter_skus))
+                    else:
+                        # No SKUs found for these categories, return empty results
+                        where_clauses.append("1=0")  # Always false condition
 
                 if channel:
-                    where_clauses.append("(ch.name ILIKE %s)")
-                    params.append(f"%{channel}%")
+                    # For channel, use OR with ILIKE for partial matching
+                    channel_conditions = ' OR '.join(['ch.name ILIKE %s'] * len(channel))
+                    where_clauses.append(f"({channel_conditions})")
+                    for ch in channel:
+                        params.append(f"%{ch}%")
 
                 if customer:
-                    where_clauses.append("(cust_direct.name ILIKE %s OR cust_channel.name ILIKE %s)")
-                    params.append(f"%{customer}%")
-                    params.append(f"%{customer}%")
+                    # For customer, use OR with ILIKE for partial matching
+                    customer_conditions = ' OR '.join(['(cust_direct.name ILIKE %s OR cust_channel.name ILIKE %s)'] * len(customer))
+                    where_clauses.append(f"({customer_conditions})")
+                    for cust in customer:
+                        params.append(f"%{cust}%")
+                        params.append(f"%{cust}%")
 
+                # Multi-field search: Cliente, Producto, Pedido, Canal, SKU Original
+                # Format and SKU Primario are filtered post-enrichment since they come from CSV
                 if sku:
-                    where_clauses.append("oi.product_sku ILIKE %s")
-                    params.append(f"%{sku}%")
+                    search_conditions = [
+                        "COALESCE(cust_direct.name, cust_channel.name, '') ILIKE %s",  # Cliente
+                        "oi.product_name ILIKE %s",                                     # Producto
+                        "o.external_id ILIKE %s",                                       # Pedido
+                        "ch.name ILIKE %s",                                             # Canal
+                        "oi.product_sku ILIKE %s"                                       # SKU Original
+                    ]
+                    where_clauses.append(f"({' OR '.join(search_conditions)})")
+                    # Add the same search term for each condition
+                    for _ in range(len(search_conditions)):
+                        params.append(f"%{sku}%")
 
                 # Add has_nulls filter to SQL query
                 if has_nulls:
@@ -293,8 +486,20 @@ async def get_audit_data(
                         oi.product_sku = ''
                     )""")
 
-                # Add 2025 filter
-                where_clauses.append("EXTRACT(YEAR FROM o.order_date) = 2025")
+                # Add date range filters
+                if from_date and to_date:
+                    where_clauses.append("o.order_date >= %s AND o.order_date <= %s")
+                    params.append(from_date)
+                    params.append(to_date)
+                elif from_date:
+                    where_clauses.append("o.order_date >= %s")
+                    params.append(from_date)
+                elif to_date:
+                    where_clauses.append("o.order_date <= %s")
+                    params.append(to_date)
+                else:
+                    # Default to 2025 if no dates provided (backward compatibility)
+                    where_clauses.append("EXTRACT(YEAR FROM o.order_date) = 2025")
 
                 where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 
@@ -370,7 +575,9 @@ async def get_audit_data(
                                     "customer": customer,
                                     "sku": sku,
                                     "has_nulls": has_nulls,
-                                    "not_in_catalog": not_in_catalog
+                                    "not_in_catalog": not_in_catalog,
+                                    "from_date": from_date,
+                                    "to_date": to_date
                                 }
                             }
                         }
@@ -426,7 +633,7 @@ async def get_audit_data(
                         oi.product_sku as sku,
                         oi.product_name,
                         oi.quantity,
-                        oi.unit_price,
+                        ROUND(oi.subtotal / NULLIF(oi.quantity, 0), 2) as unit_price,  -- Real net unit price (after discounts, without IVA)
                         oi.subtotal as item_subtotal,
 
                         -- Product Mapping (will be enriched with CSV data)
@@ -482,6 +689,7 @@ async def get_audit_data(
                     SELECT COUNT(DISTINCT oi.id)
                     FROM orders o
                     LEFT JOIN order_items oi ON oi.order_id = o.id
+                    LEFT JOIN products p ON p.sku = oi.product_sku
                     LEFT JOIN channels ch ON ch.id = o.channel_id
                     LEFT JOIN customers cust_direct
                         ON cust_direct.id = o.customer_id
@@ -515,6 +723,7 @@ async def get_audit_data(
                     sku = row_dict.get('sku', '')
                     product_name = row_dict.get('product_name', '')
                     order_source = row_dict.get('order_source', '')
+                    quantity = row_dict.get('quantity', 0)
 
                     # Apply conservative mapping with quantity extraction
                     official_sku, match_type, pack_qty, product_info, confidence = map_sku_with_quantity(
@@ -523,7 +732,14 @@ async def get_audit_data(
 
                     if official_sku:
                         # Product successfully mapped
-                        row_dict['sku_primario'] = official_sku
+                        # Get SKU Primario
+                        sku_primario = get_sku_primario(official_sku, conversion_map)
+
+                        # Calculate total units
+                        unidades = calculate_units(official_sku, quantity, conversion_map)
+
+                        row_dict['sku_primario'] = sku_primario
+                        row_dict['unidades'] = unidades
                         row_dict['pack_quantity'] = pack_qty
                         row_dict['match_type'] = match_type
                         row_dict['confidence'] = confidence
@@ -531,13 +747,21 @@ async def get_audit_data(
                         row_dict['family'] = product_info['family'] or row_dict.get('family')
                         row_dict['format'] = product_info['format'] or row_dict.get('format')
                         row_dict['in_catalog'] = True
+
+                        # Also include conversion factor for reference
+                        if official_sku in conversion_map:
+                            row_dict['conversion_factor'] = conversion_map[official_sku]['factor']
+                        else:
+                            row_dict['conversion_factor'] = 1
                     else:
                         # Not mapped
                         row_dict['sku_primario'] = None
+                        row_dict['unidades'] = quantity  # Default to quantity if not mapped
                         row_dict['pack_quantity'] = 1
                         row_dict['match_type'] = 'no_match'
                         row_dict['confidence'] = 0
                         row_dict['in_catalog'] = False
+                        row_dict['conversion_factor'] = 1
 
                     enriched_rows.append(row_dict)
 
@@ -551,11 +775,14 @@ async def get_audit_data(
                         "returned": len(enriched_rows),
                         "filters": {
                             "source": source,
+                            "category": category,
                             "channel": channel,
                             "customer": customer,
                             "sku": sku,
                             "has_nulls": has_nulls,
-                            "not_in_catalog": not_in_catalog
+                            "not_in_catalog": not_in_catalog,
+                            "from_date": from_date,
+                            "to_date": to_date
                         }
                     }
                 }
@@ -587,16 +814,24 @@ async def get_available_filters():
                 """)
                 sources = [row['source'] for row in cursor.fetchall() if row['source']]
 
-                # Get unique channels
+                # Get official Relbase channels that have 2025 data
+                # Exclude channels with no orders in 2025 (EXPORTACIÓN, HORECA, MARKETPLACES)
                 cursor.execute("""
-                    SELECT DISTINCT
-                        COALESCE(ch.name, 'SIN CANAL') as channel_name
-                    FROM orders o
-                    LEFT JOIN channels ch ON ch.id = o.channel_id
-                    WHERE EXTRACT(YEAR FROM order_date) = 2025
-                    ORDER BY channel_name
+                    SELECT DISTINCT ch.name as channel_name
+                    FROM channels ch
+                    INNER JOIN orders o ON o.channel_id = ch.id
+                    WHERE ch.external_id IS NOT NULL
+                      AND ch.source = 'relbase'
+                      AND ch.is_active = true
+                      AND o.source = 'relbase'
+                      AND o.invoice_status IN ('accepted', 'accepted_objection')
+                      AND EXTRACT(YEAR FROM o.order_date) = 2025
+                    ORDER BY ch.name
                 """)
                 channels = [row['channel_name'] for row in cursor.fetchall()]
+
+                # Always add "Sin Canal Asignado" as default for orders without channel
+                channels.append('Sin Canal Asignado')
 
                 # Get unique customers (limit to top 100 by order count)
                 cursor.execute("""
@@ -651,7 +886,7 @@ async def get_audit_summary():
         raise HTTPException(status_code=500, detail="DATABASE_URL not configured")
 
     # Load product catalog with CAJA MÁSTER support
-    product_catalog, catalog_skus, catalog_master_skus = load_product_mapping()
+    product_catalog, catalog_skus, catalog_master_skus, conversion_map = load_product_mapping()
 
     try:
         with psycopg2.connect(DATABASE_URL) as conn:
