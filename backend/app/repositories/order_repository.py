@@ -93,6 +93,7 @@ class OrderRepository:
         payment_status: Optional[str] = None,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
+        search: Optional[str] = None,
         limit: int = 50,
         offset: int = 0
     ) -> Tuple[List[Order], int]:
@@ -105,6 +106,7 @@ class OrderRepository:
             payment_status: Filter by payment status
             from_date: Filter orders from this date
             to_date: Filter orders until this date
+            search: Search by order number, customer name, email, or city
             limit: Maximum results to return
             offset: Number of results to skip
 
@@ -139,12 +141,26 @@ class OrderRepository:
                 conditions.append("o.order_date <= %s")
                 params.append(to_date)
 
+            if search:
+                # Search across order_number, external_id, customer name, email, and city
+                search_condition = """(
+                    o.external_id ILIKE %s OR
+                    o.order_number ILIKE %s OR
+                    c.name ILIKE %s OR
+                    c.email ILIKE %s OR
+                    c.city ILIKE %s
+                )"""
+                conditions.append(search_condition)
+                search_param = f"%{search}%"
+                params.extend([search_param, search_param, search_param, search_param, search_param])
+
             where_clause = " AND ".join(conditions) if conditions else "1=1"
 
             # Get total count
             cursor.execute(f"""
                 SELECT COUNT(*) as total
                 FROM orders o
+                LEFT JOIN customers c ON o.customer_id = c.id
                 WHERE {where_clause}
             """, params)
             total = cursor.fetchone()['total']
@@ -270,12 +286,14 @@ class OrderRepository:
 
         try:
             # Total orders and revenue
+            # CRITICAL: Exclude cancelled and declined invoices (no revenue)
             cursor.execute("""
                 SELECT
                     COUNT(*) as total_orders,
                     COALESCE(SUM(total), 0) as total_revenue,
                     COALESCE(AVG(total), 0) as average_order_value
                 FROM orders
+                WHERE (invoice_status IN ('accepted', 'accepted_objection') OR invoice_status IS NULL)
             """)
             totals = cursor.fetchone()
 
@@ -286,6 +304,7 @@ class OrderRepository:
                     COUNT(*) as count,
                     COALESCE(SUM(total), 0) as revenue
                 FROM orders
+                WHERE (invoice_status IN ('accepted', 'accepted_objection') OR invoice_status IS NULL)
                 GROUP BY source
                 ORDER BY count DESC
             """)
@@ -387,7 +406,8 @@ class OrderRepository:
                     SUM(total) as revenue,
                     AVG(total) as avg_ticket
                 FROM orders
-                WHERE 1=1 {date_filter}
+                WHERE (invoice_status IN ('accepted', 'accepted_objection') OR invoice_status IS NULL)
+                {date_filter}
                 GROUP BY period, source
                 ORDER BY period, source
             """, [date_format] + params)
@@ -420,7 +440,8 @@ class OrderRepository:
                     SUM(total) as revenue,
                     AVG(total) as avg_ticket
                 FROM orders
-                WHERE 1=1 {date_filter}
+                WHERE (invoice_status IN ('accepted', 'accepted_objection') OR invoice_status IS NULL)
+                {date_filter}
                 GROUP BY source
                 ORDER BY revenue DESC
             """, params)
@@ -438,7 +459,8 @@ class OrderRepository:
                 FROM order_items oi
                 JOIN orders o ON o.id = oi.order_id
                 LEFT JOIN products p ON p.sku = oi.product_sku
-                WHERE 1=1 {date_filter.replace('order_date', 'o.order_date')}
+                WHERE (o.invoice_status IN ('accepted', 'accepted_objection') OR o.invoice_status IS NULL)
+                {date_filter.replace('order_date', 'o.order_date')}
                 GROUP BY COALESCE(p.name, oi.product_name), COALESCE(p.sku, oi.product_sku)
                 ORDER BY revenue DESC
                 LIMIT 10
@@ -455,7 +477,8 @@ class OrderRepository:
                     MIN(order_date) as first_order,
                     MAX(order_date) as last_order
                 FROM orders
-                WHERE 1=1 {date_filter}
+                WHERE (invoice_status IN ('accepted', 'accepted_objection') OR invoice_status IS NULL)
+                {date_filter}
             """, params)
 
             kpis = cursor.fetchone()

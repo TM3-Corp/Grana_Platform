@@ -62,6 +62,12 @@ async def get_sales_analytics(
         where_clauses = ["o.source = ANY(%s)"]  # Always filter by source
         params = [sources]  # Default ['relbase']
 
+        # CRITICAL: Exclude cancelled and declined invoices (no revenue)
+        # Relbase invoices can have status: accepted, accepted_objection, cancel, declined
+        # Only 'accepted' and 'accepted_objection' generate revenue
+        # Other sources (shopify, lokal, etc.) don't have invoice_status, so we allow NULL
+        where_clauses.append("(o.invoice_status IN ('accepted', 'accepted_objection') OR o.invoice_status IS NULL)")
+
         # Date filters
         if from_date and to_date:
             where_clauses.append("o.order_date >= %s AND o.order_date <= %s")
