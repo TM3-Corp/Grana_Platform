@@ -13,6 +13,8 @@ export default function Navigation() {
 
   const navigation = [
     { name: 'Ventas', href: '/dashboard', icon: '📈' },
+    { name: 'Análisis Integral', href: '/dashboard/analytics', icon: '📊' },
+    { name: 'Análisis Dinámico', href: '/dashboard/sales-analytics', icon: '🎯' },
     { name: 'Inventario', href: '/dashboard/product-mapping', icon: '🏷️' },
     { name: 'Pedidos', href: '/dashboard/orders', icon: '📦' },
   ];
