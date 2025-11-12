@@ -28,6 +28,8 @@ interface FiltersSidebarProps {
   // Grouping and Top X
   groupBy: string
   onGroupByChange: (group: string) => void
+  stackBy: string | null
+  onStackByChange: (stack: string | null) => void
   topLimit: number
   onTopLimitChange: (limit: number) => void
 
@@ -373,6 +375,27 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
             ))}
           </select>
         </div>
+
+        {/* Stack By (only for category or format grouping) */}
+        {(props.groupBy === 'category' || props.groupBy === 'format') && (
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+              <span>📊</span> Apilar por
+            </h3>
+            <select
+              value={props.stackBy || 'channel'}
+              onChange={(e) => props.onStackByChange(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+            >
+              <option value="channel">Canal</option>
+              <option value="format">Formato</option>
+              <option value="customer">Cliente</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              Divide cada barra por esta dimensión
+            </p>
+          </div>
+        )}
 
         {/* Top X */}
         <div className="mb-6">

@@ -80,6 +80,7 @@ export default function SalesAnalyticsPage() {
 
   const [timePeriod, setTimePeriod] = useState<'auto' | 'day' | 'week' | 'month' | 'quarter' | 'year'>('auto')
   const [groupBy, setGroupBy] = useState<string>('category')
+  const [stackBy, setStackBy] = useState<string | null>('channel')
   const [topLimit, setTopLimit] = useState<number>(10)
   const [currentPage, setCurrentPage] = useState<number>(1)
 
@@ -103,6 +104,7 @@ export default function SalesAnalyticsPage() {
     selectedCustomers,
     selectedFormats,
     groupBy,
+    stackBy,
     topLimit,
     currentPage
   ])
@@ -183,6 +185,9 @@ export default function SalesAnalyticsPage() {
 
       // Grouping and top limit
       params.append('group_by', groupBy)
+      if (stackBy && (groupBy === 'category' || groupBy === 'format')) {
+        params.append('stack_by', stackBy)
+      }
       params.append('top_limit', topLimit.toString())
 
       // Pagination
@@ -224,6 +229,7 @@ export default function SalesAnalyticsPage() {
     setSelectedCustomers([])
     setSelectedFormats([])
     setGroupBy('category')
+    setStackBy('channel')
     setTopLimit(10)
     setCurrentPage(1)
   }
@@ -283,6 +289,8 @@ export default function SalesAnalyticsPage() {
         onFormatsChange={setSelectedFormats}
         groupBy={groupBy}
         onGroupByChange={setGroupBy}
+        stackBy={stackBy}
+        onStackByChange={setStackBy}
         topLimit={topLimit}
         onTopLimitChange={setTopLimit}
         availableChannels={availableChannels}

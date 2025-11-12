@@ -29,6 +29,7 @@ async def get_sales_analytics(
 
     # Grouping and limits
     group_by: Optional[str] = Query(None, description="Group by: category, channel, customer, format, sku_primario"),
+    stack_by: Optional[str] = Query(None, description="Stack by: channel, customer, format (creates grouped stacked bars)"),
     top_limit: int = Query(10, ge=5, le=30, description="Top N items to show"),
 
     # Pagination
@@ -138,6 +139,11 @@ async def get_sales_analytics(
         }
         group_field = group_field_map.get(group_by, 'p.category')  # Default to category
 
+        # Determine stack field if stack_by is provided
+        stack_field = None
+        if stack_by:
+            stack_field = group_field_map.get(stack_by)
+
         # === 1. SUMMARY METRICS ===
         summary_query = f"""
             SELECT
@@ -169,7 +175,27 @@ async def get_sales_analytics(
 
         # === 2. TIMELINE DATA ===
         # Timeline breakdown with dynamic time grouping (day/month/year)
-        if group_by:
+        if group_by and stack_by and stack_field:
+            # DOUBLE GROUPING: period + group + stack
+            timeline_query = f"""
+                SELECT
+                    {period_expr} as period,
+                    {group_field} as group_value,
+                    {stack_field} as stack_value,
+                    SUM(oi.total) as revenue,
+                    SUM(oi.quantity) as units,
+                    COUNT(DISTINCT o.id) as orders
+                FROM orders o
+                JOIN order_items oi ON o.id = oi.order_id
+                LEFT JOIN channels ch ON o.channel_id = ch.id
+                LEFT JOIN customers cust ON o.customer_id = cust.id
+                LEFT JOIN products p ON oi.product_id = p.id
+                WHERE {where_clause}
+                GROUP BY period, group_value, stack_value
+                ORDER BY period, group_value, revenue DESC
+            """
+        elif group_by:
+            # SINGLE GROUPING: period + group
             timeline_query = f"""
                 SELECT
                     {period_expr} as period,
@@ -187,6 +213,7 @@ async def get_sales_analytics(
                 ORDER BY period, revenue DESC
             """
         else:
+            # NO GROUPING: period only
             timeline_query = f"""
                 SELECT
                     {period_expr} as period,
@@ -208,8 +235,58 @@ async def get_sales_analytics(
 
         # Process timeline data
         timeline_dict = {}
-        for row in timeline_rows:
-            if group_by:
+
+        if group_by and stack_by and stack_field:
+            # DOUBLE GROUPING: period → group → stack
+            # First pass: build nested structure
+            for row in timeline_rows:
+                period, group_value, stack_value, revenue, units, orders = row
+
+                # Initialize period
+                if period not in timeline_dict:
+                    timeline_dict[period] = {
+                        "period": period,
+                        "total_revenue": 0,
+                        "total_units": 0,
+                        "total_orders": 0,
+                        "by_group": {}
+                    }
+
+                # Initialize group within period
+                if group_value not in timeline_dict[period]["by_group"]:
+                    timeline_dict[period]["by_group"][group_value] = {
+                        "group_value": group_value,
+                        "revenue": 0,
+                        "units": 0,
+                        "orders": 0,
+                        "by_stack": []
+                    }
+
+                # Add stack data
+                timeline_dict[period]["by_group"][group_value]["revenue"] += float(revenue or 0)
+                timeline_dict[period]["by_group"][group_value]["units"] += int(units or 0)
+                timeline_dict[period]["by_group"][group_value]["orders"] += int(orders or 0)
+                timeline_dict[period]["by_group"][group_value]["by_stack"].append({
+                    "stack_value": stack_value,
+                    "revenue": float(revenue or 0),
+                    "units": int(units or 0),
+                    "orders": int(orders or 0)
+                })
+
+                # Update period totals
+                timeline_dict[period]["total_revenue"] += float(revenue or 0)
+                timeline_dict[period]["total_units"] += int(units or 0)
+                timeline_dict[period]["total_orders"] += int(orders or 0)
+
+            # Convert group dict to list
+            for period_data in timeline_dict.values():
+                period_data["by_group"] = list(period_data["by_group"].values())
+
+            timeline = list(timeline_dict.values())
+
+        elif group_by:
+            # SINGLE GROUPING: period → group
+            for row in timeline_rows:
                 period, group_value, revenue, units, orders = row
                 if period not in timeline_dict:
                     timeline_dict[period] = {
@@ -228,7 +305,12 @@ async def get_sales_analytics(
                     "units": int(units or 0),
                     "orders": int(orders or 0)
                 })
-            else:
+
+            timeline = list(timeline_dict.values())
+
+        else:
+            # NO GROUPING: period only
+            for row in timeline_rows:
                 period, revenue, units, orders = row
                 timeline_dict[period] = {
                     "period": period,
@@ -237,7 +319,7 @@ async def get_sales_analytics(
                     "total_orders": int(orders or 0)
                 }
 
-        timeline = list(timeline_dict.values())
+            timeline = list(timeline_dict.values())
 
         # === 3. TOP ITEMS ===
         top_query = f"""
@@ -353,6 +435,7 @@ async def get_sales_analytics(
                     "categories": categories,
                     "formats": formats,
                     "group_by": group_by,
+                    "stack_by": stack_by,
                     "top_limit": top_limit
                 }
             }
