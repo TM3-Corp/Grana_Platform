@@ -121,7 +121,9 @@ async def get_sales_analytics(
         # Build period expression based on time_period
         period_expr_map = {
             'day': "TO_CHAR(o.order_date, 'YYYY-MM-DD')",
+            'week': "TO_CHAR(DATE_TRUNC('week', o.order_date), 'YYYY-\"W\"IW')",  # ISO week format: 2025-W45
             'month': "TO_CHAR(DATE_TRUNC('month', o.order_date), 'YYYY-MM')",
+            'quarter': "TO_CHAR(DATE_TRUNC('quarter', o.order_date), 'YYYY-\"Q\"Q')",  # Quarter format: 2025-Q4
             'year': "EXTRACT(YEAR FROM o.order_date)::text"
         }
         period_expr = period_expr_map.get(time_period, period_expr_map['month'])

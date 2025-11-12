@@ -48,13 +48,23 @@ export default function TimelineChart({ data, groupBy, loading }: TimelineChartP
     )
   }
 
-  // Format data for chart - handle day, month, and year formats
+  // Format data for chart - handle all period formats
   const formattedData = data.map(d => {
     let date: Date
     let label: string
 
-    // Detect format based on period string length and format
-    if (d.period.length === 10) {
+    // Detect format based on period string pattern
+    if (d.period.includes('-W')) {
+      // Format: "2025-W45" - Weekly
+      const [year, week] = d.period.split('-W')
+      label = `S${week} '${year.slice(2)}`
+      // e.g., "S45 '25"
+    } else if (d.period.includes('-Q')) {
+      // Format: "2025-Q4" - Quarterly
+      const [year, quarter] = d.period.split('-Q')
+      label = `Q${quarter} '${year.slice(2)}`
+      // e.g., "Q4 '25"
+    } else if (d.period.length === 10) {
       // Format: "2025-11-05" (YYYY-MM-DD) - Daily
       date = new Date(d.period)
       label = date.toLocaleDateString('es-CL', {

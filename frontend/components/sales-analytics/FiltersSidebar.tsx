@@ -25,6 +25,10 @@ interface FiltersSidebarProps {
   selectedFormats: string[]
   onFormatsChange: (formats: string[]) => void
 
+  // Time period grouping
+  timePeriod: 'auto' | 'day' | 'week' | 'month' | 'quarter' | 'year'
+  onTimePeriodChange: (period: 'auto' | 'day' | 'week' | 'month' | 'quarter' | 'year') => void
+
   // Grouping and Top X
   groupBy: string
   onGroupByChange: (group: string) => void
@@ -248,6 +252,36 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
               </div>
             </div>
           )}
+        </div>
+
+        {/* Time Period Grouping */}
+        <div className="mb-6">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+            <span>⏱️</span> Agrupación Temporal
+          </h3>
+          <select
+            value={props.timePeriod}
+            onChange={(e) => props.onTimePeriodChange(e.target.value as any)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+          >
+            <option value="auto">🤖 Automático (recomendado)</option>
+            <option value="day">📅 Diario</option>
+            <option value="week">📊 Semanal</option>
+            <option value="month">📆 Mensual</option>
+            <option value="quarter">🗓️ Trimestral</option>
+            <option value="year">📖 Anual</option>
+          </select>
+          <p className="text-xs text-gray-500 mt-2">
+            {props.timePeriod === 'auto'
+              ? 'El sistema elige automáticamente según el rango de fechas'
+              : `Los datos se agruparán por ${
+                  props.timePeriod === 'day' ? 'día' :
+                  props.timePeriod === 'week' ? 'semana' :
+                  props.timePeriod === 'month' ? 'mes' :
+                  props.timePeriod === 'quarter' ? 'trimestre' : 'año'
+                }`
+            }
+          </p>
         </div>
 
         {/* Product Family (Category) */}

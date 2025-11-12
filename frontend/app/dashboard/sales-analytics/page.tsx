@@ -78,6 +78,7 @@ export default function SalesAnalyticsPage() {
   const [selectedCustomers, setSelectedCustomers] = useState<string[]>([])
   const [selectedFormats, setSelectedFormats] = useState<string[]>([])
 
+  const [timePeriod, setTimePeriod] = useState<'auto' | 'day' | 'week' | 'month' | 'quarter' | 'year'>('auto')
   const [groupBy, setGroupBy] = useState<string>('category')
   const [topLimit, setTopLimit] = useState<number>(10)
   const [currentPage, setCurrentPage] = useState<number>(1)
@@ -96,6 +97,7 @@ export default function SalesAnalyticsPage() {
     selectedMonths,
     customFromDate,
     customToDate,
+    timePeriod,
     selectedCategories,
     selectedChannels,
     selectedCustomers,
@@ -175,6 +177,9 @@ export default function SalesAnalyticsPage() {
       selectedChannels.forEach(ch => params.append('channels', ch))
       selectedCustomers.forEach(cust => params.append('customers', cust))
       selectedFormats.forEach(fmt => params.append('formats', fmt))
+
+      // Time period
+      params.append('time_period', timePeriod)
 
       // Grouping and top limit
       params.append('group_by', groupBy)
@@ -268,6 +273,8 @@ export default function SalesAnalyticsPage() {
         onCustomFromDateChange={setCustomFromDate}
         customToDate={customToDate}
         onCustomToDateChange={setCustomToDate}
+        timePeriod={timePeriod}
+        onTimePeriodChange={setTimePeriod}
         selectedCategories={selectedCategories}
         onCategoriesChange={setSelectedCategories}
         selectedChannels={selectedChannels}
