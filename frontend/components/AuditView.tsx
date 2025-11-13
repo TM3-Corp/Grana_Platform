@@ -93,6 +93,11 @@ export default function AuditView() {
 
   // Grouping
   const [groupBy, setGroupBy] = useState<string>('');
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+
+  // Sorting
+  const [sortColumn, setSortColumn] = useState<string>('');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   useEffect(() => {
     if (status === 'authenticated') {
@@ -222,8 +227,57 @@ export default function AuditView() {
     setCurrentPage(1);
   };
 
+  const toggleGroupCollapse = (groupKey: string) => {
+    setCollapsedGroups((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(groupKey)) {
+        newSet.delete(groupKey);
+      } else {
+        newSet.add(groupKey);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSort = (column: string) => {
+    if (sortColumn === column) {
+      // Toggle direction if clicking same column
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      // New column - default to ascending
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+  };
+
+  const sortData = (data: AuditData[]) => {
+    if (!sortColumn) return data;
+
+    return [...data].sort((a, b) => {
+      let aVal: any = (a as any)[sortColumn];
+      let bVal: any = (b as any)[sortColumn];
+
+      // Handle null/undefined
+      if (aVal === null || aVal === undefined) aVal = '';
+      if (bVal === null || bVal === undefined) bVal = '';
+
+      // Handle numbers
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+      }
+
+      // Handle strings (case-insensitive)
+      const aStr = String(aVal).toLowerCase();
+      const bStr = String(bVal).toLowerCase();
+
+      if (aStr < bStr) return sortDirection === 'asc' ? -1 : 1;
+      if (aStr > bStr) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  };
+
   const groupData = (data: AuditData[], groupByField: string) => {
-    if (!groupByField) return { '': data };
+    if (!groupByField) return { '': sortData(data) };
 
     const grouped: { [key: string]: AuditData[] } = {};
     data.forEach((item) => {
@@ -231,11 +285,24 @@ export default function AuditView() {
       if (!grouped[key]) grouped[key] = [];
       grouped[key].push(item);
     });
+
+    // Sort each group's items
+    Object.keys(grouped).forEach((key) => {
+      grouped[key] = sortData(grouped[key]);
+    });
+
     return grouped;
   };
 
   const groupedData = groupData(data, groupBy);
   const totalPages = Math.ceil(totalCount / pageSize);
+
+  // Calculate overall totals from current page data
+  const overallTotals = {
+    totalPedidos: new Set(data.map(item => item.order_external_id)).size,
+    totalUnidades: data.reduce((sum, item) => sum + (item.unidades || 0), 0),
+    totalRevenue: data.reduce((sum, item) => sum + (item.item_subtotal || 0), 0),
+  };
 
   if (status === 'loading') {
     return (
@@ -247,6 +314,53 @@ export default function AuditView() {
 
   return (
     <div>
+      {/* Summary Cards */}
+      {!loading && data.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+          {/* Total Pedidos */}
+          <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 text-white">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-blue-100 text-sm font-medium uppercase tracking-wide">Total Pedidos</p>
+                <p className="text-4xl font-bold mt-2">{overallTotals.totalPedidos.toLocaleString('es-CL')}</p>
+                <p className="text-blue-100 text-xs mt-1">En esta vista</p>
+              </div>
+              <div className="text-5xl opacity-20">
+                📦
+              </div>
+            </div>
+          </div>
+
+          {/* Total Unidades */}
+          <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-lg shadow-lg p-6 text-white">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-green-100 text-sm font-medium uppercase tracking-wide">Total Unidades</p>
+                <p className="text-4xl font-bold mt-2">{overallTotals.totalUnidades.toLocaleString('es-CL')}</p>
+                <p className="text-green-100 text-xs mt-1">Unidades vendidas</p>
+              </div>
+              <div className="text-5xl opacity-20">
+                📊
+              </div>
+            </div>
+          </div>
+
+          {/* Total Revenue */}
+          <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-lg p-6 text-white">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-purple-100 text-sm font-medium uppercase tracking-wide">Total Ingresos</p>
+                <p className="text-4xl font-bold mt-2">${(overallTotals.totalRevenue / 1000000).toFixed(1)}M</p>
+                <p className="text-purple-100 text-xs mt-1">${overallTotals.totalRevenue.toLocaleString('es-CL')} CLP</p>
+              </div>
+              <div className="text-5xl opacity-20">
+                💰
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Filters */}
       <div className="bg-white rounded-lg shadow p-6 mb-6">
         <div className="flex items-center justify-between mb-4">
@@ -675,14 +789,24 @@ export default function AuditView() {
                 const groupUnidades = groupItems.reduce((sum, item) => sum + (item.unidades || 0), 0);
                 const groupTotal = groupItems.reduce((sum, item) => sum + (item.item_subtotal || 0), 0);
 
+                const isCollapsed = collapsedGroups.has(groupKey);
+
                 return (
                 <div key={groupKey} className="mb-6">
                   {groupBy && (
                     <div className="bg-gray-100 px-6 py-3 border-b border-gray-200">
                       <div className="flex justify-between items-center">
-                        <h3 className="font-semibold text-gray-900">
-                          {groupKey} <span className="text-sm font-normal text-gray-600">({groupItems.length} registros)</span>
-                        </h3>
+                        <button
+                          onClick={() => toggleGroupCollapse(groupKey)}
+                          className="flex items-center gap-3 hover:bg-gray-200 rounded-lg px-3 py-2 -ml-3 transition-colors"
+                        >
+                          <span className="text-gray-600 text-lg">
+                            {isCollapsed ? '▶' : '▼'}
+                          </span>
+                          <h3 className="font-semibold text-gray-900">
+                            {groupKey} <span className="text-sm font-normal text-gray-600">({groupItems.length} registros)</span>
+                          </h3>
+                        </button>
                         <div className="flex gap-6 text-sm">
                           <div className="text-right">
                             <span className="text-gray-600">Total Unidades: </span>
@@ -696,21 +820,42 @@ export default function AuditView() {
                       </div>
                     </div>
                   )}
+                  {!isCollapsed && (
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pedido</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Canal</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU Original</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU Primario</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Familia</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Producto</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cantidad</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unidades</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Precio</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                        {/* Sortable Column Helper */}
+                        {[
+                          { label: 'Pedido', field: 'order_external_id' },
+                          { label: 'Fecha', field: 'order_date' },
+                          { label: 'Cliente', field: 'customer_name' },
+                          { label: 'Canal', field: 'channel_name' },
+                          { label: 'SKU Original', field: 'sku' },
+                          { label: 'SKU Primario', field: 'sku_primario' },
+                          { label: 'Familia', field: 'category' },
+                          { label: 'Producto', field: 'product_name' },
+                          { label: 'Cantidad', field: 'quantity' },
+                          { label: 'Unidades', field: 'unidades' },
+                          { label: 'Precio', field: 'unit_price' },
+                          { label: 'Total', field: 'item_subtotal' },
+                        ].map(({ label, field }) => (
+                          <th
+                            key={field}
+                            onClick={() => handleSort(field)}
+                            className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                          >
+                            <div className="flex items-center gap-2">
+                              {label}
+                              <span className="text-gray-400">
+                                {sortColumn === field ? (
+                                  sortDirection === 'asc' ? '▲' : '▼'
+                                ) : (
+                                  '⇅'
+                                )}
+                              </span>
+                            </div>
+                          </th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
@@ -781,6 +926,7 @@ export default function AuditView() {
                       ))}
                     </tbody>
                   </table>
+                  )}
                 </div>
                 );
               })}
