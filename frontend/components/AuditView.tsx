@@ -106,6 +106,9 @@ export default function AuditView() {
   const [sortColumn, setSortColumn] = useState<string>('');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
+  // Group sorting state
+  const [groupSortMode, setGroupSortMode] = useState<'none' | 'unidades' | 'revenue'>('none');
+
   useEffect(() => {
     if (status === 'authenticated') {
       fetchFilters();
@@ -251,6 +254,15 @@ export default function AuditView() {
     });
   };
 
+  const expandAllGroups = () => {
+    setCollapsedGroups(new Set());
+  };
+
+  const collapseAllGroups = () => {
+    const allGroupKeys = Object.keys(groupData(data, groupBy));
+    setCollapsedGroups(new Set(allGroupKeys));
+  };
+
   const handleSort = (column: string) => {
     if (sortColumn === column) {
       // Toggle direction if clicking same column
@@ -302,6 +314,33 @@ export default function AuditView() {
     Object.keys(grouped).forEach((key) => {
       grouped[key] = sortData(grouped[key]);
     });
+
+    // Sort groups by totals if requested
+    if (groupSortMode !== 'none') {
+      const groupsWithTotals = Object.entries(grouped).map(([key, items]) => ({
+        key,
+        items,
+        totalUnidades: items.reduce((sum, item) => sum + (item.unidades || 0), 0),
+        totalRevenue: items.reduce((sum, item) => sum + (item.item_subtotal || 0), 0),
+      }));
+
+      // Sort by selected mode
+      groupsWithTotals.sort((a, b) => {
+        if (groupSortMode === 'unidades') {
+          return b.totalUnidades - a.totalUnidades; // Descending (highest first)
+        } else if (groupSortMode === 'revenue') {
+          return b.totalRevenue - a.totalRevenue; // Descending (highest first)
+        }
+        return 0;
+      });
+
+      // Reconstruct grouped object in sorted order
+      const sortedGrouped: { [key: string]: AuditData[] } = {};
+      groupsWithTotals.forEach(({ key, items }) => {
+        sortedGrouped[key] = items;
+      });
+      return sortedGrouped;
+    }
 
     return grouped;
   };
@@ -650,6 +689,50 @@ export default function AuditView() {
             <option value="format">Formato</option>
           </select>
         </div>
+
+        {/* Group Controls - Show only when grouping is active */}
+        {groupBy && (
+          <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <h4 className="text-sm font-medium text-gray-700 mb-3">Controles de Grupos</h4>
+
+            <div className="flex flex-col md:flex-row gap-4">
+              {/* Expand/Collapse All */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-2">Expandir/Colapsar</label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={expandAllGroups}
+                    className="px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-2"
+                  >
+                    <span>▼</span>
+                    Expandir Todos
+                  </button>
+                  <button
+                    onClick={collapseAllGroups}
+                    className="px-4 py-2 bg-gray-500 text-white text-sm rounded-lg hover:bg-gray-600 transition-colors flex items-center gap-2"
+                  >
+                    <span>▶</span>
+                    Colapsar Todos
+                  </button>
+                </div>
+              </div>
+
+              {/* Group Sorting */}
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-gray-600 mb-2">Ordenar grupos por</label>
+                <select
+                  value={groupSortMode}
+                  onChange={(e) => setGroupSortMode(e.target.value as 'none' | 'unidades' | 'revenue')}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="none">Sin orden (alfabético)</option>
+                  <option value="unidades">Total Unidades (mayor a menor)</option>
+                  <option value="revenue">Total Grupo $ (mayor a menor)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Date Filters */}
         <div className="mt-6 border-t border-gray-200 pt-6">
