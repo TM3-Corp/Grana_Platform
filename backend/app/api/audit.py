@@ -362,7 +362,8 @@ async def get_audit_data(
     not_in_catalog: Optional[bool] = Query(None, description="Show only SKUs not in catalog"),
     from_date: Optional[str] = Query(None, description="Start date for filtering (YYYY-MM-DD format)"),
     to_date: Optional[str] = Query(None, description="End date for filtering (YYYY-MM-DD format)"),
-    limit: int = Query(1000, ge=1, le=10000, description="Max rows to return"),
+    group_by: Optional[str] = Query(None, description="Server-side aggregation: customer_name, sku_primario, category, channel_name, order_date"),
+    limit: int = Query(100, ge=1, le=1000, description="Max rows/groups to return"),
     offset: int = Query(0, ge=0, description="Offset for pagination")
 ):
     """
@@ -503,6 +504,166 @@ async def get_audit_data(
                 # No else clause - show ALL data when no date filter applied
 
                 where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+
+                # ===== SERVER-SIDE AGGREGATION MODE =====
+                # When group_by is provided, return pre-aggregated groups instead of detail items
+                # This ensures group totals are accurate across ALL data, not just current page
+
+                group_field_map = {
+                    'customer_name': "COALESCE(cust_direct.name, cust_channel.name, 'SIN NOMBRE')",
+                    'sku_primario': 'oi.product_sku',  # Will be enriched with CSV mapping
+                    'category': 'p.category',
+                    'channel_name': "COALESCE(ch.name, 'SIN CANAL')",
+                    'order_date': 'o.order_date::date'
+                }
+
+                if group_by and group_by in group_field_map:
+                    # === AGGREGATED MODE ===
+                    group_field = group_field_map[group_by]
+
+                    # Aggregation query: GROUP BY first, then paginate
+                    agg_query = f"""
+                        SELECT
+                            {group_field} as group_value,
+                            COUNT(DISTINCT o.external_id) as pedidos,
+                            SUM(oi.quantity) as cantidad,
+                            SUM(oi.subtotal) as total_revenue
+                        FROM orders o
+                        LEFT JOIN order_items oi ON oi.order_id = o.id
+                        LEFT JOIN products p ON p.sku = oi.product_sku
+                        LEFT JOIN channels ch ON ch.id = o.channel_id
+                        LEFT JOIN customers cust_direct
+                            ON cust_direct.id = o.customer_id
+                            AND cust_direct.source = o.source
+                        LEFT JOIN LATERAL (
+                            SELECT customer_external_id
+                            FROM customer_channel_rules ccr
+                            WHERE ccr.channel_external_id::text = (
+                                CASE
+                                    WHEN o.customer_notes ~ '^\s*\\{{'
+                                    THEN o.customer_notes::json->>'channel_id_relbase'
+                                    ELSE NULL
+                                END
+                            )
+                            AND ccr.is_active = TRUE
+                            LIMIT 1
+                        ) ccr_match ON true
+                        LEFT JOIN customers cust_channel
+                            ON cust_channel.external_id = ccr_match.customer_external_id
+                            AND cust_channel.source = 'relbase'
+                        WHERE {where_sql}
+                        GROUP BY {group_field}
+                        HAVING {group_field} IS NOT NULL
+                        ORDER BY total_revenue DESC
+                        LIMIT %s OFFSET %s
+                    """
+
+                    # Execute aggregation query
+                    params.extend([limit, offset])
+                    cursor.execute(agg_query, params)
+                    agg_rows = cursor.fetchall()
+
+                    # Count total groups (not items!)
+                    count_query = f"""
+                        SELECT COUNT(*) as count FROM (
+                            SELECT {group_field}
+                            FROM orders o
+                            LEFT JOIN order_items oi ON oi.order_id = o.id
+                            LEFT JOIN products p ON p.sku = oi.product_sku
+                            LEFT JOIN channels ch ON ch.id = o.channel_id
+                            LEFT JOIN customers cust_direct
+                                ON cust_direct.id = o.customer_id
+                                AND cust_direct.source = o.source
+                            LEFT JOIN LATERAL (
+                                SELECT customer_external_id
+                                FROM customer_channel_rules ccr
+                                WHERE ccr.channel_external_id::text = (
+                                    CASE
+                                        WHEN o.customer_notes ~ '^\s*\\{{'
+                                        THEN o.customer_notes::json->>'channel_id_relbase'
+                                        ELSE NULL
+                                    END
+                                )
+                                AND ccr.is_active = TRUE
+                                LIMIT 1
+                            ) ccr_match ON true
+                            LEFT JOIN customers cust_channel
+                                ON cust_channel.external_id = ccr_match.customer_external_id
+                                AND cust_channel.source = 'relbase'
+                            WHERE {where_sql}
+                            GROUP BY {group_field}
+                            HAVING {group_field} IS NOT NULL
+                        ) subquery
+                    """
+
+                    cursor.execute(count_query, params[:-2])  # Exclude limit/offset
+                    total_groups = cursor.fetchone()['count']
+
+                    # Summary totals (same across ALL filtered data)
+                    summary_query = f"""
+                        SELECT
+                            COUNT(DISTINCT o.external_id) as total_pedidos,
+                            SUM(oi.quantity) as total_quantity,
+                            SUM(oi.subtotal) as total_revenue
+                        FROM orders o
+                        LEFT JOIN order_items oi ON oi.order_id = o.id
+                        LEFT JOIN products p ON p.sku = oi.product_sku
+                        LEFT JOIN channels ch ON ch.id = o.channel_id
+                        LEFT JOIN customers cust_direct
+                            ON cust_direct.id = o.customer_id
+                            AND cust_direct.source = o.source
+                        LEFT JOIN LATERAL (
+                            SELECT customer_external_id
+                            FROM customer_channel_rules ccr
+                            WHERE ccr.channel_external_id::text = (
+                                CASE
+                                    WHEN o.customer_notes ~ '^\s*\\{{'
+                                    THEN o.customer_notes::json->>'channel_id_relbase'
+                                    ELSE NULL
+                                END
+                            )
+                            AND ccr.is_active = TRUE
+                            LIMIT 1
+                        ) ccr_match ON true
+                        LEFT JOIN customers cust_channel
+                            ON cust_channel.external_id = ccr_match.customer_external_id
+                            AND cust_channel.source = 'relbase'
+                        WHERE {where_sql}
+                    """
+
+                    cursor.execute(summary_query, params[:-2])  # Exclude limit/offset
+                    summary_row = cursor.fetchone()
+
+                    # Convert aggregated rows to dicts
+                    aggregated_data = []
+                    for row in agg_rows:
+                        row_dict = dict(row)
+                        # Convert Decimal to float for JSON serialization
+                        row_dict['total_revenue'] = float(row_dict['total_revenue'] or 0)
+                        aggregated_data.append(row_dict)
+
+                    # Return aggregated response
+                    return {
+                        "status": "success",
+                        "mode": "aggregated",
+                        "group_by": group_by,
+                        "data": aggregated_data,
+                        "summary": {
+                            "total_pedidos": summary_row['total_pedidos'] or 0,
+                            "total_unidades": summary_row['total_quantity'] or 0,  # Note: approximation
+                            "total_revenue": float(summary_row['total_revenue'] or 0),
+                            "total_groups": total_groups
+                        },
+                        "pagination": {
+                            "limit": limit,
+                            "offset": offset,
+                            "total_items": total_groups,  # Total groups, not items
+                            "total_pages": (total_groups + limit - 1) // limit
+                        }
+                    }
+
+                # ===== DETAIL MODE (No grouping) =====
+                # Continue with existing logic for individual items
 
                 # Pre-determine mapped SKUs if not_in_catalog filter is active
                 mapped_skus_set = None
