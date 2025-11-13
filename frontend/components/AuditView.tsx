@@ -61,10 +61,17 @@ interface Filters {
   skus: string[];
 }
 
+interface FilteredTotals {
+  total_pedidos: number;
+  total_unidades: number;
+  total_revenue: number;
+}
+
 export default function AuditView() {
   const { data: session, status } = useSession();
   const [data, setData] = useState<AuditData[]>([]);
   const [summary, setSummary] = useState<AuditSummary | null>(null);
+  const [filteredTotals, setFilteredTotals] = useState<FilteredTotals | null>(null);
   const [filters, setFilters] = useState<Filters>({ sources: [], channels: [], customers: [], skus: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -203,6 +210,11 @@ export default function AuditView() {
       const result = await response.json();
       setData(result.data);
       setTotalCount(result.meta.total);
+
+      // Set filtered totals from API summary (all filtered data, not just current page)
+      if (result.summary) {
+        setFilteredTotals(result.summary);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error desconocido');
     } finally {
@@ -297,8 +309,13 @@ export default function AuditView() {
   const groupedData = groupData(data, groupBy);
   const totalPages = Math.ceil(totalCount / pageSize);
 
-  // Calculate overall totals from current page data
-  const overallTotals = {
+  // Use filtered totals from API (all filtered data) instead of current page totals
+  const overallTotals = filteredTotals ? {
+    totalPedidos: filteredTotals.total_pedidos,
+    totalUnidades: filteredTotals.total_unidades,
+    totalRevenue: filteredTotals.total_revenue,
+  } : {
+    // Fallback to page totals if API summary not available yet
     totalPedidos: new Set(data.map(item => item.order_external_id)).size,
     totalUnidades: data.reduce((sum, item) => sum + (item.unidades || 0), 0),
     totalRevenue: data.reduce((sum, item) => sum + (item.item_subtotal || 0), 0),
@@ -323,7 +340,9 @@ export default function AuditView() {
               <div>
                 <p className="text-blue-100 text-sm font-medium uppercase tracking-wide">Total Pedidos</p>
                 <p className="text-4xl font-bold mt-2">{overallTotals.totalPedidos.toLocaleString('es-CL')}</p>
-                <p className="text-blue-100 text-xs mt-1">En esta vista</p>
+                <p className="text-blue-100 text-xs mt-1">
+                  {filteredTotals ? 'Filtros aplicados' : 'En esta página'}
+                </p>
               </div>
               <div className="text-5xl opacity-20">
                 📦
@@ -337,7 +356,9 @@ export default function AuditView() {
               <div>
                 <p className="text-green-100 text-sm font-medium uppercase tracking-wide">Total Unidades</p>
                 <p className="text-4xl font-bold mt-2">{overallTotals.totalUnidades.toLocaleString('es-CL')}</p>
-                <p className="text-green-100 text-xs mt-1">Unidades vendidas</p>
+                <p className="text-green-100 text-xs mt-1">
+                  {filteredTotals ? 'Todas las páginas' : 'En esta página'}
+                </p>
               </div>
               <div className="text-5xl opacity-20">
                 📊
@@ -351,11 +372,32 @@ export default function AuditView() {
               <div>
                 <p className="text-purple-100 text-sm font-medium uppercase tracking-wide">Total Ingresos</p>
                 <p className="text-4xl font-bold mt-2">${(overallTotals.totalRevenue / 1000000).toFixed(1)}M</p>
-                <p className="text-purple-100 text-xs mt-1">${overallTotals.totalRevenue.toLocaleString('es-CL')} CLP</p>
+                <p className="text-purple-100 text-xs mt-1">
+                  ${overallTotals.totalRevenue.toLocaleString('es-CL')} CLP • {filteredTotals ? 'Filtrados' : 'Página actual'}
+                </p>
               </div>
               <div className="text-5xl opacity-20">
                 💰
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Large Dataset Warning */}
+      {!loading && filteredTotals && filteredTotals.total_pedidos > 1000 && groupBy && (
+        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm text-yellow-700">
+                <strong>Dataset grande detectado:</strong> {filteredTotals.total_pedidos.toLocaleString('es-CL')} pedidos encontrados.
+                Se recomienda usar filtros de fecha o familia para mejorar el rendimiento.
+              </p>
             </div>
           </div>
         </div>

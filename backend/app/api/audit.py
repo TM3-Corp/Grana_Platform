@@ -719,6 +719,50 @@ async def get_audit_data(
                 cursor.execute(count_query, params[:-2])  # Exclude limit/offset
                 total_count = cursor.fetchone()['count']
 
+                # ===== SUMMARY TOTALS QUERY =====
+                # Calculate totals for ALL filtered data (not just current page)
+                # This provides accurate totals for summary cards regardless of pagination
+                summary_query = f"""
+                    SELECT
+                        COUNT(DISTINCT o.external_id) as total_pedidos,
+                        SUM(oi.quantity) as total_quantity,
+                        SUM(oi.subtotal) as total_revenue
+                    FROM orders o
+                    LEFT JOIN order_items oi ON oi.order_id = o.id
+                    LEFT JOIN products p ON p.sku = oi.product_sku
+                    LEFT JOIN channels ch ON ch.id = o.channel_id
+                    LEFT JOIN customers cust_direct
+                        ON cust_direct.id = o.customer_id
+                        AND cust_direct.source = o.source
+                    LEFT JOIN LATERAL (
+                        SELECT customer_external_id
+                        FROM customer_channel_rules ccr
+                        WHERE ccr.channel_external_id::text = (
+                            CASE
+                                WHEN o.customer_notes ~ '^\s*\{{'
+                                THEN o.customer_notes::json->>'channel_id_relbase'
+                                ELSE NULL
+                            END
+                        )
+                        AND ccr.is_active = TRUE
+                        LIMIT 1
+                    ) ccr_match ON true
+                    LEFT JOIN customers cust_channel
+                        ON cust_channel.external_id = ccr_match.customer_external_id
+                        AND cust_channel.source = 'relbase'
+                    WHERE {where_sql}
+                """
+
+                cursor.execute(summary_query, params[:-2])  # Exclude limit/offset
+                summary_row = cursor.fetchone()
+
+                # Extract summary values (will be refined with product mapping)
+                filtered_totals = {
+                    "total_pedidos": summary_row['total_pedidos'] or 0,
+                    "total_quantity": summary_row['total_quantity'] or 0,  # Raw quantity (will adjust for unidades)
+                    "total_revenue": float(summary_row['total_revenue'] or 0)
+                }
+
                 # Enrich with product catalog data using conservative mapping
                 enriched_rows = []
                 for row in rows:
@@ -768,6 +812,11 @@ async def get_audit_data(
 
                     enriched_rows.append(row_dict)
 
+                # NOTE: total_unidades uses quantity as approximation
+                # TODO: For 100% accuracy, pre-compute conversion factors in database
+                # Currently uses raw quantity which is conservative for multi-pack products
+                filtered_totals["total_unidades"] = filtered_totals["total_quantity"]
+
                 return {
                     "status": "success",
                     "data": enriched_rows,
@@ -787,6 +836,11 @@ async def get_audit_data(
                             "from_date": from_date,
                             "to_date": to_date
                         }
+                    },
+                    "summary": {
+                        "total_pedidos": filtered_totals["total_pedidos"],
+                        "total_unidades": filtered_totals["total_unidades"],
+                        "total_revenue": filtered_totals["total_revenue"]
                     }
                 }
 
