@@ -109,6 +109,7 @@ export default function AuditView() {
   // Group sorting state
   const [groupSortColumn, setGroupSortColumn] = useState<'none' | 'unidades' | 'revenue'>('none');
   const [groupSortDirection, setGroupSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [isAggregatedMode, setIsAggregatedMode] = useState<boolean>(false);
 
   useEffect(() => {
     if (status === 'authenticated') {
@@ -207,13 +208,41 @@ export default function AuditView() {
         // No date filters - show all data
       }
 
+      // Add server-side group_by parameter (when backend supports it)
+      // Map frontend groupBy values to backend parameter values
+      const groupByMapping: Record<string, string> = {
+        'customer_name': 'customer_name',
+        'sku_primario': 'sku_primario',
+        'category': 'category',
+        'channel_name': 'channel_name',
+        'order_date': 'order_date'
+      };
+
+      // Only add group_by param if backend supports this groupBy value
+      if (groupBy && groupByMapping[groupBy]) {
+        params.append('group_by', groupByMapping[groupBy]);
+      }
+
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://granaplatform-production.up.railway.app';
       const response = await fetch(`${apiUrl}/api/v1/audit/data?${params}`);
       if (!response.ok) throw new Error('Error fetching audit data');
 
       const result = await response.json();
+
+      // Check if response is in aggregated mode
+      const aggregated = result.mode === 'aggregated';
+      setIsAggregatedMode(aggregated);
+
       setData(result.data);
-      setTotalCount(result.meta.total);
+
+      // Set total count based on mode
+      if (aggregated) {
+        // In aggregated mode, pagination.total_items represents total groups
+        setTotalCount(result.pagination?.total_items || 0);
+      } else {
+        // In detail mode, meta.total represents total individual items
+        setTotalCount(result.meta?.total || 0);
+      }
 
       // Set filtered totals from API summary (all filtered data, not just current page)
       if (result.summary) {
@@ -316,6 +345,19 @@ export default function AuditView() {
   };
 
   const groupData = (data: AuditData[], groupByField: string) => {
+    // AGGREGATED MODE: Data is already grouped by server
+    // Structure: [{group_value, pedidos, cantidad, total_revenue}, ...]
+    if (isAggregatedMode) {
+      const grouped: { [key: string]: any[] } = {};
+      data.forEach((item: any) => {
+        const key = String(item.group_value || 'SIN CLASIFICAR');
+        // Store aggregated data as-is (already computed on server)
+        grouped[key] = [item];
+      });
+      return grouped;
+    }
+
+    // DETAIL MODE: Client-side grouping of individual items
     if (!groupByField) return { '': sortData(data) };
 
     const grouped: { [key: string]: AuditData[] } = {};
@@ -967,9 +1009,21 @@ export default function AuditView() {
           ) : (
             <>
               {Object.entries(groupedData).map(([groupKey, groupItems]) => {
-                // Calculate group subtotals
-                const groupUnidades = groupItems.reduce((sum, item) => sum + (item.unidades || 0), 0);
-                const groupTotal = groupItems.reduce((sum, item) => sum + (item.item_subtotal || 0), 0);
+                // Calculate group subtotals based on mode
+                let groupUnidades, groupTotal, groupPedidos;
+
+                if (isAggregatedMode && groupItems[0]) {
+                  // AGGREGATED MODE: Use pre-computed totals from server
+                  const agg = groupItems[0] as any;
+                  groupUnidades = agg.cantidad || 0;  // cantidad = total units
+                  groupTotal = agg.total_revenue || 0;
+                  groupPedidos = agg.pedidos || 0;
+                } else {
+                  // DETAIL MODE: Calculate from individual items
+                  groupUnidades = groupItems.reduce((sum, item) => sum + (item.unidades || 0), 0);
+                  groupTotal = groupItems.reduce((sum, item) => sum + (item.item_subtotal || 0), 0);
+                  groupPedidos = new Set(groupItems.map(item => item.order_external_id)).size;
+                }
 
                 const isCollapsed = collapsedGroups.has(groupKey);
 
@@ -986,7 +1040,9 @@ export default function AuditView() {
                             {isCollapsed ? '▶' : '▼'}
                           </span>
                           <h3 className="font-semibold text-gray-900">
-                            {groupKey} <span className="text-sm font-normal text-gray-600">({groupItems.length} registros)</span>
+                            {groupKey} <span className="text-sm font-normal text-gray-600">
+                              ({isAggregatedMode ? `${groupPedidos} pedidos` : `${groupItems.length} registros`})
+                            </span>
                           </h3>
                         </button>
                         <div className="flex gap-6 text-sm">
@@ -1002,7 +1058,7 @@ export default function AuditView() {
                       </div>
                     </div>
                   )}
-                  {!isCollapsed && (
+                  {!isCollapsed && !isAggregatedMode && (
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                       <tr>
