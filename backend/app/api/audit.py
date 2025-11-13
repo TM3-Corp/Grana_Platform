@@ -500,9 +500,7 @@ async def get_audit_data(
                 elif to_date:
                     where_clauses.append("o.order_date <= %s")
                     params.append(to_date)
-                else:
-                    # Default to 2025 if no dates provided (backward compatibility)
-                    where_clauses.append("EXTRACT(YEAR FROM o.order_date) = 2025")
+                # No else clause - show ALL data when no date filter applied
 
                 where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 
