@@ -107,7 +107,8 @@ export default function AuditView() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   // Group sorting state
-  const [groupSortMode, setGroupSortMode] = useState<'none' | 'unidades' | 'revenue'>('none');
+  const [groupSortColumn, setGroupSortColumn] = useState<'none' | 'unidades' | 'revenue'>('none');
+  const [groupSortDirection, setGroupSortDirection] = useState<'asc' | 'desc'>('desc');
 
   useEffect(() => {
     if (status === 'authenticated') {
@@ -254,13 +255,27 @@ export default function AuditView() {
     });
   };
 
-  const expandAllGroups = () => {
-    setCollapsedGroups(new Set());
+  const toggleAllGroups = () => {
+    const allGroupKeys = Object.keys(groupData(data, groupBy));
+
+    // If all groups are collapsed, expand them all
+    // If any group is expanded, collapse them all
+    if (collapsedGroups.size === allGroupKeys.length) {
+      setCollapsedGroups(new Set());
+    } else {
+      setCollapsedGroups(new Set(allGroupKeys));
+    }
   };
 
-  const collapseAllGroups = () => {
-    const allGroupKeys = Object.keys(groupData(data, groupBy));
-    setCollapsedGroups(new Set(allGroupKeys));
+  const handleGroupSort = (column: 'unidades' | 'revenue') => {
+    if (groupSortColumn === column) {
+      // Toggle direction if clicking same column
+      setGroupSortDirection(groupSortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      // New column, default to descending (highest first)
+      setGroupSortColumn(column);
+      setGroupSortDirection('desc');
+    }
   };
 
   const handleSort = (column: string) => {
@@ -316,7 +331,7 @@ export default function AuditView() {
     });
 
     // Sort groups by totals if requested
-    if (groupSortMode !== 'none') {
+    if (groupSortColumn !== 'none') {
       const groupsWithTotals = Object.entries(grouped).map(([key, items]) => ({
         key,
         items,
@@ -324,14 +339,15 @@ export default function AuditView() {
         totalRevenue: items.reduce((sum, item) => sum + (item.item_subtotal || 0), 0),
       }));
 
-      // Sort by selected mode
+      // Sort by selected column and direction
       groupsWithTotals.sort((a, b) => {
-        if (groupSortMode === 'unidades') {
-          return b.totalUnidades - a.totalUnidades; // Descending (highest first)
-        } else if (groupSortMode === 'revenue') {
-          return b.totalRevenue - a.totalRevenue; // Descending (highest first)
+        let comparison = 0;
+        if (groupSortColumn === 'unidades') {
+          comparison = a.totalUnidades - b.totalUnidades;
+        } else if (groupSortColumn === 'revenue') {
+          comparison = a.totalRevenue - b.totalRevenue;
         }
-        return 0;
+        return groupSortDirection === 'asc' ? comparison : -comparison;
       });
 
       // Reconstruct grouped object in sorted order
@@ -696,39 +712,80 @@ export default function AuditView() {
             <h4 className="text-sm font-medium text-gray-700 mb-3">Controles de Grupos</h4>
 
             <div className="flex flex-col md:flex-row gap-4">
-              {/* Expand/Collapse All */}
+              {/* Toggle Expand/Collapse All */}
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-2">Expandir/Colapsar</label>
-                <div className="flex gap-2">
-                  <button
-                    onClick={expandAllGroups}
-                    className="px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-2"
-                  >
-                    <span>▼</span>
-                    Expandir Todos
-                  </button>
-                  <button
-                    onClick={collapseAllGroups}
-                    className="px-4 py-2 bg-gray-500 text-white text-sm rounded-lg hover:bg-gray-600 transition-colors flex items-center gap-2"
-                  >
-                    <span>▶</span>
-                    Colapsar Todos
-                  </button>
-                </div>
+                <label className="block text-xs font-medium text-gray-600 mb-2">Vista</label>
+                <button
+                  onClick={toggleAllGroups}
+                  className={`px-4 py-2 text-white text-sm rounded-lg transition-colors flex items-center gap-2 ${
+                    collapsedGroups.size === Object.keys(groupData(data, groupBy)).length
+                      ? 'bg-blue-500 hover:bg-blue-600'
+                      : 'bg-gray-500 hover:bg-gray-600'
+                  }`}
+                >
+                  <span>{collapsedGroups.size === Object.keys(groupData(data, groupBy)).length ? '▼' : '▶'}</span>
+                  {collapsedGroups.size === Object.keys(groupData(data, groupBy)).length ? 'Expandir Todos' : 'Colapsar Todos'}
+                </button>
               </div>
 
-              {/* Group Sorting */}
+              {/* Group Sorting Buttons */}
               <div className="flex-1">
                 <label className="block text-xs font-medium text-gray-600 mb-2">Ordenar grupos por</label>
-                <select
-                  value={groupSortMode}
-                  onChange={(e) => setGroupSortMode(e.target.value as 'none' | 'unidades' | 'revenue')}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="none">Sin orden (alfabético)</option>
-                  <option value="unidades">Total Unidades (mayor a menor)</option>
-                  <option value="revenue">Total Grupo $ (mayor a menor)</option>
-                </select>
+                <div className="flex gap-2 flex-wrap">
+                  {/* Alphabetical (default) */}
+                  <button
+                    onClick={() => {
+                      setGroupSortColumn('none');
+                      setGroupSortDirection('asc');
+                    }}
+                    className={`px-4 py-2 text-sm rounded-lg border transition-colors flex items-center gap-2 ${
+                      groupSortColumn === 'none'
+                        ? 'bg-blue-500 text-white border-blue-600'
+                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    Alfabético
+                    <span className="text-gray-400">{groupSortColumn === 'none' ? '🔤' : ''}</span>
+                  </button>
+
+                  {/* Sort by Unidades */}
+                  <button
+                    onClick={() => handleGroupSort('unidades')}
+                    className={`px-4 py-2 text-sm rounded-lg border transition-colors flex items-center gap-2 ${
+                      groupSortColumn === 'unidades'
+                        ? 'bg-green-500 text-white border-green-600'
+                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    Unidades
+                    <span className="text-xs">
+                      {groupSortColumn === 'unidades' ? (
+                        groupSortDirection === 'asc' ? '▲' : '▼'
+                      ) : (
+                        '⇅'
+                      )}
+                    </span>
+                  </button>
+
+                  {/* Sort by Revenue */}
+                  <button
+                    onClick={() => handleGroupSort('revenue')}
+                    className={`px-4 py-2 text-sm rounded-lg border transition-colors flex items-center gap-2 ${
+                      groupSortColumn === 'revenue'
+                        ? 'bg-purple-500 text-white border-purple-600'
+                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    Total $
+                    <span className="text-xs">
+                      {groupSortColumn === 'revenue' ? (
+                        groupSortDirection === 'asc' ? '▲' : '▼'
+                      ) : (
+                        '⇅'
+                      )}
+                    </span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
