@@ -59,8 +59,9 @@ async def get_sales_analytics(
         cur = conn.cursor()
 
         # Build base filters
-        where_clauses = ["mv.source = ANY(%s)"]  # Always filter by source
-        params = [sources]  # Default ['relbase']
+        # ✅ FORCE RelBase only - ignore sources parameter to avoid duplication
+        where_clauses = ["mv.source = 'relbase'"]
+        params = []  # No dynamic source parameter
 
         # NOTE: invoice_status filter already applied in materialized view
         # No need to filter again here

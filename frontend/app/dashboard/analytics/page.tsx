@@ -94,8 +94,7 @@ function ConsolidatedAnalyticsContent() {
             )
             .map((ch: any) => ch.name)
             .sort();
-          // Add "Sin Canal Asignado" option
-          relbaseChannels.push('Sin Canal Asignado');
+          // "Sin Canal Asignado" is already in the DB with code RB_SIN_CANAL
           setOfficialChannels(relbaseChannels);
         }
       } catch (error) {

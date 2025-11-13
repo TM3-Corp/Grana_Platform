@@ -118,13 +118,26 @@ export default function SalesAnalyticsPage() {
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://granaplatform-production.up.railway.app'
 
-      // Fetch channels
+      // Fetch channels - only Relbase channels with 2025 data
       const channelsRes = await fetch(`${apiUrl}/api/v1/channels`)
       if (channelsRes.ok) {
         const channelsData = await channelsRes.json()
         if (channelsData.data) {
-          const channelNames = channelsData.data.map((ch: any) => ch.name).filter(Boolean)
-          setAvailableChannels(channelNames)
+          // Channels with no 2025 data (exclude from filters)
+          const excludedChannels = ['EXPORTACIÓN', 'HORECA', 'MARKETPLACES']
+
+          // Filter only Relbase channels with 2025 data
+          const relbaseChannels = channelsData.data
+            .filter((ch: any) =>
+              ch.code?.startsWith('RB_') &&
+              ch.is_active &&
+              !excludedChannels.includes(ch.name)
+            )
+            .map((ch: any) => ch.name)
+            .sort()
+
+          // "Sin Canal Asignado" is already in the DB with code RB_SIN_CANAL
+          setAvailableChannels(relbaseChannels)
         }
       }
 

@@ -398,6 +398,9 @@ async def get_audit_data(
                 where_clauses = []
                 params = []
 
+                # ✅ BASE FILTER: Only show RelBase data to avoid duplication
+                where_clauses.append("o.source = 'relbase'")
+
                 # Multi-value filters using IN operator
                 if source:
                     placeholders = ','.join(['%s'] * len(source))
