@@ -72,6 +72,10 @@ export default function OrdersPage() {
             params.append('source', sourceFilter)
           }
 
+          if (searchQuery.trim()) {
+            params.append('search', searchQuery.trim())
+          }
+
           if (monthFilter) {
             const year = monthFilter.split('-')[0]
             const month = monthFilter.split('-')[1]
@@ -106,24 +110,7 @@ export default function OrdersPage() {
 
       fetchOrders()
     }
-  }, [currentPage, pageSize, sourceFilter, monthFilter, viewMode])
-
-  // Client-side search filter
-  useEffect(() => {
-    if (!searchQuery.trim()) {
-      setFilteredOrders(orders)
-      return
-    }
-
-    const query = searchQuery.toLowerCase()
-    const filtered = orders.filter(o =>
-      o.order_number.toLowerCase().includes(query) ||
-      o.customer_name?.toLowerCase().includes(query) ||
-      o.customer_email?.toLowerCase().includes(query) ||
-      o.customer_city?.toLowerCase().includes(query)
-    )
-    setFilteredOrders(filtered)
-  }, [searchQuery, orders])
+  }, [currentPage, pageSize, sourceFilter, monthFilter, searchQuery, viewMode])
 
   if (loading && viewMode === 'orders') {
     return (
@@ -301,9 +288,6 @@ export default function OrdersPage() {
                         Cliente
                       </th>
                       <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Fuente
-                      </th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Total
                       </th>
                       <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
@@ -327,15 +311,6 @@ export default function OrdersPage() {
                         <td className="px-6 py-4">
                           <div className="text-sm font-medium text-gray-900">{order.customer_name || 'Sin cliente'}</div>
                           <div className="text-xs text-gray-500">{order.customer_email}</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 capitalize">
-                            {order.source === 'shopify' ? '🛒 Shopify' :
-                             order.source === 'mercadolibre' ? '🏪 MercadoLibre' :
-                             order.source === 'relbase' ? '🧾 Relbase' :
-                             order.source === 'lokal' ? '🏬 LOKAL' :
-                             order.source === 'manual' ? '✏️ Manual' : order.source}
-                          </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm font-bold text-green-600">
@@ -475,16 +450,6 @@ export default function OrdersPage() {
                   <h3 className="text-sm font-semibold text-gray-700 mb-2">Información del Pedido</h3>
                   <div className="bg-gray-50 rounded-xl p-4 space-y-2">
                     <div className="flex justify-between text-sm">
-                      <span className="font-medium">Fuente:</span>
-                      <span className="capitalize">
-                        {selectedOrder.source === 'shopify' ? '🛒 Shopify' :
-                         selectedOrder.source === 'mercadolibre' ? '🏪 MercadoLibre' :
-                         selectedOrder.source === 'relbase' ? '🧾 Relbase' :
-                         selectedOrder.source === 'lokal' ? '🏬 LOKAL' :
-                         selectedOrder.source === 'manual' ? '✏️ Manual' : selectedOrder.source}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-sm">
                       <span className="font-medium">Canal:</span>
                       <span>{selectedOrder.channel_name}</span>
                     </div>
@@ -523,8 +488,8 @@ export default function OrdersPage() {
                             <td className="px-4 py-2 text-sm">{item.product_name}</td>
                             <td className="px-4 py-2 text-sm text-gray-500">{item.product_sku}</td>
                             <td className="px-4 py-2 text-sm text-right">{item.quantity}</td>
-                            <td className="px-4 py-2 text-sm text-right">${item.unit_price.toLocaleString('es-CL')}</td>
-                            <td className="px-4 py-2 text-sm text-right font-medium">${item.total.toLocaleString('es-CL')}</td>
+                            <td className="px-4 py-2 text-sm text-right">${(item.subtotal / item.quantity).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                            <td className="px-4 py-2 text-sm text-right font-medium">${item.subtotal.toLocaleString('es-CL')}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -535,9 +500,9 @@ export default function OrdersPage() {
                 {/* Total */}
                 <div className="border-t border-gray-200 pt-4">
                   <div className="flex justify-between items-center">
-                    <span className="text-lg font-semibold text-gray-900">Total:</span>
+                    <span className="text-lg font-semibold text-gray-900">Total (neto):</span>
                     <span className="text-2xl font-bold text-green-600">
-                      ${selectedOrder.total.toLocaleString('es-CL')}
+                      ${selectedOrder.subtotal.toLocaleString('es-CL')}
                     </span>
                   </div>
                 </div>

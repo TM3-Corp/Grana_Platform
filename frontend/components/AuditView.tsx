@@ -23,10 +23,12 @@ interface AuditData {
   pack_quantity?: number;
   product_name: string;
   quantity: number;
+  unidades?: number;
+  conversion_factor?: number;
   unit_price: number;
   item_subtotal: number;
-  category: string;
-  family: string;
+  category: string;  // Backend still uses 'category', maps to Familia (BARRAS, CRACKERS, etc)
+  family: string;    // Backend still uses 'family', maps to Producto (specific variant)
   format: string;
   customer_null: boolean;
   channel_null: boolean;
@@ -67,14 +69,22 @@ export default function AuditView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Filter states
-  const [selectedSource, setSelectedSource] = useState<string>('');
-  const [selectedChannel, setSelectedChannel] = useState<string>('');
-  const [selectedCustomer, setSelectedCustomer] = useState<string>('');
+  // Filter states (multi-select arrays)
+  const [selectedFamilia, setSelectedFamilia] = useState<string[]>([]);
+  const [selectedSource, setSelectedSource] = useState<string[]>([]);
+  const [selectedChannel, setSelectedChannel] = useState<string[]>([]);
+  const [selectedCustomer, setSelectedCustomer] = useState<string[]>([]);
   const [selectedSKU, setSelectedSKU] = useState<string>('');
   const [skuSearchInput, setSkuSearchInput] = useState<string>('');
   const [showNullsOnly, setShowNullsOnly] = useState(false);
   const [showNotInCatalogOnly, setShowNotInCatalogOnly] = useState(false);
+
+  // Date filter states (multi-select arrays for year and month)
+  const [dateFilterType, setDateFilterType] = useState<string>('all'); // 'all', 'year', 'month', 'custom'
+  const [selectedYear, setSelectedYear] = useState<string[]>(['2025']);
+  const [selectedMonth, setSelectedMonth] = useState<string[]>([]);
+  const [customFromDate, setCustomFromDate] = useState<string>('');
+  const [customToDate, setCustomToDate] = useState<string>('');
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -95,7 +105,7 @@ export default function AuditView() {
     if (status === 'authenticated') {
       fetchData();
     }
-  }, [status, selectedSource, selectedChannel, selectedCustomer, selectedSKU, showNullsOnly, showNotInCatalogOnly, currentPage]);
+  }, [status, selectedFamilia, selectedSource, selectedChannel, selectedCustomer, selectedSKU, showNullsOnly, showNotInCatalogOnly, currentPage, dateFilterType, selectedYear, selectedMonth, customFromDate, customToDate]);
 
   // Debounce SKU search input
   useEffect(() => {
@@ -143,12 +153,43 @@ export default function AuditView() {
         offset: ((currentPage - 1) * pageSize).toString(),
       });
 
-      if (selectedSource) params.append('source', selectedSource);
-      if (selectedChannel) params.append('channel', selectedChannel);
-      if (selectedCustomer) params.append('customer', selectedCustomer);
+      // Multi-select filters - add each selected value as separate param
+      selectedFamilia.forEach(familia => params.append('category', familia));
+      selectedSource.forEach(source => params.append('source', source));
+      selectedChannel.forEach(channel => params.append('channel', channel));
+      selectedCustomer.forEach(customer => params.append('customer', customer));
+
       if (selectedSKU) params.append('sku', selectedSKU);
       if (showNullsOnly) params.append('has_nulls', 'true');
       if (showNotInCatalogOnly) params.append('not_in_catalog', 'true');
+
+      // Date filters with multi-select support
+      if (dateFilterType === 'year' && selectedYear.length > 0) {
+        // For multiple years, use the earliest start and latest end
+        const years = selectedYear.map(y => parseInt(y)).sort();
+        params.append('from_date', `${years[0]}-01-01`);
+        params.append('to_date', `${years[years.length - 1]}-12-31`);
+      } else if (dateFilterType === 'month' && selectedYear.length > 0 && selectedMonth.length > 0) {
+        // For multiple months, calculate range from earliest to latest
+        const yearMonths = selectedYear.flatMap(year =>
+          selectedMonth.map(month => ({ year: parseInt(year), month: parseInt(month) }))
+        ).sort((a, b) => {
+          if (a.year !== b.year) return a.year - b.year;
+          return a.month - b.month;
+        });
+
+        const first = yearMonths[0];
+        const last = yearMonths[yearMonths.length - 1];
+        const lastDay = new Date(last.year, last.month, 0).getDate();
+
+        params.append('from_date', `${first.year}-${first.month.toString().padStart(2, '0')}-01`);
+        params.append('to_date', `${last.year}-${last.month.toString().padStart(2, '0')}-${lastDay}`);
+      } else if (dateFilterType === 'custom' && customFromDate && customToDate) {
+        params.append('from_date', customFromDate);
+        params.append('to_date', customToDate);
+      } else if (dateFilterType === 'all') {
+        // No date filters - show all data
+      }
 
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://granaplatform-production.up.railway.app';
       const response = await fetch(`${apiUrl}/api/v1/audit/data?${params}`);
@@ -165,13 +206,19 @@ export default function AuditView() {
   };
 
   const clearFilters = () => {
-    setSelectedSource('');
-    setSelectedChannel('');
-    setSelectedCustomer('');
+    setSelectedFamilia([]);
+    setSelectedSource([]);
+    setSelectedChannel([]);
+    setSelectedCustomer([]);
     setSelectedSKU('');
     setSkuSearchInput('');
     setShowNullsOnly(false);
     setShowNotInCatalogOnly(false);
+    setDateFilterType('all');
+    setSelectedYear(['2025']);
+    setSelectedMonth([]);
+    setCustomFromDate('');
+    setCustomToDate('');
     setCurrentPage(1);
   };
 
@@ -200,40 +247,6 @@ export default function AuditView() {
 
   return (
     <div>
-      {/* Summary Cards */}
-      {summary && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="text-sm text-gray-600 mb-1">Total Órdenes 2025</div>
-            <div className="text-2xl font-bold text-gray-900">{summary.total_orders.toLocaleString()}</div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="text-sm text-gray-600 mb-1">Completitud de Datos</div>
-            <div className="text-2xl font-bold text-green-600">{summary.data_quality.completeness_pct}%</div>
-            <div className="text-xs text-gray-500 mt-1">
-              {summary.data_quality.null_customers} clientes NULL · {summary.data_quality.null_channels} canales NULL · {summary.data_quality.null_skus} SKUs NULL
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="text-sm text-gray-600 mb-1">SKUs Únicos</div>
-            <div className="text-2xl font-bold text-gray-900">{summary.product_mapping.unique_skus}</div>
-            <div className="text-xs text-gray-500 mt-1">
-              {summary.product_mapping.mapped_skus} mapeados · {summary.product_mapping.not_in_catalog} sin mapear
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="text-sm text-gray-600 mb-1">Cobertura Catálogo</div>
-            <div className="text-2xl font-bold text-blue-600">{summary.product_mapping.catalog_coverage_pct}%</div>
-            <div className="text-xs text-gray-500 mt-1">
-              SKUs mapeados en Códigos_Grana_Final.csv
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Filters */}
       <div className="bg-white rounded-lg shadow p-6 mb-6">
         <div className="flex items-center justify-between mb-4">
@@ -246,65 +259,194 @@ export default function AuditView() {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-          {/* Source Filter */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Fuente</label>
-            <select
-              value={selectedSource}
-              onChange={(e) => { setSelectedSource(e.target.value); setCurrentPage(1); }}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        {/* Familia Selector */}
+        <div className="mb-6">
+          <h3 className="text-sm font-medium text-gray-700 mb-3">Familia de Producto</h3>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <button
+              onClick={() => { setSelectedFamilia([]); setCurrentPage(1); }}
+              className={`flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-all ${
+                selectedFamilia.length === 0
+                  ? 'border-green-500 bg-green-50 shadow-md'
+                  : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
+              }`}
             >
-              <option value="">Todas las fuentes</option>
-              {filters.sources.map((source) => (
-                <option key={source} value={source}>{source}</option>
-              ))}
-            </select>
+              <span className="text-3xl mb-1">📦</span>
+              <span className={`text-sm font-medium ${selectedFamilia.length === 0 ? 'text-green-700' : 'text-gray-700'}`}>
+                Todas
+              </span>
+            </button>
+            <button
+              onClick={() => {
+                if (selectedFamilia.includes('BARRAS')) {
+                  setSelectedFamilia(selectedFamilia.filter(f => f !== 'BARRAS'));
+                } else {
+                  setSelectedFamilia([...selectedFamilia, 'BARRAS']);
+                }
+                setCurrentPage(1);
+              }}
+              className={`flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-all ${
+                selectedFamilia.includes('BARRAS')
+                  ? 'border-green-500 bg-green-50 shadow-md'
+                  : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
+              }`}
+            >
+              <span className="text-3xl mb-1">🍫</span>
+              <span className={`text-sm font-medium ${selectedFamilia.includes('BARRAS') ? 'text-green-700' : 'text-gray-700'}`}>
+                BARRAS
+              </span>
+            </button>
+            <button
+              onClick={() => {
+                if (selectedFamilia.includes('CRACKERS')) {
+                  setSelectedFamilia(selectedFamilia.filter(f => f !== 'CRACKERS'));
+                } else {
+                  setSelectedFamilia([...selectedFamilia, 'CRACKERS']);
+                }
+                setCurrentPage(1);
+              }}
+              className={`flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-all ${
+                selectedFamilia.includes('CRACKERS')
+                  ? 'border-green-500 bg-green-50 shadow-md'
+                  : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
+              }`}
+            >
+              <span className="text-3xl mb-1">🍘</span>
+              <span className={`text-sm font-medium ${selectedFamilia.includes('CRACKERS') ? 'text-green-700' : 'text-gray-700'}`}>
+                CRACKERS
+              </span>
+            </button>
+            <button
+              onClick={() => {
+                if (selectedFamilia.includes('GRANOLAS')) {
+                  setSelectedFamilia(selectedFamilia.filter(f => f !== 'GRANOLAS'));
+                } else {
+                  setSelectedFamilia([...selectedFamilia, 'GRANOLAS']);
+                }
+                setCurrentPage(1);
+              }}
+              className={`flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-all ${
+                selectedFamilia.includes('GRANOLAS')
+                  ? 'border-green-500 bg-green-50 shadow-md'
+                  : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
+              }`}
+            >
+              <span className="text-3xl mb-1">🥣</span>
+              <span className={`text-sm font-medium ${selectedFamilia.includes('GRANOLAS') ? 'text-green-700' : 'text-gray-700'}`}>
+                GRANOLAS
+              </span>
+            </button>
+            <button
+              onClick={() => {
+                if (selectedFamilia.includes('KEEPERS')) {
+                  setSelectedFamilia(selectedFamilia.filter(f => f !== 'KEEPERS'));
+                } else {
+                  setSelectedFamilia([...selectedFamilia, 'KEEPERS']);
+                }
+                setCurrentPage(1);
+              }}
+              className={`flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-all ${
+                selectedFamilia.includes('KEEPERS')
+                  ? 'border-green-500 bg-green-50 shadow-md'
+                  : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
+              }`}
+            >
+              <span className="text-3xl mb-1">🍪</span>
+              <span className={`text-sm font-medium ${selectedFamilia.includes('KEEPERS') ? 'text-green-700' : 'text-gray-700'}`}>
+                KEEPERS
+              </span>
+            </button>
           </div>
+        </div>
 
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
           {/* Channel Filter */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Canal</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-sm font-medium text-gray-700">
+                Canal <span className="text-xs text-gray-500">(Ctrl/Cmd + click)</span>
+              </label>
+              {selectedChannel.length > 0 && (
+                <button
+                  onClick={() => { setSelectedChannel([]); setCurrentPage(1); }}
+                  className="text-xs text-blue-600 hover:text-blue-800 underline"
+                >
+                  Todos
+                </button>
+              )}
+            </div>
             <select
+              multiple
               value={selectedChannel}
-              onChange={(e) => { setSelectedChannel(e.target.value); setCurrentPage(1); }}
+              onChange={(e) => {
+                const options = Array.from(e.target.selectedOptions, option => option.value);
+                setSelectedChannel(options);
+                setCurrentPage(1);
+              }}
+              size={5}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="">Todos los canales</option>
               {filters.channels.map((channel) => (
                 <option key={channel} value={channel}>{channel}</option>
               ))}
             </select>
+            {selectedChannel.length > 0 && (
+              <div className="mt-1 text-xs text-blue-600">
+                {selectedChannel.length} seleccionado{selectedChannel.length > 1 ? 's' : ''}
+              </div>
+            )}
           </div>
 
           {/* Customer Filter */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Cliente</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-sm font-medium text-gray-700">
+                Cliente <span className="text-xs text-gray-500">(Ctrl/Cmd + click)</span>
+              </label>
+              {selectedCustomer.length > 0 && (
+                <button
+                  onClick={() => { setSelectedCustomer([]); setCurrentPage(1); }}
+                  className="text-xs text-blue-600 hover:text-blue-800 underline"
+                >
+                  Todos
+                </button>
+              )}
+            </div>
             <select
+              multiple
               value={selectedCustomer}
-              onChange={(e) => { setSelectedCustomer(e.target.value); setCurrentPage(1); }}
+              onChange={(e) => {
+                const options = Array.from(e.target.selectedOptions, option => option.value);
+                setSelectedCustomer(options);
+                setCurrentPage(1);
+              }}
+              size={5}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="">Todos los clientes</option>
               {filters.customers.map((customer) => (
                 <option key={customer} value={customer}>{customer}</option>
               ))}
             </select>
+            {selectedCustomer.length > 0 && (
+              <div className="mt-1 text-xs text-blue-600">
+                {selectedCustomer.length} seleccionado{selectedCustomer.length > 1 ? 's' : ''}
+              </div>
+            )}
           </div>
 
-          {/* SKU Search */}
+          {/* Multi-field Search */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Buscar SKU</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Búsqueda Global</label>
             <input
               type="text"
               value={skuSearchInput}
               onChange={(e) => setSkuSearchInput(e.target.value)}
-              placeholder="Escribe para buscar SKU..."
+              placeholder="Cliente, Producto, Pedido, Canal, SKU..."
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             {skuSearchInput && (
               <div className="mt-1 text-xs text-gray-500">
-                Buscando: "{skuSearchInput}"
+                Buscando: "{skuSearchInput}" en Cliente, Producto, Pedido, Canal, SKU
               </div>
             )}
           </div>
@@ -342,15 +484,172 @@ export default function AuditView() {
             className="w-full md:w-64 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">Sin agrupación</option>
+            <option value="order_external_id">Pedido</option>
             <option value="order_source">Fuente</option>
             <option value="channel_name">Canal</option>
             <option value="customer_name">Cliente</option>
             <option value="sku">SKU Original</option>
             <option value="sku_primario">SKU Primario</option>
-            <option value="category">Categoría</option>
-            <option value="family">Familia</option>
+            <option value="family">Producto</option>
             <option value="format">Formato</option>
           </select>
+        </div>
+
+        {/* Date Filters */}
+        <div className="mt-6 border-t border-gray-200 pt-6">
+          <h3 className="text-sm font-medium text-gray-700 mb-3">📅 Filtros Temporales</h3>
+
+          {/* Date Filter Type Selector */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de filtro</label>
+            <select
+              value={dateFilterType}
+              onChange={(e) => { setDateFilterType(e.target.value); setCurrentPage(1); }}
+              className="w-full md:w-64 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">📦 Todos los periodos</option>
+              <option value="year">📅 Por año</option>
+              <option value="month">📆 Por mes</option>
+              <option value="custom">🗓️ Rango personalizado</option>
+            </select>
+          </div>
+
+          {/* Year Filter */}
+          {(dateFilterType === 'year' || dateFilterType === 'month') && (
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-sm font-medium text-gray-700">
+                  Año <span className="text-xs text-gray-500">(Ctrl/Cmd + click)</span>
+                </label>
+                {selectedYear.length > 0 && (
+                  <button
+                    onClick={() => { setSelectedYear(['2025']); setCurrentPage(1); }}
+                    className="text-xs text-blue-600 hover:text-blue-800 underline"
+                  >
+                    Limpiar
+                  </button>
+                )}
+              </div>
+              <select
+                multiple
+                value={selectedYear}
+                onChange={(e) => {
+                  const options = Array.from(e.target.selectedOptions, option => option.value);
+                  setSelectedYear(options);
+                  setCurrentPage(1);
+                }}
+                size={3}
+                className="w-full md:w-48 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="2025">2025</option>
+                <option value="2024">2024</option>
+                <option value="2023">2023</option>
+              </select>
+              {selectedYear.length > 0 && (
+                <div className="mt-1 text-xs text-blue-600">
+                  {selectedYear.length} año{selectedYear.length > 1 ? 's' : ''} seleccionado{selectedYear.length > 1 ? 's' : ''}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Month Filter */}
+          {dateFilterType === 'month' && (
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-sm font-medium text-gray-700">
+                  Mes <span className="text-xs text-gray-500">(Ctrl/Cmd + click)</span>
+                </label>
+                {selectedMonth.length > 0 && (
+                  <button
+                    onClick={() => { setSelectedMonth([]); setCurrentPage(1); }}
+                    className="text-xs text-blue-600 hover:text-blue-800 underline"
+                  >
+                    Limpiar
+                  </button>
+                )}
+              </div>
+              <select
+                multiple
+                value={selectedMonth}
+                onChange={(e) => {
+                  const options = Array.from(e.target.selectedOptions, option => option.value);
+                  setSelectedMonth(options);
+                  setCurrentPage(1);
+                }}
+                size={6}
+                className="w-full md:w-48 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="1">Enero</option>
+                <option value="2">Febrero</option>
+                <option value="3">Marzo</option>
+                <option value="4">Abril</option>
+                <option value="5">Mayo</option>
+                <option value="6">Junio</option>
+                <option value="7">Julio</option>
+                <option value="8">Agosto</option>
+                <option value="9">Septiembre</option>
+                <option value="10">Octubre</option>
+                <option value="11">Noviembre</option>
+                <option value="12">Diciembre</option>
+              </select>
+              {selectedMonth.length > 0 && (
+                <div className="mt-1 text-xs text-blue-600">
+                  {selectedMonth.length} mes{selectedMonth.length > 1 ? 'es' : ''} seleccionado{selectedMonth.length > 1 ? 's' : ''}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Custom Date Range */}
+          {dateFilterType === 'custom' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Desde</label>
+                <input
+                  type="date"
+                  value={customFromDate}
+                  onChange={(e) => { setCustomFromDate(e.target.value); setCurrentPage(1); }}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Hasta</label>
+                <input
+                  type="date"
+                  value={customToDate}
+                  onChange={(e) => { setCustomToDate(e.target.value); setCurrentPage(1); }}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Date Filter Summary */}
+          {dateFilterType !== 'all' && (
+            <div className="mt-3 p-3 bg-blue-50 rounded-lg">
+              <div className="text-sm text-blue-800">
+                <strong>Filtro activo:</strong>{' '}
+                {dateFilterType === 'year' && selectedYear.length > 0 && (
+                  selectedYear.length === 1
+                    ? `Año ${selectedYear[0]}`
+                    : `Años ${selectedYear.join(', ')}`
+                )}
+                {dateFilterType === 'month' && selectedYear.length > 0 && selectedMonth.length > 0 && (
+                  (() => {
+                    const months = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+                    const combinations = selectedYear.flatMap(year =>
+                      selectedMonth.map(month => `${months[parseInt(month)]} ${year}`)
+                    );
+                    return combinations.join(', ');
+                  })()
+                )}
+                {dateFilterType === 'custom' && customFromDate && customToDate && (
+                  `Desde ${customFromDate} hasta ${customToDate}`
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -371,13 +670,30 @@ export default function AuditView() {
             </div>
           ) : (
             <>
-              {Object.entries(groupedData).map(([groupKey, groupItems]) => (
+              {Object.entries(groupedData).map(([groupKey, groupItems]) => {
+                // Calculate group subtotals
+                const groupUnidades = groupItems.reduce((sum, item) => sum + (item.unidades || 0), 0);
+                const groupTotal = groupItems.reduce((sum, item) => sum + (item.item_subtotal || 0), 0);
+
+                return (
                 <div key={groupKey} className="mb-6">
                   {groupBy && (
                     <div className="bg-gray-100 px-6 py-3 border-b border-gray-200">
-                      <h3 className="font-semibold text-gray-900">
-                        {groupKey} <span className="text-sm font-normal text-gray-600">({groupItems.length} registros)</span>
-                      </h3>
+                      <div className="flex justify-between items-center">
+                        <h3 className="font-semibold text-gray-900">
+                          {groupKey} <span className="text-sm font-normal text-gray-600">({groupItems.length} registros)</span>
+                        </h3>
+                        <div className="flex gap-6 text-sm">
+                          <div className="text-right">
+                            <span className="text-gray-600">Total Unidades: </span>
+                            <span className="font-semibold text-green-600">{groupUnidades.toLocaleString('es-CL')}</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-gray-600">Total Grupo: </span>
+                            <span className="font-semibold text-blue-600">${groupTotal.toLocaleString('es-CL')}</span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   )}
                   <table className="min-w-full divide-y divide-gray-200">
@@ -388,9 +704,13 @@ export default function AuditView() {
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Canal</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU Original</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU Primario</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Familia</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Producto</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cantidad</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unidades</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Precio</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
@@ -420,34 +740,50 @@ export default function AuditView() {
                               {item.sku || 'SIN SKU'}
                             </div>
                           </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm">
+                            <div className="text-blue-600 font-mono text-xs">
+                              {item.sku_primario || '-'}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm">
+                            <span className="font-medium text-gray-900">
+                              {item.category || '-'}
+                            </span>
+                          </td>
                           <td className="px-4 py-3 text-sm text-gray-900">
                             {item.product_name}
                             <div className="text-xs text-gray-500">
-                              {item.category && `${item.category} `}
-                              {item.family && `· ${item.family}`}
+                              {item.family}
                             </div>
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                             {item.quantity}
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap text-sm">
-                            {!item.in_catalog && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
-                                No en catálogo
-                              </span>
+                            <span className="font-semibold text-green-600">
+                              {item.unidades ? item.unidades.toLocaleString('es-CL') : '-'}
+                            </span>
+                            {item.conversion_factor && item.conversion_factor > 1 && (
+                              <div className="text-xs text-gray-500">
+                                (×{item.conversion_factor})
+                              </div>
                             )}
-                            {(item.customer_null || item.channel_null || item.sku_null) && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 ml-1">
-                                NULLs
-                              </span>
-                            )}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                            ${item.unit_price ? item.unit_price.toLocaleString('es-CL') : '0'}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm">
+                            <span className="font-semibold text-blue-600">
+                              ${item.item_subtotal ? item.item_subtotal.toLocaleString('es-CL') : '0'}
+                            </span>
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              ))}
+                );
+              })}
             </>
           )}
         </div>
