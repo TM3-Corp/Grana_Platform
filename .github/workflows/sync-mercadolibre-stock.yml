@@ -1,0 +1,59 @@
+name: Sync MercadoLibre Stock
+
+on:
+  schedule:
+    # Run every hour at minute 0
+    - cron: '0 * * * *'
+
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  sync-stock:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install httpx psycopg2-binary python-dotenv
+
+      - name: Create .env file for script
+        run: |
+          echo "ML_ACCESS_TOKEN=${{ secrets.ML_ACCESS_TOKEN }}" >> .env
+          echo "ML_SELLER_ID=${{ secrets.ML_SELLER_ID }}" >> .env
+
+      - name: Run stock sync
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python backend/scripts/sync/sync_mercadolibre_stock.py
+
+      - name: Send notification on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '⚠️ MercadoLibre Stock Sync Failed',
+              body: `The scheduled MercadoLibre stock sync failed.
+
+              **Workflow Run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}
+              **Time:** ${new Date().toISOString()}
+
+              Please check the logs and verify:
+              - ML access token is valid (refresh if expired)
+              - Database connection is working
+              - API rate limits not exceeded`,
+              labels: ['bug', 'automation', 'mercadolibre']
+            })
