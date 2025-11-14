@@ -358,6 +358,7 @@ async def get_audit_data(
     channel: Optional[List[str]] = Query(None, description="Filter by channel name - supports multiple"),
     customer: Optional[List[str]] = Query(None, description="Filter by customer name - supports multiple"),
     sku: Optional[str] = Query(None, description="Search in multiple fields: Cliente, Producto, Pedido, Canal, Formato, SKU Original, SKU Primario"),
+    sku_primario: Optional[List[str]] = Query(None, description="Filter by SKU Primario (mapped database column) - supports multiple"),
     has_nulls: Optional[bool] = Query(None, description="Show only records with NULL values"),
     not_in_catalog: Optional[bool] = Query(None, description="Show only SKUs not in catalog"),
     from_date: Optional[str] = Query(None, description="Start date for filtering (YYYY-MM-DD format)"),
@@ -466,8 +467,13 @@ async def get_audit_data(
                         params.append(f"%{cust}%")
                         params.append(f"%{cust}%")
 
+                # SKU Primario filter (now using database column)
+                if sku_primario:
+                    placeholders = ','.join(['%s'] * len(sku_primario))
+                    where_clauses.append(f"oi.sku_primario IN ({placeholders})")
+                    params.extend(sku_primario)
+
                 # Multi-field search: Cliente, Producto, Pedido, Canal, SKU Original
-                # Format and SKU Primario are filtered post-enrichment since they come from CSV
                 if sku:
                     search_conditions = [
                         "COALESCE(cust_direct.name, cust_channel.name, '') ILIKE %s",  # Cliente
@@ -509,9 +515,127 @@ async def get_audit_data(
                 # When group_by is provided, return pre-aggregated groups instead of detail items
                 # This ensures group totals are accurate across ALL data, not just current page
 
+                # ===== SPECIAL CASE: SKU PRIMARIO AGGREGATION WITH CSV MAPPING =====
+                # SKU Primario requires CSV-based mapping which can't be done in SQL
+                # We fetch all filtered items, apply mapping, then aggregate in Python
+                if group_by == 'sku_primario':
+                    # Fetch all filtered items (reasonable limit to prevent memory issues)
+                    fetch_query = f"""
+                        SELECT
+                            o.external_id as order_external_id,
+                            oi.product_sku,
+                            oi.product_name,
+                            o.source as order_source,
+                            oi.quantity,
+                            oi.subtotal
+                        FROM orders o
+                        LEFT JOIN order_items oi ON oi.order_id = o.id
+                        LEFT JOIN products p ON p.sku = oi.product_sku
+                        LEFT JOIN channels ch ON ch.id = o.channel_id
+                        LEFT JOIN customers cust_direct
+                            ON cust_direct.id = o.customer_id
+                            AND cust_direct.source = o.source
+                        LEFT JOIN LATERAL (
+                            SELECT customer_external_id
+                            FROM customer_channel_rules ccr
+                            WHERE ccr.channel_external_id::text = (
+                                CASE
+                                    WHEN o.customer_notes ~ '^\s*\\{{'
+                                    THEN o.customer_notes::json->>'channel_id_relbase'
+                                    ELSE NULL
+                                END
+                            )
+                            AND ccr.is_active = TRUE
+                            LIMIT 1
+                        ) ccr_match ON true
+                        LEFT JOIN customers cust_channel
+                            ON cust_channel.external_id = ccr_match.customer_external_id
+                            AND cust_channel.source = 'relbase'
+                        WHERE {where_sql}
+                        LIMIT 50000
+                    """
+
+                    cursor.execute(fetch_query, params)
+                    all_items = cursor.fetchall()
+
+                    # Apply CSV mapping and group in Python
+                    from collections import defaultdict
+                    groups = defaultdict(lambda: {
+                        'pedidos': set(),
+                        'cantidad': 0,
+                        'total_revenue': 0
+                    })
+
+                    for item in all_items:
+                        sku = item['product_sku']
+                        product_name = item['product_name']
+                        order_source = item['order_source']
+
+                        # Map SKU to primario using same logic as enrichment
+                        official_sku, _, _, _, _ = map_sku_with_quantity(
+                            sku, product_name, product_catalog, catalog_skus, catalog_master_skus, order_source
+                        )
+
+                        # Get sku_primario
+                        if official_sku:
+                            sku_primario = get_sku_primario(official_sku, conversion_map)
+                        else:
+                            sku_primario = None
+
+                        # Use 'SIN CLASIFICAR' for unmapped SKUs
+                        group_key = sku_primario if sku_primario else 'SIN CLASIFICAR'
+
+                        # Aggregate
+                        groups[group_key]['pedidos'].add(item['order_external_id'])
+                        groups[group_key]['cantidad'] += item['quantity'] or 0
+                        groups[group_key]['total_revenue'] += float(item['subtotal'] or 0)
+
+                    # Convert to list format
+                    aggregated_data = []
+                    for group_value, stats in groups.items():
+                        aggregated_data.append({
+                            'group_value': group_value,
+                            'pedidos': len(stats['pedidos']),
+                            'cantidad': stats['cantidad'],
+                            'total_revenue': stats['total_revenue']
+                        })
+
+                    # Sort by revenue descending
+                    aggregated_data.sort(key=lambda x: x['total_revenue'], reverse=True)
+
+                    # Apply pagination to groups
+                    total_groups = len(aggregated_data)
+                    paginated_groups = aggregated_data[offset:offset+limit]
+
+                    # Calculate summary totals
+                    total_pedidos = len(set(item['order_external_id'] for item in all_items))
+                    total_quantity = sum(item['quantity'] or 0 for item in all_items)
+                    total_revenue = sum(float(item['subtotal'] or 0) for item in all_items)
+
+                    # Return aggregated response
+                    return {
+                        "status": "success",
+                        "mode": "aggregated",
+                        "group_by": "sku_primario",
+                        "data": paginated_groups,
+                        "summary": {
+                            "total_pedidos": total_pedidos,
+                            "total_unidades": total_quantity,
+                            "total_revenue": total_revenue,
+                            "total_groups": total_groups
+                        },
+                        "pagination": {
+                            "limit": limit,
+                            "offset": offset,
+                            "total_items": total_groups,
+                            "total_pages": (total_groups + limit - 1) // limit
+                        }
+                    }
+
+                # Map frontend groupBy values to SQL group fields
+                # sku_primario is handled above as a special case
                 group_field_map = {
                     'customer_name': "COALESCE(cust_direct.name, cust_channel.name, 'SIN NOMBRE')",
-                    'sku_primario': 'oi.product_sku',  # Will be enriched with CSV mapping
                     'category': 'p.category',
                     'channel_name': "COALESCE(ch.name, 'SIN CANAL')",
                     'order_date': 'o.order_date::date'

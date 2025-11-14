@@ -12,10 +12,21 @@ interface SalesLineChartProps {
 
 export default function SalesLineChart({ data }: SalesLineChartProps) {
   // Format data for Spanish locale
-  const formattedData = data.map(d => ({
-    ...d,
-    mes: new Date(d.period + '-01').toLocaleDateString('es-CL', { month: 'short', year: '2-digit' })
-  }))
+  const formattedData = data.map(d => {
+    // Check if period is daily (YYYY-MM-DD) or monthly (YYYY-MM)
+    const isDaily = d.period.length === 10;
+    const dateStr = isDaily ? d.period : d.period + '-01';
+    const date = new Date(dateStr);
+
+    const label = isDaily
+      ? date.toLocaleDateString('es-CL', { day: 'numeric', month: 'short' })
+      : date.toLocaleDateString('es-CL', { month: 'short', year: '2-digit' });
+
+    return {
+      ...d,
+      mes: label
+    };
+  })
 
   return (
     <div className="bg-white rounded-lg shadow p-6">

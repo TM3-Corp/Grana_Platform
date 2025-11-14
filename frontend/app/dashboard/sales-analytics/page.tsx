@@ -217,7 +217,7 @@ export default function SalesAnalyticsPage() {
 
       const result = await response.json()
 
-      if (result.success && result.data) {
+      if (result.status === 'success' && result.data) {
         setData(result.data)
       } else {
         throw new Error('Invalid response format')

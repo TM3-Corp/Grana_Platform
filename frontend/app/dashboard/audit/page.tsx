@@ -203,9 +203,9 @@ export default function AuditPage() {
       <div className="max-w-[1800px] mx-auto">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Auditoría de Datos</h1>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Desglose de Pedidos</h1>
           <p className="text-gray-600">
-            Visualiza y audita la integridad de los datos de pedidos, clientes y productos
+            Visualiza el desglose detallado de pedidos, productos, clientes y canales
           </p>
         </div>
 

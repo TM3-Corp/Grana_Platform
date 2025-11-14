@@ -96,11 +96,13 @@ export default function AuditView() {
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
-  const pageSize = 100;
+  const [pageSize, setPageSize] = useState(100);
 
   // Grouping
   const [groupBy, setGroupBy] = useState<string>('');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [expandedGroupDetails, setExpandedGroupDetails] = useState<{ [key: string]: AuditData[] }>({});
+  const [loadingGroupDetails, setLoadingGroupDetails] = useState<Set<string>>(new Set());
 
   // Sorting
   const [sortColumn, setSortColumn] = useState<string>('');
@@ -120,9 +122,11 @@ export default function AuditView() {
 
   useEffect(() => {
     if (status === 'authenticated') {
+      // Clear expanded group details when filters change (forces refetch on next expand)
+      setExpandedGroupDetails({});
       fetchData();
     }
-  }, [status, selectedFamilia, selectedSource, selectedChannel, selectedCustomer, selectedSKU, showNullsOnly, showNotInCatalogOnly, currentPage, dateFilterType, selectedYear, selectedMonth, customFromDate, customToDate]);
+  }, [status, selectedFamilia, selectedSource, selectedChannel, selectedCustomer, selectedSKU, showNullsOnly, showNotInCatalogOnly, currentPage, pageSize, groupBy, dateFilterType, selectedYear, selectedMonth, customFromDate, customToDate]);
 
   // Debounce SKU search input
   useEffect(() => {
@@ -210,9 +214,10 @@ export default function AuditView() {
 
       // Add server-side group_by parameter (when backend supports it)
       // Map frontend groupBy values to backend parameter values
+      // sku_primario uses hybrid server aggregation with CSV mapping
       const groupByMapping: Record<string, string> = {
         'customer_name': 'customer_name',
-        'sku_primario': 'sku_primario',
+        'sku_primario': 'sku_primario',  // ✅ Hybrid: server fetches + CSV maps + aggregates
         'category': 'category',
         'channel_name': 'channel_name',
         'order_date': 'order_date'
@@ -221,16 +226,28 @@ export default function AuditView() {
       // Only add group_by param if backend supports this groupBy value
       if (groupBy && groupByMapping[groupBy]) {
         params.append('group_by', groupByMapping[groupBy]);
+        console.log('✅ OLAP: Adding group_by parameter:', groupByMapping[groupBy]);
+      } else if (groupBy) {
+        console.log('⚠️ Client-side: groupBy value not supported for server aggregation:', groupBy);
       }
 
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://granaplatform-production.up.railway.app';
-      const response = await fetch(`${apiUrl}/api/v1/audit/data?${params}`);
+      const fullUrl = `${apiUrl}/api/v1/audit/data?${params}`;
+      console.log('🌐 API Call:', fullUrl);
+      const response = await fetch(fullUrl);
       if (!response.ok) throw new Error('Error fetching audit data');
 
       const result = await response.json();
 
       // Check if response is in aggregated mode
       const aggregated = result.mode === 'aggregated';
+      console.log('📊 API Response:', {
+        mode: result.mode,
+        group_by: result.group_by,
+        total_groups: result.summary?.total_groups,
+        total_pedidos: result.summary?.total_pedidos,
+        isAggregated: aggregated
+      });
       setIsAggregatedMode(aggregated);
 
       setData(result.data);
@@ -255,6 +272,108 @@ export default function AuditView() {
     }
   };
 
+  const fetchGroupDetails = async (groupKey: string, groupValue: string) => {
+    // Check if already loaded
+    if (expandedGroupDetails[groupKey]) {
+      return;
+    }
+
+    // Mark as loading
+    setLoadingGroupDetails(prev => new Set(prev).add(groupKey));
+
+    try {
+      const params = new URLSearchParams({
+        limit: '1000', // Fetch up to 1000 detail rows for this group
+        offset: '0',
+      });
+
+      // Add all current filters
+      selectedFamilia.forEach(familia => params.append('category', familia));
+      selectedSource.forEach(source => params.append('source', source));
+      selectedChannel.forEach(channel => params.append('channel', channel));
+      selectedCustomer.forEach(customer => params.append('customer', customer));
+
+      if (selectedSKU) params.append('sku', selectedSKU);
+      if (showNullsOnly) params.append('has_nulls', 'true');
+      if (showNotInCatalogOnly) params.append('not_in_catalog', 'true');
+
+      // Add date filters
+      if (dateFilterType === 'year' && selectedYear.length > 0) {
+        const years = selectedYear.map(y => parseInt(y)).sort();
+        params.append('from_date', `${years[0]}-01-01`);
+        params.append('to_date', `${years[years.length - 1]}-12-31`);
+      } else if (dateFilterType === 'month' && selectedYear.length > 0 && selectedMonth.length > 0) {
+        const yearMonths = selectedYear.flatMap(year =>
+          selectedMonth.map(month => ({ year: parseInt(year), month: parseInt(month) }))
+        ).sort((a, b) => {
+          if (a.year !== b.year) return a.year - b.year;
+          return a.month - b.month;
+        });
+
+        const first = yearMonths[0];
+        const last = yearMonths[yearMonths.length - 1];
+        const lastDay = new Date(last.year, last.month, 0).getDate();
+
+        params.append('from_date', `${first.year}-${first.month.toString().padStart(2, '0')}-01`);
+        params.append('to_date', `${last.year}-${last.month.toString().padStart(2, '0')}-${lastDay}`);
+      } else if (dateFilterType === 'custom' && customFromDate && customToDate) {
+        params.append('from_date', customFromDate);
+        params.append('to_date', customToDate);
+      }
+
+      // Add specific filter for this group value
+      if (groupBy === 'order_date') {
+        // For date grouping, filter by specific date
+        params.set('from_date', groupValue);
+        params.set('to_date', groupValue);
+      } else if (groupBy === 'customer_name') {
+        params.set('customer', groupValue);
+      } else if (groupBy === 'channel_name') {
+        params.set('channel', groupValue);
+      } else if (groupBy === 'category') {
+        params.set('category', groupValue);
+      }
+      // Note: sku_primario can't be filtered server-side (requires CSV mapping)
+      // We'll fetch detail rows and filter client-side below
+
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://granaplatform-production.up.railway.app';
+      const fullUrl = `${apiUrl}/api/v1/audit/data?${params}`;
+      console.log('🔍 Fetching group details:', { groupKey, groupValue, url: fullUrl });
+
+      const response = await fetch(fullUrl);
+      if (!response.ok) throw new Error('Error fetching group details');
+
+      const result = await response.json();
+      let detailData = result.data;
+
+      // For sku_primario, filter client-side to only show rows matching this group
+      if (groupBy === 'sku_primario') {
+        detailData = detailData.filter((item: AuditData) => {
+          // Match if sku_primario equals groupValue, or if both are null/undefined
+          return (item.sku_primario === groupValue) ||
+                 (!item.sku_primario && groupValue === 'SIN CLASIFICAR');
+        });
+      }
+
+      // Store detail rows for this group
+      setExpandedGroupDetails(prev => ({
+        ...prev,
+        [groupKey]: detailData
+      }));
+
+      console.log(`✅ Loaded ${detailData.length} detail rows for group: ${groupKey}`);
+    } catch (err) {
+      console.error('Error fetching group details:', err);
+    } finally {
+      // Remove from loading set
+      setLoadingGroupDetails(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(groupKey);
+        return newSet;
+      });
+    }
+  };
+
   const clearFilters = () => {
     setSelectedFamilia([]);
     setSelectedSource([]);
@@ -270,9 +389,14 @@ export default function AuditView() {
     setCustomFromDate('');
     setCustomToDate('');
     setCurrentPage(1);
+    // Clear expanded group details when filters change
+    setExpandedGroupDetails({});
   };
 
   const toggleGroupCollapse = (groupKey: string) => {
+    const isCurrentlyCollapsed = collapsedGroups.has(groupKey);
+
+    // Toggle collapse state
     setCollapsedGroups((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(groupKey)) {
@@ -282,6 +406,11 @@ export default function AuditView() {
       }
       return newSet;
     });
+
+    // If expanding in OLAP/aggregated mode, fetch detail rows
+    if (isCurrentlyCollapsed && isAggregatedMode) {
+      fetchGroupDetails(groupKey, groupKey); // groupKey is the group value
+    }
   };
 
   const toggleAllGroups = () => {
@@ -428,6 +557,39 @@ export default function AuditView() {
 
   return (
     <div>
+      {/* Debug Badge - Shows aggregation mode */}
+      {groupBy && (
+        <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <div className="flex items-center gap-3">
+            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+              isAggregatedMode
+                ? 'bg-green-100 text-green-800'
+                : 'bg-yellow-100 text-yellow-800'
+            }`}>
+              {isAggregatedMode ? '✅ Modo OLAP (servidor)' : '⚠️ Modo Detail (cliente)'}
+            </span>
+            <span className="text-sm text-gray-600">
+              Agrupado por: <strong>{groupBy}</strong>
+            </span>
+            {isAggregatedMode && groupBy === 'sku_primario' && (
+              <span className="text-xs text-green-600 font-medium">
+                ✨ Totales con mapeo CSV (100% precisión) sobre TODOS los datos filtrados
+              </span>
+            )}
+            {isAggregatedMode && groupBy !== 'sku_primario' && (
+              <span className="text-xs text-green-600 font-medium">
+                Totales calculados por PostgreSQL sobre TODOS los datos filtrados
+              </span>
+            )}
+            {!isAggregatedMode && (
+              <span className="text-xs text-yellow-600 font-medium">
+                ⚠️ Totales solo de la página actual - refresca la página para activar OLAP
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Summary Cards */}
       {!loading && data.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
@@ -876,12 +1038,14 @@ export default function AuditView() {
                   setSelectedYear(options);
                   setCurrentPage(1);
                 }}
-                size={3}
+                size={5}
                 className="w-full md:w-48 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="2025">2025</option>
-                <option value="2024">2024</option>
-                <option value="2023">2023</option>
+                <option value="2025">2025 (3,687 órdenes)</option>
+                <option value="2024">2024 (379 órdenes)</option>
+                <option value="2023">2023 (502 órdenes)</option>
+                <option value="2022">2022 (270 órdenes)</option>
+                <option value="2021">2021 (2,543 órdenes)</option>
               </select>
               {selectedYear.length > 0 && (
                 <div className="mt-1 text-xs text-blue-600">
@@ -943,20 +1107,30 @@ export default function AuditView() {
           {dateFilterType === 'custom' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Desde</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Desde
+                  <span className="text-xs text-gray-500 ml-1">(desde may 2021)</span>
+                </label>
                 <input
                   type="date"
                   value={customFromDate}
                   onChange={(e) => { setCustomFromDate(e.target.value); setCurrentPage(1); }}
+                  min="2021-05-06"
+                  max="2025-11-05"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Hasta</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Hasta
+                  <span className="text-xs text-gray-500 ml-1">(hasta nov 2025)</span>
+                </label>
                 <input
                   type="date"
                   value={customToDate}
                   onChange={(e) => { setCustomToDate(e.target.value); setCurrentPage(1); }}
+                  min="2021-05-06"
+                  max="2025-11-05"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -1058,7 +1232,131 @@ export default function AuditView() {
                       </div>
                     </div>
                   )}
-                  {!isCollapsed && !isAggregatedMode && (
+                  {!isCollapsed && (
+                    <>
+                      {/* OLAP MODE: Show detail rows if available */}
+                      {isAggregatedMode && (
+                        <div className="px-6 py-4">
+                          {loadingGroupDetails.has(groupKey) ? (
+                            <div className="text-center py-4 text-gray-600">
+                              <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mr-2"></div>
+                              Cargando detalles del grupo...
+                            </div>
+                          ) : expandedGroupDetails[groupKey] ? (
+                            <>
+                              <div className="mb-2 text-sm text-blue-600 font-medium">
+                                📋 Mostrando {expandedGroupDetails[groupKey].length} registros detallados
+                                {expandedGroupDetails[groupKey].length >= 1000 && (
+                                  <span className="ml-2 text-yellow-600">
+                                    ⚠️ Limitado a 1000 registros. Use filtros más específicos para ver todos los datos.
+                                  </span>
+                                )}
+                              </div>
+                              <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                  <tr>
+                                    {[
+                                      { label: 'Pedido', field: 'order_external_id' },
+                                      { label: 'Fecha', field: 'order_date' },
+                                      { label: 'Cliente', field: 'customer_name' },
+                                      { label: 'Canal', field: 'channel_name' },
+                                      { label: 'SKU Original', field: 'sku' },
+                                      { label: 'SKU Primario', field: 'sku_primario' },
+                                      { label: 'Familia', field: 'category' },
+                                      { label: 'Producto', field: 'product_name' },
+                                      { label: 'Cantidad', field: 'quantity' },
+                                      { label: 'Unidades', field: 'unidades' },
+                                      { label: 'Precio', field: 'unit_price' },
+                                      { label: 'Total', field: 'item_subtotal' },
+                                    ].map(({ label, field }) => (
+                                      <th
+                                        key={field}
+                                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                                      >
+                                        {label}
+                                      </th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                  {expandedGroupDetails[groupKey].map((item, idx) => (
+                                    <tr key={`${item.item_id}-${idx}`} className="hover:bg-gray-50">
+                                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                        {item.order_external_id}
+                                        <div className="text-xs text-gray-500">{item.order_source}</div>
+                                      </td>
+                                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
+                                        {new Date(item.order_date).toLocaleDateString('es-CL')}
+                                      </td>
+                                      <td className="px-4 py-3 text-sm">
+                                        <div className={item.customer_null ? 'text-red-600 font-medium' : 'text-gray-900'}>
+                                          {item.customer_name}
+                                        </div>
+                                        <div className="text-xs text-gray-500">{item.customer_rut}</div>
+                                      </td>
+                                      <td className="px-4 py-3 text-sm">
+                                        <div className={item.channel_null ? 'text-red-600 font-medium' : 'text-gray-900'}>
+                                          {item.channel_name}
+                                        </div>
+                                        <div className="text-xs text-gray-500">{item.channel_source}</div>
+                                      </td>
+                                      <td className="px-4 py-3 text-sm max-w-32">
+                                        <div className={`break-words ${item.sku_null ? 'text-red-600 font-medium' : 'text-gray-900'}`}>
+                                          {item.sku || 'SIN SKU'}
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-3 text-sm max-w-32">
+                                        <div className="text-blue-600 font-mono text-xs break-words">
+                                          {item.sku_primario || '-'}
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                        <span className="font-medium text-gray-900">
+                                          {item.category || '-'}
+                                        </span>
+                                      </td>
+                                      <td className="px-4 py-3 text-sm text-gray-900 max-w-48">
+                                        <div className="break-words">{item.product_name}</div>
+                                        <div className="text-xs text-gray-500 break-words">
+                                          {item.family}
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                        {item.quantity}
+                                      </td>
+                                      <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                        <span className="font-semibold text-green-600">
+                                          {item.unidades ? item.unidades.toLocaleString('es-CL') : '-'}
+                                        </span>
+                                        {item.conversion_factor && item.conversion_factor > 1 && (
+                                          <div className="text-xs text-gray-500">
+                                            (×{item.conversion_factor})
+                                          </div>
+                                        )}
+                                      </td>
+                                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                        ${item.unit_price ? item.unit_price.toLocaleString('es-CL') : '0'}
+                                      </td>
+                                      <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                        <span className="font-semibold text-blue-600">
+                                          ${item.item_subtotal ? item.item_subtotal.toLocaleString('es-CL') : '0'}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </>
+                          ) : (
+                            <div className="text-center py-4 text-gray-500">
+                              <p>💡 Haz clic en el grupo para cargar los detalles</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* DETAIL MODE: Show regular table */}
+                      {!isAggregatedMode && (
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                       <tr>
@@ -1118,13 +1416,13 @@ export default function AuditView() {
                             </div>
                             <div className="text-xs text-gray-500">{item.channel_source}</div>
                           </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm">
-                            <div className={item.sku_null ? 'text-red-600 font-medium' : 'text-gray-900'}>
+                          <td className="px-4 py-3 text-sm max-w-32">
+                            <div className={`break-words ${item.sku_null ? 'text-red-600 font-medium' : 'text-gray-900'}`}>
                               {item.sku || 'SIN SKU'}
                             </div>
                           </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm">
-                            <div className="text-blue-600 font-mono text-xs">
+                          <td className="px-4 py-3 text-sm max-w-32">
+                            <div className="text-blue-600 font-mono text-xs break-words">
                               {item.sku_primario || '-'}
                             </div>
                           </td>
@@ -1133,9 +1431,9 @@ export default function AuditView() {
                               {item.category || '-'}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-sm text-gray-900">
-                            {item.product_name}
-                            <div className="text-xs text-gray-500">
+                          <td className="px-4 py-3 text-sm text-gray-900 max-w-48">
+                            <div className="break-words">{item.product_name}</div>
+                            <div className="text-xs text-gray-500 break-words">
                               {item.family}
                             </div>
                           </td>
@@ -1164,6 +1462,8 @@ export default function AuditView() {
                       ))}
                     </tbody>
                   </table>
+                      )}
+                    </>
                   )}
                 </div>
                 );
@@ -1174,32 +1474,87 @@ export default function AuditView() {
 
         {/* Pagination */}
         {!loading && data.length > 0 && (
-          <div className="bg-gray-50 px-6 py-4 border-t border-gray-200 flex items-center justify-between">
-            <div className="text-sm text-gray-700">
-              Mostrando <span className="font-medium">{(currentPage - 1) * pageSize + 1}</span> a{' '}
-              <span className="font-medium">{Math.min(currentPage * pageSize, totalCount)}</span> de{' '}
-              <span className="font-medium">{totalCount}</span> registros
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
-                disabled={currentPage === 1}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Anterior
-              </button>
-              <div className="flex items-center gap-2 px-4">
-                <span className="text-sm text-gray-700">
-                  Página {currentPage} de {totalPages}
-                </span>
+          <div className="bg-gray-50 px-6 py-4 border-t border-gray-200">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              {/* Left: Records info + Page size selector */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                <div className="text-sm text-gray-700">
+                  Mostrando <span className="font-medium">{(currentPage - 1) * pageSize + 1}</span> a{' '}
+                  <span className="font-medium">{Math.min(currentPage * pageSize, totalCount)}</span> de{' '}
+                  <span className="font-medium">{totalCount}</span> registros
+                </div>
+
+                {/* Page size selector */}
+                <div className="flex items-center gap-2">
+                  <label htmlFor="pageSize" className="text-sm text-gray-600">
+                    Mostrar:
+                  </label>
+                  <select
+                    id="pageSize"
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setCurrentPage(1); // Reset to first page when changing page size
+                    }}
+                    className="border border-gray-300 rounded-lg px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value={100}>100</option>
+                    <option value={500}>500</option>
+                    <option value={1000}>1000</option>
+                  </select>
+                  <span className="text-sm text-gray-600">por página</span>
+                </div>
               </div>
-              <button
-                onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
-                disabled={currentPage === totalPages}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Siguiente
-              </button>
+
+              {/* Right: Navigation buttons */}
+              <div className="flex items-center gap-2">
+                {/* Primera (First) */}
+                <button
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Primera página"
+                >
+                  Primera
+                </button>
+
+                {/* Anterior (Previous) */}
+                <button
+                  onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Página anterior"
+                >
+                  Anterior
+                </button>
+
+                {/* Page indicator */}
+                <div className="flex items-center gap-2 px-4">
+                  <span className="text-sm text-gray-700">
+                    Página {currentPage} de {totalPages}
+                  </span>
+                </div>
+
+                {/* Siguiente (Next) */}
+                <button
+                  onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Página siguiente"
+                >
+                  Siguiente
+                </button>
+
+                {/* Última (Last) */}
+                <button
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Última página"
+                >
+                  Última
+                </button>
+              </div>
             </div>
           </div>
         )}

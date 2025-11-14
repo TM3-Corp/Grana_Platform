@@ -168,7 +168,7 @@ export default function OrdersPage() {
             <p className="text-lg text-gray-600">
               {viewMode === 'orders'
                 ? `Gestión completa de órdenes - ${totalItems} pedidos en total`
-                : 'Auditoría de integridad de datos de pedidos, clientes y productos'
+                : 'Desglose detallado de pedidos con análisis de productos, clientes y canales'
               }
             </p>
           </div>
@@ -193,7 +193,7 @@ export default function OrdersPage() {
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
-              🔍 Auditoría
+              📊 Desglose Pedidos
             </button>
           </div>
 

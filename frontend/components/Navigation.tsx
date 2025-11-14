@@ -9,14 +9,29 @@ import { signOut, useSession } from 'next-auth/react';
 export default function Navigation() {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const { data: session } = useSession();
 
   const navigation = [
-    { name: 'Ventas', href: '/dashboard', icon: '📈' },
-    { name: 'Análisis Integral', href: '/dashboard/analytics', icon: '📊' },
-    { name: 'Análisis Dinámico', href: '/dashboard/sales-analytics', icon: '🎯' },
-    { name: 'Inventario', href: '/dashboard/product-mapping', icon: '🏷️' },
-    { name: 'Pedidos', href: '/dashboard/orders', icon: '📦' },
+    { name: 'Dashboard', href: '/dashboard', icon: '📊' },
+    {
+      name: 'Ventas',
+      icon: '📈',
+      isDropdown: true,
+      subItems: [
+        { name: 'Visualizaciones', href: '/dashboard/sales-analytics', icon: '🎯' },
+        { name: 'Tablas', href: '/dashboard/orders', icon: '📋' },
+      ]
+    },
+    {
+      name: 'Inventario',
+      icon: '📦',
+      isDropdown: true,
+      subItems: [
+        { name: 'General', href: '/dashboard/warehouse-inventory', icon: '📦' },
+        { name: 'Por Bodega', href: '/dashboard/warehouse-inventory/by-warehouse', icon: '🏢' },
+      ]
+    },
   ];
 
   const isActive = (href: string) => {
@@ -24,6 +39,10 @@ export default function Navigation() {
       return pathname === href;
     }
     return pathname?.startsWith(href);
+  };
+
+  const isDropdownActive = (subItems: any[]) => {
+    return subItems.some(item => pathname?.startsWith(item.href));
   };
 
   return (
@@ -45,24 +64,87 @@ export default function Navigation() {
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-1">
-            {navigation.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`
-                  px-4 py-2 rounded-lg text-sm font-medium transition-all
-                  flex items-center gap-2
-                  ${
-                    isActive(item.href)
-                      ? 'bg-green-50 text-green-700'
-                      : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
-                  }
-                `}
-              >
-                <span>{item.icon}</span>
-                <span>{item.name}</span>
-              </Link>
-            ))}
+            {navigation.map((item: any) => {
+              if (item.isDropdown) {
+                // Dropdown menu for Ventas and Inventario
+                const isDropActive = isDropdownActive(item.subItems);
+                return (
+                  <div
+                    key={item.name}
+                    className="relative"
+                    onMouseEnter={() => setOpenDropdown(item.name)}
+                    onMouseLeave={() => setOpenDropdown(null)}
+                  >
+                    <button
+                      className={`
+                        px-4 py-2 rounded-lg text-sm font-medium transition-all
+                        flex items-center gap-2
+                        ${
+                          isDropActive
+                            ? 'bg-green-50 text-green-700'
+                            : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                        }
+                      `}
+                    >
+                      <span>{item.icon}</span>
+                      <span>{item.name}</span>
+                      <svg
+                        className={`w-4 h-4 transition-transform ${openDropdown === item.name ? 'rotate-180' : ''}`}
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+
+                    {/* Dropdown menu */}
+                    {openDropdown === item.name && (
+                      <div className="absolute left-0 top-full w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                        {item.subItems.map((subItem: any) => (
+                          <Link
+                            key={subItem.href}
+                            href={subItem.href}
+                            className={`
+                              block px-4 py-2 text-sm transition-colors
+                              flex items-center gap-2
+                              ${
+                                isActive(subItem.href)
+                                  ? 'bg-green-50 text-green-700'
+                                  : 'text-gray-700 hover:bg-gray-50'
+                              }
+                            `}
+                          >
+                            <span>{subItem.icon}</span>
+                            <span>{subItem.name}</span>
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              // Regular navigation item
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`
+                    px-4 py-2 rounded-lg text-sm font-medium transition-all
+                    flex items-center gap-2
+                    ${
+                      isActive(item.href)
+                        ? 'bg-green-50 text-green-700'
+                        : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                    }
+                  `}
+                >
+                  <span>{item.icon}</span>
+                  <span>{item.name}</span>
+                </Link>
+              );
+            })}
 
             {/* User Menu */}
             {session && (
@@ -103,25 +185,59 @@ export default function Navigation() {
       {mobileMenuOpen && (
         <div className="md:hidden border-t border-gray-200">
           <div className="px-2 pt-2 pb-3 space-y-1">
-            {navigation.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setMobileMenuOpen(false)}
-                className={`
-                  block px-3 py-2 rounded-md text-base font-medium
-                  flex items-center gap-2
-                  ${
-                    isActive(item.href)
-                      ? 'bg-green-50 text-green-700'
-                      : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
-                  }
-                `}
-              >
-                <span>{item.icon}</span>
-                <span>{item.name}</span>
-              </Link>
-            ))}
+            {navigation.map((item: any) => {
+              if (item.isDropdown) {
+                // Dropdown items for mobile - show as expandable list
+                return (
+                  <div key={item.name}>
+                    <div className="px-3 py-2 text-sm font-semibold text-gray-500 flex items-center gap-2">
+                      <span>{item.icon}</span>
+                      <span>{item.name}</span>
+                    </div>
+                    {item.subItems.map((subItem: any) => (
+                      <Link
+                        key={subItem.href}
+                        href={subItem.href}
+                        onClick={() => setMobileMenuOpen(false)}
+                        className={`
+                          block px-6 py-2 rounded-md text-base font-medium
+                          flex items-center gap-2
+                          ${
+                            isActive(subItem.href)
+                              ? 'bg-green-50 text-green-700'
+                              : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                          }
+                        `}
+                      >
+                        <span>{subItem.icon}</span>
+                        <span>{subItem.name}</span>
+                      </Link>
+                    ))}
+                  </div>
+                );
+              }
+
+              // Regular navigation item
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`
+                    block px-3 py-2 rounded-md text-base font-medium
+                    flex items-center gap-2
+                    ${
+                      isActive(item.href)
+                        ? 'bg-green-50 text-green-700'
+                        : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                    }
+                  `}
+                >
+                  <span>{item.icon}</span>
+                  <span>{item.name}</span>
+                </Link>
+              );
+            })}
           </div>
         </div>
       )}

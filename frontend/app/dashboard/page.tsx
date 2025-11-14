@@ -1,59 +1,88 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import Navigation from '@/components/Navigation'
-import KPICard from '@/components/charts/KPICard'
-import SalesLineChart from '@/components/charts/SalesLineChart'
-import SourcePieChart from '@/components/charts/SourcePieChart'
-import TopProductsBar from '@/components/charts/TopProductsBar'
-import ProductSalesAnalytics from '@/components/product-mapping/ProductSalesAnalytics'
-import { ProductProvider } from '@/contexts/ProductContext'
+import ExecutiveSalesChart from '@/components/charts/ExecutiveSalesChart'
 
-interface AnalyticsData {
-  sales_by_period: any[]
-  source_distribution: any[]
-  top_products: any[]
-  kpis: {
-    total_orders: number
-    total_revenue: number
-    avg_ticket: number
-  }
-  growth_rates: any[]
+interface MonthData {
+  month: number
+  month_name: string
+  year: number
+  total_orders: number
+  total_revenue: number
+  is_actual?: boolean
+  is_projection?: boolean
+  confidence_lower?: number
+  confidence_upper?: number
+  growth_rate_applied?: number
 }
 
-type ViewMode = 'overview' | 'analytics';
+interface ExecutiveData {
+  sales_2024: MonthData[]
+  sales_2025_actual: MonthData[]
+  sales_2025_projected: MonthData[]
+  kpis: {
+    total_revenue_2024: number
+    total_revenue_2025_actual: number
+    total_orders_2024: number
+    total_orders_2025_actual: number
+    avg_ticket_2024: number
+    avg_ticket_2025: number
+    revenue_yoy_change: number
+    orders_yoy_change: number
+    ticket_yoy_change: number
+  }
+  projection_metadata: {
+    avg_growth_rate: number
+    std_dev: number
+    months_projected: number
+    current_month: number
+    current_year: number
+  }
+}
+
+const PRODUCT_FAMILIES = [
+  { name: 'Todas', icon: '🎯', value: 'TODAS' },
+  { name: 'Barras', icon: '🍫', value: 'BARRAS' },
+  { name: 'Crackers', icon: '🍘', value: 'CRACKERS' },
+  { name: 'Granolas', icon: '🥣', value: 'GRANOLAS' },
+  { name: 'Keepers', icon: '🍪', value: 'KEEPERS' },
+]
 
 export default function DashboardPage() {
-  const [data, setData] = useState<AnalyticsData | null>(null)
+  const [data, setData] = useState<ExecutiveData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [viewMode, setViewMode] = useState<ViewMode>('overview')
+  const [selectedFamily, setSelectedFamily] = useState('TODAS')
+
+  const fetchExecutiveData = async (family: string) => {
+    try {
+      setLoading(true)
+      setError(null)
+
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const params = family !== 'TODAS' ? `?product_family=${family}` : ''
+      const fullUrl = `${apiUrl}/api/v1/orders/dashboard/executive-kpis${params}`
+
+      const response = await fetch(fullUrl)
+
+      if (!response.ok) {
+        throw new Error(`Error fetching executive data (${response.status})`)
+      }
+
+      const result = await response.json()
+      setData(result.data)
+    } catch (err) {
+      console.error('Error:', err)
+      setError(err instanceof Error ? err.message : 'Error desconocido')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
-    const fetchAnalytics = async () => {
-      try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://granaplatform-production.up.railway.app'
-        const fullUrl = `${apiUrl}/api/v1/orders/analytics?group_by=month`
-
-        const response = await fetch(fullUrl)
-
-        if (!response.ok) {
-          throw new Error(`Error fetching analytics (${response.status})`)
-        }
-
-        const result = await response.json()
-        setData(result.data)
-      } catch (err) {
-        console.error('Error:', err)
-        setError(err instanceof Error ? err.message : 'Error desconocido')
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchAnalytics()
-  }, [])
+    fetchExecutiveData(selectedFamily)
+  }, [selectedFamily])
 
   if (loading) {
     return (
@@ -83,29 +112,27 @@ export default function DashboardPage() {
     )
   }
 
-  // Calculate average growth
-  const avgGrowth = data.growth_rates.length > 0
-    ? data.growth_rates.reduce((sum: number, g: any) => sum + g.growth_rate, 0) / data.growth_rates.length
-    : 0
-
   return (
     <>
       <Navigation />
-      <ProductProvider>
-        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            {/* Header with Refresh */}
-            <div className="mb-8 flex justify-between items-center">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          {/* Header */}
+          <div className="mb-8">
+            <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-4xl font-bold text-gray-900 mb-2">
-                  Ventas
+                <h1 className="text-4xl font-bold mb-2 flex items-center gap-3">
+                  <span className="text-4xl">📊</span>
+                  <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                    Dashboard Ejecutivo
+                  </span>
                 </h1>
                 <p className="text-lg text-gray-600">
-                  Vista consolidada de ventas, productos y tendencias 2025
+                  Vista consolidada de métricas clave y proyecciones de ventas
                 </p>
               </div>
               <button
-                onClick={() => window.location.reload()}
+                onClick={() => fetchExecutiveData(selectedFamily)}
                 className="flex items-center gap-2 px-6 py-3 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl transition-all shadow-sm hover:shadow-md"
               >
                 <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -114,107 +141,156 @@ export default function DashboardPage() {
                 <span className="font-medium text-gray-900">Actualizar</span>
               </button>
             </div>
+          </div>
 
-            {/* View Tabs */}
-            <div className="flex gap-2 mb-8 border-b">
-              <button
-                onClick={() => setViewMode('overview')}
-                className={`px-6 py-3 font-medium transition-colors ${
-                  viewMode === 'overview'
-                    ? 'text-green-600 border-b-2 border-green-600'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                📊 Vista General
-              </button>
-              <button
-                onClick={() => setViewMode('analytics')}
-                className={`px-6 py-3 font-medium transition-colors ${
-                  viewMode === 'analytics'
-                    ? 'text-green-600 border-b-2 border-green-600'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                📈 Análisis de Ventas
-              </button>
+          {/* Product Family Filters */}
+          <div className="mb-8 bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
+            <h3 className="text-sm font-semibold text-gray-700 mb-4">Filtrar por Familia de Producto</h3>
+            <div className="flex flex-wrap gap-3">
+              {PRODUCT_FAMILIES.map((family) => (
+                <button
+                  key={family.value}
+                  onClick={() => setSelectedFamily(family.value)}
+                  className={`
+                    flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all
+                    ${
+                      selectedFamily === family.value
+                        ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-lg scale-105'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }
+                  `}
+                >
+                  <span className="text-xl">{family.icon}</span>
+                  <span>{family.name}</span>
+                </button>
+              ))}
             </div>
-
-            {/* Content */}
-            {viewMode === 'overview' && (
-              <>
-                {/* KPI Cards - Enhanced Design */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-                  <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-6 text-white shadow-lg hover:shadow-xl transition-all transform hover:scale-105">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
-                        <span className="text-3xl">💰</span>
-                      </div>
-                      {avgGrowth !== 0 && (
-                        <div className={`flex items-center gap-1 px-3 py-1 rounded-full ${
-                          avgGrowth > 0 ? 'bg-green-400/30' : 'bg-red-400/30'
-                        }`}>
-                          <svg className={`w-4 h-4 ${avgGrowth > 0 ? '' : 'transform rotate-180'}`} fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M5.293 7.707a1 1 0 010-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L6.707 7.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                          </svg>
-                          <span className="text-sm font-medium">{avgGrowth.toFixed(1)}%</span>
-                        </div>
-                      )}
-                    </div>
-                    <div className="text-sm opacity-90 mb-1">Ingresos Totales</div>
-                    <div className="text-3xl font-bold">${(data.kpis.total_revenue / 1000000).toFixed(1)}M</div>
-                    <div className="text-xs opacity-75 mt-1">CLP en 2025</div>
-                  </div>
-
-                  <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-6 text-white shadow-lg hover:shadow-xl transition-all transform hover:scale-105">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
-                        <span className="text-3xl">📦</span>
-                      </div>
-                    </div>
-                    <div className="text-sm opacity-90 mb-1">Total Órdenes</div>
-                    <div className="text-3xl font-bold">{data.kpis.total_orders.toLocaleString('es-CL')}</div>
-                    <div className="text-xs opacity-75 mt-1">Pedidos procesados</div>
-                  </div>
-
-                  <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl p-6 text-white shadow-lg hover:shadow-xl transition-all transform hover:scale-105">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
-                        <span className="text-3xl">🎫</span>
-                      </div>
-                    </div>
-                    <div className="text-sm opacity-90 mb-1">Ticket Promedio</div>
-                    <div className="text-3xl font-bold">${(data.kpis.avg_ticket / 1000).toFixed(0)}k</div>
-                    <div className="text-xs opacity-75 mt-1">CLP por orden</div>
-                  </div>
-                </div>
-
-                {/* Main Chart - Sales Line - Full Width */}
-                <div className="mb-10">
-                  <SalesLineChart data={data.sales_by_period} />
-                </div>
-
-                {/* Two-column Charts Layout */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  <SourcePieChart data={data.source_distribution} />
-                  <TopProductsBar data={data.top_products} />
-                </div>
-              </>
-            )}
-
-            {viewMode === 'analytics' && (
-              <div>
-                <div className="mb-4">
-                  <h2 className="text-xl font-semibold text-gray-900 mb-1">Análisis de Ventas</h2>
-                  <p className="text-sm text-gray-600">
-                    Visualiza qué productos se venden más, por formato y canal
-                  </p>
-                </div>
-                <ProductSalesAnalytics />
-              </div>
+            {selectedFamily !== 'TODAS' && (
+              <p className="mt-4 text-sm text-gray-600">
+                Mostrando datos solo para: <span className="font-semibold">{PRODUCT_FAMILIES.find(f => f.value === selectedFamily)?.name}</span>
+              </p>
             )}
           </div>
+
+          {/* KPI Cards with YoY Comparison */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+            {/* Revenue KPI */}
+            <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-6 text-white shadow-lg hover:shadow-xl transition-all transform hover:scale-105">
+              <div className="flex items-center justify-between mb-4">
+                <div className="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
+                  <span className="text-3xl">💰</span>
+                </div>
+                {data.kpis.revenue_yoy_change !== 0 && (
+                  <div className={`flex items-center gap-1 px-3 py-1 rounded-full ${
+                    data.kpis.revenue_yoy_change > 0 ? 'bg-green-400/30' : 'bg-red-400/30'
+                  }`}>
+                    <svg className={`w-4 h-4 ${data.kpis.revenue_yoy_change > 0 ? '' : 'transform rotate-180'}`} fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M5.293 7.707a1 1 0 010-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L6.707 7.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                    </svg>
+                    <span className="text-sm font-medium">{data.kpis.revenue_yoy_change.toFixed(1)}%</span>
+                  </div>
+                )}
+              </div>
+              <div className="text-sm opacity-90 mb-1">Ingresos Totales</div>
+              <div className="text-3xl font-bold">${(data.kpis.total_revenue_2025_actual / 1000000).toFixed(1)}M</div>
+              <div className="text-xs opacity-75 mt-2">
+                YTD 2025 vs 2024: ${(data.kpis.total_revenue_2024 / 1000000).toFixed(1)}M
+              </div>
+            </div>
+
+            {/* Orders KPI */}
+            <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-6 text-white shadow-lg hover:shadow-xl transition-all transform hover:scale-105">
+              <div className="flex items-center justify-between mb-4">
+                <div className="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
+                  <span className="text-3xl">📦</span>
+                </div>
+                {data.kpis.orders_yoy_change !== 0 && (
+                  <div className={`flex items-center gap-1 px-3 py-1 rounded-full ${
+                    data.kpis.orders_yoy_change > 0 ? 'bg-blue-400/30' : 'bg-red-400/30'
+                  }`}>
+                    <svg className={`w-4 h-4 ${data.kpis.orders_yoy_change > 0 ? '' : 'transform rotate-180'}`} fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M5.293 7.707a1 1 0 010-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L6.707 7.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                    </svg>
+                    <span className="text-sm font-medium">{data.kpis.orders_yoy_change.toFixed(1)}%</span>
+                  </div>
+                )}
+              </div>
+              <div className="text-sm opacity-90 mb-1">Total Órdenes</div>
+              <div className="text-3xl font-bold">{data.kpis.total_orders_2025_actual.toLocaleString('es-CL')}</div>
+              <div className="text-xs opacity-75 mt-2">
+                YTD 2025 vs 2024: {data.kpis.total_orders_2024.toLocaleString('es-CL')}
+              </div>
+            </div>
+
+            {/* Avg Ticket KPI */}
+            <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl p-6 text-white shadow-lg hover:shadow-xl transition-all transform hover:scale-105">
+              <div className="flex items-center justify-between mb-4">
+                <div className="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
+                  <span className="text-3xl">🎫</span>
+                </div>
+                {data.kpis.ticket_yoy_change !== 0 && (
+                  <div className={`flex items-center gap-1 px-3 py-1 rounded-full ${
+                    data.kpis.ticket_yoy_change > 0 ? 'bg-purple-400/30' : 'bg-red-400/30'
+                  }`}>
+                    <svg className={`w-4 h-4 ${data.kpis.ticket_yoy_change > 0 ? '' : 'transform rotate-180'}`} fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M5.293 7.707a1 1 0 010-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L6.707 7.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                    </svg>
+                    <span className="text-sm font-medium">{data.kpis.ticket_yoy_change.toFixed(1)}%</span>
+                  </div>
+                )}
+              </div>
+              <div className="text-sm opacity-90 mb-1">Ticket Promedio</div>
+              <div className="text-3xl font-bold">${(data.kpis.avg_ticket_2025 / 1000).toFixed(0)}k</div>
+              <div className="text-xs opacity-75 mt-2">
+                2025: ${(data.kpis.avg_ticket_2024 / 1000).toFixed(0)}k en 2024
+              </div>
+            </div>
+          </div>
+
+          {/* Executive Sales Chart with Projections */}
+          <div className="mb-10">
+            <ExecutiveSalesChart
+              sales_2024={data.sales_2024}
+              sales_2025_actual={data.sales_2025_actual}
+              sales_2025_projected={data.sales_2025_projected}
+            />
+          </div>
+
+          {/* Projection Metadata */}
+          {data.projection_metadata.months_projected > 0 && (
+            <div className="bg-blue-50 border-l-4 border-blue-500 rounded-lg p-6">
+              <div className="flex items-start gap-4">
+                <div className="text-4xl">📊</div>
+                <div>
+                  <h3 className="text-lg font-semibold text-blue-900 mb-2">
+                    Proyección de Ventas 2025
+                  </h3>
+                  <p className="text-blue-800 mb-3">
+                    Proyectando <span className="font-semibold">{data.projection_metadata.months_projected} meses restantes</span> basado en datos históricos de 2024 y tendencias YTD 2025.
+                  </p>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-blue-700">Tasa de crecimiento promedio:</span>
+                      <span className="ml-2 font-semibold text-blue-900">
+                        {data.projection_metadata.avg_growth_rate.toFixed(1)}%
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-blue-700">Variabilidad:</span>
+                      <span className="ml-2 font-semibold text-blue-900">
+                        ±{data.projection_metadata.std_dev.toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-blue-700 mt-3">
+                    Las proyecciones utilizan suavizado exponencial con ajuste estacional basado en el mismo mes del año anterior.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-      </ProductProvider>
+      </div>
     </>
   )
 }
