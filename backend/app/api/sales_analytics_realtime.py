@@ -56,6 +56,11 @@ async def get_sales_analytics_realtime(
             where_clauses.append(f"o.source IN ({placeholders})")
             params.extend(sources)
 
+        # Invoice status filter (only for relbase orders)
+        # Only show accepted and accepted_objection invoices (exclude cancelled, declined, NULL)
+        if sources and 'relbase' in sources:
+            where_clauses.append("o.invoice_status IN ('accepted', 'accepted_objection')")
+
         # Date filters (INCLUSIVE on both ends, matching Audit endpoint)
         if from_date and to_date:
             where_clauses.append("o.order_date >= %s AND o.order_date <= %s")
@@ -139,6 +144,27 @@ async def get_sales_analytics_realtime(
         group_field = group_fields.get(group_by, 'p.category')
 
         # Query 1: Summary KPIs
+        # Build customer JOINs only if customer filter is active (to avoid row duplication)
+        if customers:
+            customer_joins = """
+                LEFT JOIN customers cust_direct
+                    ON cust_direct.id = o.customer_id
+                    AND cust_direct.source = o.source
+                LEFT JOIN LATERAL (
+                    SELECT customer_external_id
+                    FROM customer_channel_rules ccr
+                    WHERE ccr.channel_external_id::text = (
+                        o.customer_notes::json->>'channel_id_relbase'
+                    )
+                    AND ccr.is_active = TRUE
+                ) ccr_match ON true
+                LEFT JOIN customers cust_channel
+                    ON cust_channel.external_id = ccr_match.customer_external_id
+                    AND cust_channel.source = 'relbase'
+            """
+        else:
+            customer_joins = ""
+
         summary_query = f"""
             SELECT
                 COALESCE(SUM(oi.subtotal), 0) as total_revenue,
@@ -153,20 +179,7 @@ async def get_sales_analytics_realtime(
             LEFT JOIN order_items oi ON oi.order_id = o.id
             LEFT JOIN products p ON p.sku = oi.product_sku
             LEFT JOIN channels ch ON ch.id = o.channel_id
-            LEFT JOIN customers cust_direct
-                ON cust_direct.id = o.customer_id
-                AND cust_direct.source = o.source
-            LEFT JOIN LATERAL (
-                SELECT customer_external_id
-                FROM customer_channel_rules ccr
-                WHERE ccr.channel_external_id::text = (
-                    o.customer_notes::json->>'channel_id_relbase'
-                )
-                AND ccr.is_active = TRUE
-            ) ccr_match ON true
-            LEFT JOIN customers cust_channel
-                ON cust_channel.external_id = ccr_match.customer_external_id
-                AND cust_channel.source = 'relbase'
+            {customer_joins}
             WHERE {where_clause}
         """
 

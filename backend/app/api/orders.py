@@ -169,6 +169,8 @@ async def get_executive_kpis(
             FROM orders o
             LEFT JOIN order_items oi ON oi.order_id = o.id
             WHERE EXTRACT(YEAR FROM o.order_date) = 2024
+            AND o.source = 'relbase'
+            AND o.invoice_status IN ('accepted', 'accepted_objection')
             {family_filter}
             GROUP BY DATE_TRUNC('month', o.order_date)
             ORDER BY month
@@ -186,6 +188,8 @@ async def get_executive_kpis(
             FROM orders o
             LEFT JOIN order_items oi ON oi.order_id = o.id
             WHERE EXTRACT(YEAR FROM o.order_date) = 2025
+            AND o.source = 'relbase'
+            AND o.invoice_status IN ('accepted', 'accepted_objection')
             {family_filter}
             GROUP BY DATE_TRUNC('month', o.order_date)
             ORDER BY month
