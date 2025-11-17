@@ -68,7 +68,8 @@ export default function WarehouseSpecificInventoryPage() {
   // Fetch warehouses list
   const fetchWarehouses = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/v1/warehouses');
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${apiUrl}/api/v1/warehouses`);
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
@@ -91,6 +92,8 @@ export default function WarehouseSpecificInventoryPage() {
 
       setError(null);
 
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
       // Build query params
       const params = new URLSearchParams();
       if (searchQuery) params.append('search', searchQuery);
@@ -102,7 +105,7 @@ export default function WarehouseSpecificInventoryPage() {
         params.append('warehouse_group', 'amplifica');
 
         const response = await fetch(
-          `http://localhost:8000/api/v1/warehouse-inventory/general?${params.toString()}`
+          `${apiUrl}/api/v1/warehouse-inventory/general?${params.toString()}`
         );
 
         if (!response.ok) {
@@ -115,7 +118,7 @@ export default function WarehouseSpecificInventoryPage() {
         setSummary(data.summary);
       } else {
         const response = await fetch(
-          `http://localhost:8000/api/v1/warehouse-inventory/warehouse/${selectedWarehouse}?${params.toString()}`
+          `${apiUrl}/api/v1/warehouse-inventory/warehouse/${selectedWarehouse}?${params.toString()}`
         );
 
         if (!response.ok) {

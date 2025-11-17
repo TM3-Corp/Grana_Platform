@@ -59,12 +59,13 @@ export default function WarehouseInventoryPage() {
 
       setError(null);
 
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
       const params = new URLSearchParams();
       if (searchQuery) params.append('search', searchQuery);
       if (selectedCategory) params.append('category', selectedCategory);
       if (showOnlyWithStock) params.append('only_with_stock', 'true');
 
-      const response = await fetch(`http://localhost:8000/api/v1/warehouse-inventory/general?${params.toString()}`);
+      const response = await fetch(`${apiUrl}/api/v1/warehouse-inventory/general?${params.toString()}`);
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
