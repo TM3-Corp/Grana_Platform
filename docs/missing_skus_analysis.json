@@ -1,0 +1,933 @@
+{
+  "metadata": {
+    "export_date": "2025-11-10T19:12:27.673434",
+    "total_missing_skus": 60,
+    "total_revenue": 12969024.0,
+    "total_order_items": 913,
+    "description": "SKUs present in order_items but missing from products table. These represent alternative channels (MercadoLibre, Web, legacy SKUs).",
+    "categories": {
+      "legacy": {
+        "count": 5,
+        "revenue": 3168000.0
+      },
+      "special_pack": {
+        "count": 8,
+        "revenue": 2820984.0
+      },
+      "mercadolibre": {
+        "count": 17,
+        "revenue": 2811540.0
+      },
+      "other": {
+        "count": 11,
+        "revenue": 1669400.0
+      },
+      "web": {
+        "count": 19,
+        "revenue": 2499100.0
+      }
+    }
+  },
+  "skus": [
+    {
+      "sku": "CRSA1UES",
+      "name": "Cracker Sal de Mar",
+      "category": "legacy",
+      "statistics": {
+        "order_count": 45,
+        "line_item_count": 45,
+        "total_quantity": 306.0,
+        "total_revenue": 1009800.0
+      },
+      "date_range": {
+        "first_order": "2025-03-01T00:00:00",
+        "last_order": "2025-10-15T00:00:00"
+      }
+    },
+    {
+      "sku": "BAKC_U64020",
+      "name": "Barrita Keto Nuez display x 16",
+      "category": "special_pack",
+      "statistics": {
+        "order_count": 36,
+        "line_item_count": 36,
+        "total_quantity": 69.0,
+        "total_revenue": 841800.0
+      },
+      "date_range": {
+        "first_order": "2025-03-01T00:00:00",
+        "last_order": "2025-10-14T00:00:00"
+      }
+    },
+    {
+      "sku": "CRRO1UES",
+      "name": "Cracker Romero",
+      "category": "legacy",
+      "statistics": {
+        "order_count": 44,
+        "line_item_count": 44,
+        "total_quantity": 241.0,
+        "total_revenue": 795300.0
+      },
+      "date_range": {
+        "first_order": "2025-03-01T00:00:00",
+        "last_order": "2025-10-15T00:00:00"
+      }
+    },
+    {
+      "sku": "MLC2929973548",
+      "name": "Barras Keto Chocolate Nuez Grana Vegana 35 Gr - 16 Un",
+      "category": "mercadolibre",
+      "statistics": {
+        "order_count": 31,
+        "line_item_count": 31,
+        "total_quantity": 34.0,
+        "total_revenue": 639200.0
+      },
+      "date_range": {
+        "first_order": "2025-06-23T09:46:37",
+        "last_order": "2025-10-07T18:54:42"
+      }
+    },
+    {
+      "sku": "CRCU1UES",
+      "name": "Cracker Cúrcuma",
+      "category": "legacy",
+      "statistics": {
+        "order_count": 30,
+        "line_item_count": 30,
+        "total_quantity": 152.0,
+        "total_revenue": 501600.0
+      },
+      "date_range": {
+        "first_order": "2025-03-01T00:00:00",
+        "last_order": "2025-10-13T00:00:00"
+      }
+    },
+    {
+      "sku": "KEEPERPACK",
+      "name": "Pack x5 Keepers Chocolate Maní",
+      "category": "special_pack",
+      "statistics": {
+        "order_count": 31,
+        "line_item_count": 31,
+        "total_quantity": 87.0,
+        "total_revenue": 487200.0
+      },
+      "date_range": {
+        "first_order": "2025-07-01T08:45:25",
+        "last_order": "2025-07-04T08:38:18"
+      }
+    },
+    {
+      "sku": "BAMC_C01220",
+      "name": "Barrita Cacao Maní display x 16",
+      "category": "special_pack",
+      "statistics": {
+        "order_count": 29,
+        "line_item_count": 29,
+        "total_quantity": 48.0,
+        "total_revenue": 446400.0
+      },
+      "date_range": {
+        "first_order": "2025-03-01T00:00:00",
+        "last_order": "2025-10-12T00:00:00"
+      }
+    },
+    {
+      "sku": "CRAA1UES",
+      "name": "Cracker Ajo Albahaca",
+      "category": "legacy",
+      "statistics": {
+        "order_count": 30,
+        "line_item_count": 30,
+        "total_quantity": 133.0,
+        "total_revenue": 438900.0
+      },
+      "date_range": {
+        "first_order": "2025-03-01T00:00:00",
+        "last_order": "2025-10-13T00:00:00"
+      }
+    },
+    {
+      "sku": "GRKC_U21020",
+      "name": "Granola Keto",
+      "category": "other",
+      "statistics": {
+        "order_count": 28,
+        "line_item_count": 28,
+        "total_quantity": 126.0,
+        "total_revenue": 437346.0
+      },
+      "date_range": {
+        "first_order": "2025-03-01T00:00:00",
+        "last_order": "2025-10-12T00:00:00"
+      }
+    },
+    {
+      "sku": "BAMC_U64020",
+      "name": "Barrita Manzana Canela display x 16",
+      "category": "special_pack",
+      "statistics": {
+        "order_count": 22,
+        "line_item_count": 22,
+        "total_quantity": 47.0,
+        "total_revenue": 437100.0
+      },
+      "date_range": {
+        "first_order": "2025-03-01T00:00:00",
+        "last_order": "2025-10-10T00:00:00"
+      }
+    },
+    {
+      "sku": "BABE_U20010_WEB",
+      "name": "Barra Low Carb Berrries x 5",
+      "category": "web",
+      "statistics": {
+        "order_count": 30,
+        "line_item_count": 30,
+        "total_quantity": 88.0,
+        "total_revenue": 431200.0
+      },
+      "date_range": {
+        "first_order": "2025-01-06T11:48:16",
+        "last_order": "2025-03-13T13:08:28"
+      }
+    },
+    {
+      "sku": "BAKC_U64010_WEB",
+      "name": "Barra Keto Nuez x 16",
+      "category": "web",
+      "statistics": {
+        "order_count": 17,
+        "line_item_count": 17,
+        "total_quantity": 24.0,
+        "total_revenue": 427200.0
+      },
+      "date_range": {
+        "first_order": "2025-01-02T11:06:07",
+        "last_order": "2025-03-13T13:08:28"
+      }
+    },
+    {
+      "sku": "CRPI1UES",
+      "name": "Cracker Pimienta",
+      "category": "legacy",
+      "statistics": {
+        "order_count": 28,
+        "line_item_count": 28,
+        "total_quantity": 128.0,
+        "total_revenue": 422400.0
+      },
+      "date_range": {
+        "first_order": "2025-03-01T00:00:00",
+        "last_order": "2025-10-12T00:00:00"
+      }
+    },
+    {
+      "sku": "MLC2930251054",
+      "name": "Keeper De Grana, Maní Con Chocolate 30 Grs S/azúcar",
+      "category": "mercadolibre",
+      "statistics": {
+        "order_count": 38,
+        "line_item_count": 38,
+        "total_quantity": 293.0,
+        "total_revenue": 419640.0
+      },
+      "date_range": {
+        "first_order": "2025-06-19T10:47:15",
+        "last_order": "2025-09-07T10:07:02"
+      }
+    },
+    {
+      "sku": "GRCA_U26020",
+      "name": "Granola Cacao",
+      "category": "other",
+      "statistics": {
+        "order_count": 30,
+        "line_item_count": 30,
+        "total_quantity": 129.0,
+        "total_revenue": 387000.0
+      },
+      "date_range": {
+        "first_order": "2025-03-01T00:00:00",
+        "last_order": "2025-10-13T00:00:00"
+      }
+    },
+    {
+      "sku": "BACM_U64010_WEB",
+      "name": "Barra Low Carb Cacao Maní x 16",
+      "category": "web",
+      "statistics": {
+        "order_count": 16,
+        "line_item_count": 16,
+        "total_quantity": 26.0,
+        "total_revenue": 382200.0
+      },
+      "date_range": {
+        "first_order": "2025-01-16T17:50:07",
+        "last_order": "2025-03-13T23:46:28"
+      }
+    },
+    {
+      "sku": "MLC3016921654",
+      "name": "Keeper De Grana, Maní Con Chocolate 30 Grs S/azúcar",
+      "category": "mercadolibre",
+      "statistics": {
+        "order_count": 31,
+        "line_item_count": 31,
+        "total_quantity": 254.0,
+        "total_revenue": 381000.0
+      },
+      "date_range": {
+        "first_order": "2025-08-07T10:00:56",
+        "last_order": "2025-09-21T11:05:10"
+      }
+    },
+    {
+      "sku": "MLC2930215860",
+      "name": "Galletas Crackers Grana Keto Sal De Mar - 120gr",
+      "category": "mercadolibre",
+      "statistics": {
+        "order_count": 33,
+        "line_item_count": 33,
+        "total_quantity": 52.0,
+        "total_revenue": 317200.0
+      },
+      "date_range": {
+        "first_order": "2025-06-21T14:40:08",
+        "last_order": "2025-09-15T12:00:34"
+      }
+    },
+    {
+      "sku": "MLC1644022833",
+      "name": "Granola Grana Low Carb Cacao Y Semillas, Vegana, Sin Aceites",
+      "category": "mercadolibre",
+      "statistics": {
+        "order_count": 29,
+        "line_item_count": 29,
+        "total_quantity": 51.0,
+        "total_revenue": 280500.0
+      },
+      "date_range": {
+        "first_order": "2025-07-19T11:28:38",
+        "last_order": "2025-09-20T13:33:51"
+      }
+    },
+    {
+      "sku": "GRAL_U26020",
+      "name": "Granola Almendras",
+      "category": "other",
+      "statistics": {
+        "order_count": 20,
+        "line_item_count": 20,
+        "total_quantity": 93.0,
+        "total_revenue": 279000.0
+      },
+      "date_range": {
+        "first_order": "2025-03-01T00:00:00",
+        "last_order": "2025-10-09T00:00:00"
+      }
+    },
+    {
+      "sku": "GRBE_U26020",
+      "name": "Granola Berries",
+      "category": "other",
+      "statistics": {
+        "order_count": 17,
+        "line_item_count": 17,
+        "total_quantity": 82.0,
+        "total_revenue": 246000.0
+      },
+      "date_range": {
+        "first_order": "2025-03-01T00:00:00",
+        "last_order": "2025-10-07T00:00:00"
+      }
+    },
+    {
+      "sku": "CRSM_U13510_WEB",
+      "name": "Crackers Keto Sal de Mar",
+      "category": "web",
+      "statistics": {
+        "order_count": 19,
+        "line_item_count": 19,
+        "total_quantity": 47.0,
+        "total_revenue": 232650.0
+      },
+      "date_range": {
+        "first_order": "2025-01-02T11:06:07",
+        "last_order": "2025-03-12T11:04:49"
+      }
+    },
+    {
+      "sku": "BABE_C028220",
+      "name": "Barrita Berries display x 5",
+      "category": "special_pack",
+      "statistics": {
+        "order_count": 22,
+        "line_item_count": 22,
+        "total_quantity": 73.0,
+        "total_revenue": 227614.0
+      },
+      "date_range": {
+        "first_order": "2025-03-01T00:00:00",
+        "last_order": "2025-10-10T00:00:00"
+      }
+    },
+    {
+      "sku": "BAKC_U20020",
+      "name": "Barrita Keto Nuez display x 5",
+      "category": "special_pack",
+      "statistics": {
+        "order_count": 9,
+        "line_item_count": 9,
+        "total_quantity": 44.0,
+        "total_revenue": 178200.0
+      },
+      "date_range": {
+        "first_order": "2025-03-01T00:00:00",
+        "last_order": "2025-09-25T00:00:00"
+      }
+    },
+    {
+      "sku": "BAMC_U64010_WEB",
+      "name": "Barra Low Carb Manzana Canela x 16",
+      "category": "web",
+      "statistics": {
+        "order_count": 9,
+        "line_item_count": 9,
+        "total_quantity": 12.0,
+        "total_revenue": 176400.0
+      },
+      "date_range": {
+        "first_order": "2025-01-21T00:14:13",
+        "last_order": "2025-03-14T16:42:34"
+      }
+    },
+    {
+      "sku": "MLC1630337051",
+      "name": "Barra Cereal Grana Sour Berries 5 Un",
+      "category": "mercadolibre",
+      "statistics": {
+        "order_count": 16,
+        "line_item_count": 16,
+        "total_quantity": 28.0,
+        "total_revenue": 154000.0
+      },
+      "date_range": {
+        "first_order": "2025-07-22T07:49:01",
+        "last_order": "2025-09-09T14:46:08"
+      }
+    },
+    {
+      "sku": "BAMC_C02820",
+      "name": "Barrita Cacao Maní display x 5",
+      "category": "special_pack",
+      "statistics": {
+        "order_count": 11,
+        "line_item_count": 11,
+        "total_quantity": 49.0,
+        "total_revenue": 152782.0
+      },
+      "date_range": {
+        "first_order": "2025-03-01T00:00:00",
+        "last_order": "2025-09-29T00:00:00"
+      }
+    },
+    {
+      "sku": "MLC2930200766",
+      "name": "Galletas Crackers Grana Keto Sabor Ajo Albahaca 135g Vegana",
+      "category": "mercadolibre",
+      "statistics": {
+        "order_count": 18,
+        "line_item_count": 18,
+        "total_quantity": 23.0,
+        "total_revenue": 140300.0
+      },
+      "date_range": {
+        "first_order": "2025-07-19T11:41:33",
+        "last_order": "2025-09-04T13:12:46"
+      }
+    },
+    {
+      "sku": "BAKC_U04020",
+      "name": "Barrita Keto Nuez granel",
+      "category": "other",
+      "statistics": {
+        "order_count": 6,
+        "line_item_count": 6,
+        "total_quantity": 160.0,
+        "total_revenue": 136480.0
+      },
+      "date_range": {
+        "first_order": "2025-03-01T00:00:00",
+        "last_order": "2025-09-12T00:00:00"
+      }
+    },
+    {
+      "sku": "CRRO_U13510_WEB",
+      "name": "Crackers Keto Romero",
+      "category": "web",
+      "statistics": {
+        "order_count": 14,
+        "line_item_count": 14,
+        "total_quantity": 24.0,
+        "total_revenue": 118800.0
+      },
+      "date_range": {
+        "first_order": "2025-01-02T11:06:07",
+        "last_order": "2025-02-21T12:45:53"
+      }
+    },
+    {
+      "sku": "GRKC_U21010_WEB",
+      "name": "Granola Keto Cacao",
+      "category": "web",
+      "statistics": {
+        "order_count": 13,
+        "line_item_count": 13,
+        "total_quantity": 19.0,
+        "total_revenue": 112100.0
+      },
+      "date_range": {
+        "first_order": "2025-01-02T11:06:07",
+        "last_order": "2025-02-14T23:02:13"
+      }
+    },
+    {
+      "sku": "BAKC_U20010_WEB",
+      "name": "Barra Keto Nuez x 5",
+      "category": "web",
+      "statistics": {
+        "order_count": 11,
+        "line_item_count": 11,
+        "total_quantity": 19.0,
+        "total_revenue": 106400.0
+      },
+      "date_range": {
+        "first_order": "2025-01-06T11:48:16",
+        "last_order": "2025-03-07T18:55:22"
+      }
+    },
+    {
+      "sku": "BABE_U04010_WEB",
+      "name": "Barra Low Carb Berrries x 1",
+      "category": "web",
+      "statistics": {
+        "order_count": 4,
+        "line_item_count": 4,
+        "total_quantity": 106.0,
+        "total_revenue": 106000.0
+      },
+      "date_range": {
+        "first_order": "2025-01-08T18:34:54",
+        "last_order": "2025-03-12T18:47:03"
+      }
+    },
+    {
+      "sku": "MLC2978631042",
+      "name": "Barritas Grana Low Carb Cacao Maní Disp. 5 Uds Vegana 200grs",
+      "category": "mercadolibre",
+      "statistics": {
+        "order_count": 13,
+        "line_item_count": 13,
+        "total_quantity": 18.0,
+        "total_revenue": 99000.0
+      },
+      "date_range": {
+        "first_order": "2025-07-23T09:37:47",
+        "last_order": "2025-09-25T10:27:33"
+      }
+    },
+    {
+      "sku": "MLC1630349931",
+      "name": "Granola Grana Keto Cacao - 260gr",
+      "category": "mercadolibre",
+      "statistics": {
+        "order_count": 13,
+        "line_item_count": 13,
+        "total_quantity": 15.0,
+        "total_revenue": 88500.0
+      },
+      "date_range": {
+        "first_order": "2025-07-22T11:52:44",
+        "last_order": "2025-08-10T17:45:08"
+      }
+    },
+    {
+      "sku": "SHOPIFY-None",
+      "name": "Pack Día de la Mamá - Edición Limitada",
+      "category": "other",
+      "statistics": {
+        "order_count": 5,
+        "line_item_count": 7,
+        "total_quantity": 9.0,
+        "total_revenue": 86060.0
+      },
+      "date_range": {
+        "first_order": "2025-01-06T11:48:16",
+        "last_order": "2025-05-07T14:56:05"
+      }
+    },
+    {
+      "sku": "GRCA_U26010_WEB",
+      "name": "Granola Cacao",
+      "category": "web",
+      "statistics": {
+        "order_count": 9,
+        "line_item_count": 9,
+        "total_quantity": 16.0,
+        "total_revenue": 72000.0
+      },
+      "date_range": {
+        "first_order": "2025-01-15T14:41:58",
+        "last_order": "2025-03-10T18:58:15"
+      }
+    },
+    {
+      "sku": "MLC1630349929",
+      "name": "Barra Low Carb Grana Vegana De Cacao Y Maní",
+      "category": "mercadolibre",
+      "statistics": {
+        "order_count": 3,
+        "line_item_count": 3,
+        "total_quantity": 4.0,
+        "total_revenue": 70400.0
+      },
+      "date_range": {
+        "first_order": "2025-08-06T20:41:36",
+        "last_order": "2025-09-25T18:37:18"
+      }
+    },
+    {
+      "sku": "CRCU_U13510_WEB",
+      "name": "Crackers Keto Cúrcuma",
+      "category": "web",
+      "statistics": {
+        "order_count": 9,
+        "line_item_count": 9,
+        "total_quantity": 13.0,
+        "total_revenue": 64350.0
+      },
+      "date_range": {
+        "first_order": "2025-01-18T12:14:40",
+        "last_order": "2025-02-21T11:33:56"
+      }
+    },
+    {
+      "sku": "BACM_U20010_WEB",
+      "name": "Barra Low Carb Cacao Maní x 5",
+      "category": "web",
+      "statistics": {
+        "order_count": 11,
+        "line_item_count": 11,
+        "total_quantity": 13.0,
+        "total_revenue": 63700.0
+      },
+      "date_range": {
+        "first_order": "2025-01-06T11:48:16",
+        "last_order": "2025-03-07T18:55:22"
+      }
+    },
+    {
+      "sku": "MLC2933751572",
+      "name": "Galletas Crackers Grana Keto Sabor Romero 135g Vegana",
+      "category": "mercadolibre",
+      "statistics": {
+        "order_count": 6,
+        "line_item_count": 6,
+        "total_quantity": 10.0,
+        "total_revenue": 61000.0
+      },
+      "date_range": {
+        "first_order": "2025-07-23T20:27:55",
+        "last_order": "2025-08-27T16:00:41"
+      }
+    },
+    {
+      "sku": "CRPM_U13510_WEB",
+      "name": "Crackers Keto Pimienta",
+      "category": "web",
+      "statistics": {
+        "order_count": 10,
+        "line_item_count": 10,
+        "total_quantity": 12.0,
+        "total_revenue": 59400.0
+      },
+      "date_range": {
+        "first_order": "2025-01-07T18:36:30",
+        "last_order": "2025-03-09T12:07:47"
+      }
+    },
+    {
+      "sku": "BAMC_U20020",
+      "name": "Barrita Manzana Canela display x 5",
+      "category": "special_pack",
+      "statistics": {
+        "order_count": 6,
+        "line_item_count": 6,
+        "total_quantity": 16.0,
+        "total_revenue": 49888.0
+      },
+      "date_range": {
+        "first_order": "2025-03-01T00:00:00",
+        "last_order": "2025-09-12T00:00:00"
+      }
+    },
+    {
+      "sku": "BAMC_U20010_WEB",
+      "name": "Barra Low Carb Manzana Canela x 5",
+      "category": "web",
+      "statistics": {
+        "order_count": 9,
+        "line_item_count": 9,
+        "total_quantity": 10.0,
+        "total_revenue": 49000.0
+      },
+      "date_range": {
+        "first_order": "2025-01-06T11:48:16",
+        "last_order": "2025-03-05T16:07:59"
+      }
+    },
+    {
+      "sku": "MLC2930199094",
+      "name": "Barritas Grana Keto Nuez Display 5 Uds Vegana 200 Grs",
+      "category": "mercadolibre",
+      "statistics": {
+        "order_count": 2,
+        "line_item_count": 2,
+        "total_quantity": 8.0,
+        "total_revenue": 47200.0
+      },
+      "date_range": {
+        "first_order": "2025-07-30T19:25:23",
+        "last_order": "2025-09-25T18:37:20"
+      }
+    },
+    {
+      "sku": "MLC2978641268",
+      "name": "Granola Grana Low Carb Berries Y Semillas, Vegana, Sin Aceit",
+      "category": "mercadolibre",
+      "statistics": {
+        "order_count": 7,
+        "line_item_count": 7,
+        "total_quantity": 8.0,
+        "total_revenue": 44000.0
+      },
+      "date_range": {
+        "first_order": "2025-07-23T20:27:55",
+        "last_order": "2025-10-08T08:59:16"
+      }
+    },
+    {
+      "sku": "GRBE_U26010_WEB",
+      "name": "Granola Berries",
+      "category": "web",
+      "statistics": {
+        "order_count": 6,
+        "line_item_count": 6,
+        "total_quantity": 8.0,
+        "total_revenue": 36000.0
+      },
+      "date_range": {
+        "first_order": "2025-01-08T10:53:47",
+        "last_order": "2025-03-08T19:30:08"
+      }
+    },
+    {
+      "sku": "CRSM_U02520",
+      "name": "Crackers Keto Sal de Mar Individual 25 gr",
+      "category": "other",
+      "statistics": {
+        "order_count": 6,
+        "line_item_count": 6,
+        "total_quantity": 20.0,
+        "total_revenue": 29800.0
+      },
+      "date_range": {
+        "first_order": "2025-04-22T17:01:20",
+        "last_order": "2025-05-26T14:44:50"
+      }
+    },
+    {
+      "sku": "CRSM_U25010",
+      "name": "Crackers Keto Sal de Mar",
+      "category": "other",
+      "statistics": {
+        "order_count": 1,
+        "line_item_count": 1,
+        "total_quantity": 2.0,
+        "total_revenue": 27600.0
+      },
+      "date_range": {
+        "first_order": "2025-05-29T00:23:24",
+        "last_order": "2025-05-29T00:23:24"
+      }
+    },
+    {
+      "sku": "MLC2930070644",
+      "name": "Granola Grana Cacao 260 G Bolsa Semillas",
+      "category": "mercadolibre",
+      "statistics": {
+        "order_count": 4,
+        "line_item_count": 4,
+        "total_quantity": 5.0,
+        "total_revenue": 27500.0
+      },
+      "date_range": {
+        "first_order": "2025-06-19T17:17:01",
+        "last_order": "2025-08-15T00:27:45"
+      }
+    },
+    {
+      "sku": "BACM_U04010_WEB",
+      "name": "Barra Low Carb Cacao Maní x 1",
+      "category": "web",
+      "statistics": {
+        "order_count": 2,
+        "line_item_count": 2,
+        "total_quantity": 26.0,
+        "total_revenue": 26000.0
+      },
+      "date_range": {
+        "first_order": "2025-02-27T00:02:01",
+        "last_order": "2025-03-12T18:47:03"
+      }
+    },
+    {
+      "sku": "BABE_C20020",
+      "name": "Barrita Berries granel",
+      "category": "other",
+      "statistics": {
+        "order_count": 5,
+        "line_item_count": 5,
+        "total_quantity": 37.0,
+        "total_revenue": 23939.0
+      },
+      "date_range": {
+        "first_order": "2025-03-01T00:00:00",
+        "last_order": "2025-09-04T00:00:00"
+      }
+    },
+    {
+      "sku": "GRAL_U26010_WEB",
+      "name": "Granola Clásica",
+      "category": "web",
+      "statistics": {
+        "order_count": 5,
+        "line_item_count": 5,
+        "total_quantity": 5.0,
+        "total_revenue": 22500.0
+      },
+      "date_range": {
+        "first_order": "2025-01-06T11:48:16",
+        "last_order": "2025-03-12T11:04:49"
+      }
+    },
+    {
+      "sku": "MLC1630369169",
+      "name": "Galletas Crackers Grana Keto Sabor Pimienta 135g Vegana",
+      "category": "mercadolibre",
+      "statistics": {
+        "order_count": 3,
+        "line_item_count": 3,
+        "total_quantity": 3.0,
+        "total_revenue": 18300.0
+      },
+      "date_range": {
+        "first_order": "2025-07-22T20:45:14",
+        "last_order": "2025-08-30T11:03:34"
+      }
+    },
+    {
+      "sku": "MLC2930238714",
+      "name": "Galletas Crackers Grana Keto Romero 135  Grs Vegana",
+      "category": "mercadolibre",
+      "statistics": {
+        "order_count": 2,
+        "line_item_count": 2,
+        "total_quantity": 3.0,
+        "total_revenue": 18300.0
+      },
+      "date_range": {
+        "first_order": "2025-06-19T15:48:55",
+        "last_order": "2025-06-21T14:40:08"
+      }
+    },
+    {
+      "sku": "BAMC_C20020",
+      "name": "Barrita Cacao Maní granel",
+      "category": "other",
+      "statistics": {
+        "order_count": 3,
+        "line_item_count": 3,
+        "total_quantity": 20.0,
+        "total_revenue": 12940.0
+      },
+      "date_range": {
+        "first_order": "2025-03-01T00:00:00",
+        "last_order": "2025-08-04T00:00:00"
+      }
+    },
+    {
+      "sku": "BAKC_U04010_WEB",
+      "name": "Barrita Keto Cacao-Nuts",
+      "category": "web",
+      "statistics": {
+        "order_count": 1,
+        "line_item_count": 1,
+        "total_quantity": 6.0,
+        "total_revenue": 7200.0
+      },
+      "date_range": {
+        "first_order": "2025-02-27T00:02:01",
+        "last_order": "2025-02-27T00:02:01"
+      }
+    },
+    {
+      "sku": "BAMC_U04010_WEB",
+      "name": "Barrita Manzana-Canela",
+      "category": "web",
+      "statistics": {
+        "order_count": 1,
+        "line_item_count": 1,
+        "total_quantity": 6.0,
+        "total_revenue": 6000.0
+      },
+      "date_range": {
+        "first_order": "2025-02-27T00:02:01",
+        "last_order": "2025-02-27T00:02:01"
+      }
+    },
+    {
+      "sku": "MLC1630416135",
+      "name": "Barritas Grana Manzana Canela Display 5 Uds Vegana 200 Grs",
+      "category": "mercadolibre",
+      "statistics": {
+        "order_count": 1,
+        "line_item_count": 1,
+        "total_quantity": 1.0,
+        "total_revenue": 5500.0
+      },
+      "date_range": {
+        "first_order": "2025-06-22T23:52:00",
+        "last_order": "2025-06-22T23:52:00"
+      }
+    },
+    {
+      "sku": "BAMC_U04020",
+      "name": "Barrita Manzana Canela granel",
+      "category": "other",
+      "statistics": {
+        "order_count": 1,
+        "line_item_count": 1,
+        "total_quantity": 5.0,
+        "total_revenue": 3235.0
+      },
+      "date_range": {
+        "first_order": "2025-03-01T00:00:00",
+        "last_order": "2025-03-01T00:00:00"
+      }
+    }
+  ]
+}

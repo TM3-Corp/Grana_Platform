@@ -68,3 +68,6 @@ analisis_canales/progress.json
 backup/
 *.backup
 *.bak
+
+# Data directory (raw data, not for git)
+data/
