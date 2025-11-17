@@ -84,14 +84,15 @@ def custom_cors_origin_check(origin: str) -> bool:
         return True
     return False
 
-# Use allow_origin_regex for Vercel's dynamic URLs
+# Configure CORS with both specific origins and Vercel regex pattern
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"https://.*\.vercel\.app",  # Allow all Vercel deployments
-    allow_origins=ALLOWED_ORIGINS,  # Also allow specific origins from env
+    allow_origin_regex=r"https://.*\.vercel\.app",  # Allow all Vercel preview/production deployments
+    allow_origins=ALLOWED_ORIGINS,  # Also allow specific origins from env (localhost + production)
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Include API routers
