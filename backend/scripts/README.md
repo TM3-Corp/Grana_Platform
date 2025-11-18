@@ -83,6 +83,71 @@ python scripts/data_loading/populate_product_variants.py [--dry-run]
 
 **Example**: Links BAKC_U04010 (1 unit) to BAKC_U20010 (5 units) and BAKC_U64010 (16 units)
 
+### `auto_categorize_products.py` ✨ NEW
+Auto-categorize uncategorized products using product_catalog + keyword matching.
+
+```bash
+python scripts/data_loading/auto_categorize_products.py [--dry-run] [--verbose]
+```
+
+**Use cases**:
+- Auto-categorize products after bulk data imports
+- Fix data quality issues (products without category)
+- Part of GitHub Actions data loading workflow
+- Maintain data completeness for analytics
+
+**What it does**:
+- Identifies products without category assignment
+- Uses 3-step categorization approach:
+  1. Exact match in `product_catalog` table
+  2. Match without ANU- prefix (legacy SKUs)
+  3. Keyword-based auto-categorization (barra → BARRAS, cracker → CRACKERS, etc.)
+- Updates `products` table with assigned categories
+- Reports automation rate and manual review cases
+
+**Example workflow**:
+```bash
+# 1. Check what needs categorization
+python scripts/data_loading/investigate_uncategorized_products.py
+
+# 2. Dry-run to see what would be done
+python scripts/data_loading/auto_categorize_products.py --dry-run --verbose
+
+# 3. Execute categorization
+python scripts/data_loading/auto_categorize_products.py
+```
+
+**Impact**: Ensures 100% of products are categorized for accurate analytics and filtering.
+
+### `investigate_uncategorized_products.py` ✨ NEW
+Investigate and analyze uncategorized products.
+
+```bash
+python scripts/data_loading/investigate_uncategorized_products.py [--output-format {text|json}]
+```
+
+**Use cases**:
+- Diagnose data quality issues before running categorization
+- Generate reports on uncategorized revenue impact
+- Monitor data completeness over time
+- Pre-flight check before GitHub Actions data load
+
+**What it does**:
+- Shows total revenue by category (including uncategorized)
+- Identifies SKUs without category assignment
+- Calculates revenue impact of missing categories
+- Lists top uncategorized SKUs by revenue
+- Provides JSON output for programmatic processing
+
+**Example output**:
+```
+⚠️  DATA QUALITY ISSUE DETECTED:
+   • 51 SKUs without category
+   • $230,928,910 in uncategorized revenue (42.1% of total)
+
+💡 Recommendation: Run auto_categorize_products.py to fix
+```
+
 ### `populate_channel_equivalents.py` ✨ NEW
 Populate `channel_equivalents` table with Shopify ↔ MercadoLibre mappings.
 
