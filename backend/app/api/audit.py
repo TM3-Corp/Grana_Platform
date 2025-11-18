@@ -403,6 +403,10 @@ async def get_audit_data(
                 # ✅ BASE FILTER: Only show RelBase data to avoid duplication
                 where_clauses.append("o.source = 'relbase'")
 
+                # ✅ INVOICE STATUS FILTER: Only show accepted invoices (exclude cancelled, declined, NULL)
+                # This aligns with Sales Analytics endpoint and ensures data consistency
+                where_clauses.append("o.invoice_status IN ('accepted', 'accepted_objection')")
+
                 # Multi-value filters using IN operator
                 if source:
                     placeholders = ','.join(['%s'] * len(source))
@@ -510,6 +514,9 @@ async def get_audit_data(
                 # No else clause - show ALL data when no date filter applied
 
                 where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+
+                # DEBUG: Print WHERE clause to verify invoice_status filter is applied
+                print(f"[DEBUG] WHERE clause: {where_sql[:200]}")  # First 200 chars
 
                 # ===== SERVER-SIDE AGGREGATION MODE =====
                 # When group_by is provided, return pre-aggregated groups instead of detail items
