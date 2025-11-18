@@ -515,9 +515,6 @@ async def get_audit_data(
 
                 where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 
-                # DEBUG: Print WHERE clause to verify invoice_status filter is applied
-                print(f"[DEBUG] WHERE clause: {where_sql[:200]}")  # First 200 chars
-
                 # ===== SERVER-SIDE AGGREGATION MODE =====
                 # When group_by is provided, return pre-aggregated groups instead of detail items
                 # This ensures group totals are accurate across ALL data, not just current page

@@ -71,9 +71,7 @@ async def get_sales_analytics_realtime(
         elif to_date:
             where_clauses.append("o.order_date <= %s")
             params.append(to_date)
-        else:
-            # Default to 2025 for backward compatibility
-            where_clauses.append("EXTRACT(YEAR FROM o.order_date) = 2025")
+        # No else clause - require explicit date filter from frontend (Option C)
 
         # Multi-select filters
         if channels:
