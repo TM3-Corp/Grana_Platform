@@ -191,6 +191,20 @@ async def get_sales_analytics(
                 GROUP BY period, group_value, stack_value
                 ORDER BY period, group_value, revenue DESC
             """
+        elif stack_by and stack_field:
+            # STACK ONLY: period + stack (no primary grouping)
+            timeline_query = f"""
+                SELECT
+                    {period_expr} as period,
+                    {stack_field} as stack_value,
+                    SUM(mv.revenue) as revenue,
+                    SUM(mv.units_sold) as units,
+                    COUNT(DISTINCT mv.order_id) as orders
+                FROM sales_facts_mv mv
+                WHERE {where_clause}
+                GROUP BY period, stack_value
+                ORDER BY period, revenue DESC
+            """
         elif group_by:
             # SINGLE GROUPING: period + group
             timeline_query = f"""
@@ -265,6 +279,47 @@ async def get_sales_analytics(
             # Convert group dict to list
             for period_data in timeline_dict.values():
                 period_data["by_group"] = list(period_data["by_group"].values())
+
+            timeline = list(timeline_dict.values())
+
+        elif stack_by and stack_field:
+            # STACK ONLY: period → stack values (no primary grouping)
+            # Structure: create a single "Total" group per period with by_stack data
+            for row in timeline_rows:
+                period, stack_value, revenue, units, orders = row
+
+                if period not in timeline_dict:
+                    timeline_dict[period] = {
+                        "period": period,
+                        "total_revenue": 0,
+                        "total_units": 0,
+                        "total_orders": 0,
+                        "by_group": [{
+                            "group_value": "Total",
+                            "revenue": 0,
+                            "units": 0,
+                            "orders": 0,
+                            "by_stack": []
+                        }]
+                    }
+
+                # Add to the single "Total" group's by_stack array
+                timeline_dict[period]["by_group"][0]["by_stack"].append({
+                    "stack_value": stack_value,
+                    "revenue": float(revenue or 0),
+                    "units": int(units or 0),
+                    "orders": int(orders or 0)
+                })
+
+                # Update group totals
+                timeline_dict[period]["by_group"][0]["revenue"] += float(revenue or 0)
+                timeline_dict[period]["by_group"][0]["units"] += int(units or 0)
+                timeline_dict[period]["by_group"][0]["orders"] += int(orders or 0)
+
+                # Update period totals
+                timeline_dict[period]["total_revenue"] += float(revenue or 0)
+                timeline_dict[period]["total_units"] += int(units or 0)
+                timeline_dict[period]["total_orders"] += int(orders or 0)
 
             timeline = list(timeline_dict.values())
 
@@ -385,7 +440,7 @@ async def get_sales_analytics(
         conn.close()
 
         return {
-            "success": True,
+            "status": "success",
             "data": {
                 "summary": summary,
                 "timeline": timeline,

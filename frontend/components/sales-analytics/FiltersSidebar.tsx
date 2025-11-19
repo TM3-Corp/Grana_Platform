@@ -46,7 +46,7 @@ interface FiltersSidebarProps {
 export default function FiltersSidebar(props: FiltersSidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
 
-  const categories = props.availableCategories || ['BARRAS', 'CRACKERS', 'GRANOLAS', 'KEEPERS']
+  const categories = props.availableCategories || ['BARRAS', 'CRACKERS', 'GRANOLAS', 'KEEPERS', 'CAJA MASTER', 'DESPACHOS', 'ALIANZA', 'OTROS']
   const channels = props.availableChannels || []
   const customers = props.availableCustomers || []
   const formats = props.availableFormats || ['X1', 'X5', 'X16', 'Caja Master']
@@ -68,6 +68,7 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
   ]
 
   const groupByOptions = [
+    { value: '', label: 'Sin agrupación' },
     { value: 'category', label: 'Familia' },
     { value: 'channel', label: 'Canal' },
     { value: 'customer', label: 'Cliente' },
@@ -105,7 +106,11 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
     'BARRAS': '🍫',
     'CRACKERS': '🍘',
     'GRANOLAS': '🥣',
-    'KEEPERS': '🍬'
+    'KEEPERS': '🍬',
+    'CAJA MASTER': '📦',
+    'DESPACHOS': '🚚',
+    'ALIANZA': '🤝',
+    'OTROS': '📦'
   }
 
   if (isCollapsed) {
@@ -376,26 +381,26 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
           </select>
         </div>
 
-        {/* Stack By (only for category or format grouping) */}
-        {(props.groupBy === 'category' || props.groupBy === 'format') && (
-          <div className="mb-6">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-              <span>📊</span> Apilar por
-            </h3>
-            <select
-              value={props.stackBy || 'channel'}
-              onChange={(e) => props.onStackByChange(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-            >
-              <option value="channel">Canal</option>
-              <option value="format">Formato</option>
-              <option value="customer">Cliente</option>
-            </select>
-            <p className="text-xs text-gray-500 mt-1">
-              Divide cada barra por esta dimensión
-            </p>
-          </div>
-        )}
+        {/* Stack By (always visible) */}
+        <div className="mb-6">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+            <span>📊</span> Apilar por
+          </h3>
+          <select
+            value={props.stackBy || ''}
+            onChange={(e) => props.onStackByChange(e.target.value || null)}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+          >
+            <option value="">Sin apilación</option>
+            {props.groupBy !== 'category' && <option value="category">Familia</option>}
+            {props.groupBy !== 'channel' && <option value="channel">Canal</option>}
+            {props.groupBy !== 'format' && <option value="format">Formato</option>}
+            {props.groupBy !== 'customer' && <option value="customer">Cliente</option>}
+          </select>
+          <p className="text-xs text-gray-500 mt-1">
+            {props.stackBy ? 'Barras apiladas por dimensión seleccionada' : 'Gráfico de líneas'}
+          </p>
+        </div>
 
         {/* Top X */}
         <div className="mb-6">

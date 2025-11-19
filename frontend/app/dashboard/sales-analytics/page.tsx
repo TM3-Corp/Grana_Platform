@@ -79,8 +79,8 @@ export default function SalesAnalyticsPage() {
   const [selectedFormats, setSelectedFormats] = useState<string[]>([])
 
   const [timePeriod, setTimePeriod] = useState<'auto' | 'day' | 'week' | 'month' | 'quarter' | 'year'>('auto')
-  const [groupBy, setGroupBy] = useState<string>('category')
-  const [stackBy, setStackBy] = useState<string | null>('channel')
+  const [groupBy, setGroupBy] = useState<string>('')
+  const [stackBy, setStackBy] = useState<string | null>(null)
   const [topLimit, setTopLimit] = useState<number>(10)
   const [currentPage, setCurrentPage] = useState<number>(1)
 
@@ -197,8 +197,10 @@ export default function SalesAnalyticsPage() {
       params.append('time_period', timePeriod)
 
       // Grouping and top limit
-      params.append('group_by', groupBy)
-      if (stackBy && (groupBy === 'category' || groupBy === 'format')) {
+      if (groupBy) {
+        params.append('group_by', groupBy)
+      }
+      if (stackBy) {
         params.append('stack_by', stackBy)
       }
       params.append('top_limit', topLimit.toString())
@@ -241,8 +243,8 @@ export default function SalesAnalyticsPage() {
     setSelectedChannels([])
     setSelectedCustomers([])
     setSelectedFormats([])
-    setGroupBy('category')
-    setStackBy('channel')
+    setGroupBy('')
+    setStackBy(null)
     setTopLimit(10)
     setCurrentPage(1)
   }

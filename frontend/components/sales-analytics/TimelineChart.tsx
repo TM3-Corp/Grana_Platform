@@ -75,7 +75,9 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
       // e.g., "Q4 '25"
     } else if (d.period.length === 10) {
       // Format: "2025-11-05" (YYYY-MM-DD) - Daily
-      date = new Date(d.period)
+      // Parse date components directly to avoid timezone conversion issues
+      const [year, month, day] = d.period.split('-').map(Number)
+      date = new Date(year, month - 1, day)
       label = date.toLocaleDateString('es-CL', {
         day: 'numeric',
         month: 'short'
@@ -110,10 +112,13 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
   // Prepare data for grouped view
   const hasGrouping = groupBy && formattedData.some(d => d.by_group && d.by_group.length > 0)
 
-  // Detect if we have stacked data (double grouping)
+  // Detect if we have stacked data
   const hasStacking = stackBy && formattedData.some(d =>
     d.by_group?.some(g => g.by_stack && g.by_stack.length > 0)
   )
+
+  // Detect if we want simple stacking (bar chart instead of line chart)
+  const useStackedBars = stackBy !== null && hasStacking
 
   const getMetricValue = (metricType: MetricType) => {
     switch (metricType) {
@@ -200,11 +205,24 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
     : []
 
   // === DATA TRANSFORMATION FOR STACKED BARS ===
-  // Extract all unique combinations of (group_value, stack_value) for stacked bars
+  // Extract all unique stack values for simple stacked bars
+  const simpleStackValues = new Set<string>()
+
+  if (useStackedBars) {
+    formattedData.forEach(d => {
+      d.by_group?.forEach(g => {
+        g.by_stack?.forEach(s => {
+          simpleStackValues.add(s.stack_value)
+        })
+      })
+    })
+  }
+
+  // Legacy: Extract all unique combinations of (group_value, stack_value) for grouped stacked bars
   const stackCombinations: Array<{ group: string; stack: string }> = []
   const uniqueStackValues = new Set<string>()
 
-  if (hasStacking) {
+  if (hasStacking && !useStackedBars) {
     formattedData.forEach(d => {
       d.by_group?.forEach(g => {
         if (groupValues.includes(g.group_value)) {
@@ -221,7 +239,30 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
   }
 
   // Prepare chart data (different structure for stacked bars)
-  const chartData = hasStacking
+  const chartData = useStackedBars
+    ? formattedData.map(d => {
+        const point: any = {
+          period: d.period,
+        }
+
+        // For simple stacked bars: sum all groups for each stack value
+        const stackTotals = new Map<string, number>()
+
+        d.by_group?.forEach(g => {
+          g.by_stack?.forEach(s => {
+            const value = selectedMetric === 'revenue' ? s.revenue : selectedMetric === 'units' ? s.units : s.orders
+            stackTotals.set(s.stack_value, (stackTotals.get(s.stack_value) || 0) + value)
+          })
+        })
+
+        // Add each stack value as a field
+        stackTotals.forEach((value, stackValue) => {
+          point[stackValue] = value
+        })
+
+        return point
+      })
+    : hasStacking
     ? formattedData.map(d => {
         const point: any = {
           period: d.period,
@@ -341,8 +382,43 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
 
       {/* Chart - Conditional rendering based on stacking */}
       <ResponsiveContainer width="100%" height={400}>
-        {hasStacking ? (
-          /* GROUPED STACKED BAR CHART */
+        {useStackedBars ? (
+          /* SIMPLE STACKED BAR CHART */
+          <BarChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            <XAxis
+              dataKey="period"
+              stroke="#6b7280"
+              style={{ fontSize: '12px' }}
+            />
+            <YAxis
+              tickFormatter={formatYAxis}
+              stroke="#6b7280"
+              style={{ fontSize: '12px' }}
+            />
+            <Tooltip
+              formatter={formatTooltip}
+              contentStyle={{
+                backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                border: '1px solid #e5e7eb',
+                borderRadius: '8px'
+              }}
+            />
+            <Legend />
+
+            {/* Create one Bar per stack value - all stacked together */}
+            {Array.from(simpleStackValues).map((stackValue, index) => (
+              <Bar
+                key={stackValue}
+                dataKey={stackValue}
+                stackId="total"  // All bars stack on same ID
+                fill={getStackColor(stackValue, index)}
+                name={stackValue}
+              />
+            ))}
+          </BarChart>
+        ) : hasStacking ? (
+          /* GROUPED STACKED BAR CHART (Legacy - rarely used) */
           <BarChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
             <XAxis
