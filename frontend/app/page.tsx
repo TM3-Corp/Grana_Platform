@@ -45,6 +45,7 @@ export default function Home() {
                   width={120}
                   height={120}
                   className="relative object-contain"
+                  style={{ height: 'auto' }}
                   priority
                 />
               </div>

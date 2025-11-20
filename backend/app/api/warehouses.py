@@ -100,28 +100,32 @@ async def get_warehouses():
             ]
         }
     """
+    conn = None
+    cursor = None
     try:
         conn = get_db_connection_dict()
         cursor = conn.cursor()
 
         cursor.execute("""
-            SELECT id, code, name, location, update_method, is_active
+            SELECT id, code, name, location, update_method, is_active, external_id, source
             FROM warehouses
             WHERE is_active = true
+              AND source = 'relbase'
+              AND external_id IS NOT NULL
             ORDER BY
                 CASE
                     WHEN code LIKE 'amplifica%' THEN 1
                     WHEN code = 'packner' THEN 2
                     WHEN code = 'orinoco' THEN 3
-                    WHEN code = 'mercadolibre' THEN 4
-                    ELSE 5
+                    WHEN code LIKE 'mercado%' THEN 4
+                    WHEN code = 'mi_bodega' THEN 5
+                    WHEN code LIKE 'produccion%' THEN 6
+                    ELSE 7
                 END,
                 name
         """)
 
         warehouses = cursor.fetchall()
-        cursor.close()
-        conn.close()
 
         return {
             "status": "success",
@@ -130,6 +134,12 @@ async def get_warehouses():
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching warehouses: {str(e)}")
+    finally:
+        # Always close cursor and connection to prevent leaks
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 
 # ============================================================================
@@ -144,12 +154,13 @@ async def get_inventory_general(
     warehouse_group: Optional[str] = Query(None, description="Filter by warehouse group (e.g., 'amplifica')")
 ):
     """
-    Get consolidated inventory view with stock by warehouse
+    Get consolidated inventory view with dynamic warehouse columns (Relbase only)
 
     Query Parameters:
         - search: Filter by SKU or product name (optional)
         - category: Filter by category (optional)
         - only_with_stock: Show only products with stock (optional)
+        - warehouse_group: Filter by warehouse group (optional)
 
     Returns:
         {
@@ -160,94 +171,109 @@ async def get_inventory_general(
                     "name": "Barra Low Carb Manzana Canela x 1",
                     "category": "BARRAS",
                     "subfamily": "Barra Low Carb Manzana Canela",
-                    "stock_amplifica_centro": 44,
-                    "stock_amplifica_lareina": 37,
-                    "stock_amplifica_lobarnechea": 0,
-                    "stock_amplifica_quilicura": 135,
-                    "stock_packner": 198,
-                    "stock_orinoco": 0,
-                    "stock_mercadolibre": 0,
-                    "stock_total": 414,
-                    "last_updated": "2025-11-13T10:30:00Z"
+                    "warehouses": {
+                        "mi_bodega": 7218,
+                        "casa_maca": 12,
+                        ...
+                    },
+                    "stock_total": 7230,
+                    "lot_count": 3,
+                    "last_updated": "2025-11-20T17:58:21Z"
                 },
                 ...
             ],
             "summary": {
-                "total_products": 187,
-                "total_stock": 3537,
-                "products_with_stock": 187,
-                "products_without_stock": 0
+                "total_products": 9,
+                "total_stock": 45648,
+                "products_with_stock": 9,
+                "products_without_stock": 0,
+                "active_warehouses": 10
             }
         }
     """
+    conn = None
+    cursor = None
     try:
         conn = get_db_connection_dict()
         cursor = conn.cursor()
 
-        # Build WHERE clause
-        where_conditions = []
+        # Build WHERE clause for products
+        product_where_conditions = ["p.is_active = true"]
         params = []
 
         if search:
-            where_conditions.append("(sku ILIKE %s OR name ILIKE %s)")
+            product_where_conditions.append("(p.sku ILIKE %s OR p.name ILIKE %s)")
             params.extend([f"%{search}%", f"%{search}%"])
 
         if category:
-            where_conditions.append("category = %s")
+            product_where_conditions.append("p.category = %s")
             params.append(category)
 
-        if only_with_stock:
-            if warehouse_group == 'amplifica':
-                # Filter by Amplifica warehouses only
-                where_conditions.append(
-                    "(stock_amplifica_centro > 0 OR stock_amplifica_lareina > 0 OR "
-                    "stock_amplifica_lobarnechea > 0 OR stock_amplifica_quilicura > 0)"
-                )
-            else:
-                # Default: filter by total stock
-                where_conditions.append("stock_total > 0")
+        product_where_clause = " AND ".join(product_where_conditions)
 
-        where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
-
-        # Main query
+        # Dynamic query with JSON aggregation for warehouses
+        # Two-step aggregation to avoid nested aggregate functions
         query = f"""
+            WITH warehouse_stock_per_product_warehouse AS (
+                -- Step 1: Sum quantities per product-warehouse combination
+                SELECT
+                    ws.product_id,
+                    w.code as warehouse_code,
+                    SUM(ws.quantity) as warehouse_total,
+                    COUNT(ws.id) as warehouse_lots,
+                    MAX(ws.last_updated) as last_updated
+                FROM warehouse_stock ws
+                JOIN warehouses w ON w.id = ws.warehouse_id
+                WHERE w.is_active = true
+                  AND w.source = 'relbase'
+                  AND w.external_id IS NOT NULL
+                GROUP BY ws.product_id, w.code
+            ),
+            warehouse_stock_agg AS (
+                -- Step 2: Aggregate into JSON object per product
+                SELECT
+                    product_id,
+                    json_object_agg(warehouse_code, warehouse_total) as warehouse_stocks,
+                    SUM(warehouse_total) as stock_total,
+                    SUM(warehouse_lots) as lot_count,
+                    MAX(last_updated) as last_updated
+                FROM warehouse_stock_per_product_warehouse
+                GROUP BY product_id
+            )
             SELECT
-                sku,
-                name,
-                category,
-                subfamily,
-                stock_amplifica_centro,
-                stock_amplifica_lareina,
-                stock_amplifica_lobarnechea,
-                stock_amplifica_quilicura,
-                stock_packner,
-                stock_orinoco,
-                stock_mercadolibre,
-                stock_total,
-                last_updated
-            FROM inventory_general
-            WHERE {where_clause}
-            ORDER BY category, name
+                p.sku,
+                p.name,
+                p.category,
+                p.subfamily,
+                COALESCE(wsa.warehouse_stocks, '{{}}'::json) as warehouses,
+                COALESCE(wsa.stock_total, 0) as stock_total,
+                COALESCE(wsa.lot_count, 0) as lot_count,
+                wsa.last_updated
+            FROM products p
+            LEFT JOIN warehouse_stock_agg wsa ON wsa.product_id = p.id
+            WHERE {product_where_clause}
+              {f"AND wsa.stock_total > 0" if only_with_stock else ""}
+            ORDER BY p.category, p.name
         """
 
         cursor.execute(query, params)
         products = cursor.fetchall()
 
         # Get summary stats
-        cursor.execute(f"""
+        cursor.execute("""
             SELECT
-                COUNT(*) as total_products,
-                COALESCE(SUM(stock_total), 0) as total_stock,
-                COUNT(*) FILTER (WHERE stock_total > 0) as products_with_stock,
-                COUNT(*) FILTER (WHERE stock_total = 0) as products_without_stock
-            FROM inventory_general
-            WHERE {where_clause}
-        """, params)
+                COUNT(DISTINCT p.id) as total_products,
+                COALESCE(SUM(ws.quantity), 0) as total_stock,
+                COUNT(DISTINCT CASE WHEN ws.quantity > 0 THEN p.id END) as products_with_stock,
+                COUNT(DISTINCT CASE WHEN ws.quantity IS NULL OR ws.quantity = 0 THEN p.id END) as products_without_stock,
+                COUNT(DISTINCT w.id) as active_warehouses
+            FROM products p
+            LEFT JOIN warehouse_stock ws ON ws.product_id = p.id
+            LEFT JOIN warehouses w ON w.id = ws.warehouse_id AND w.is_active = true AND w.source = 'relbase'
+            WHERE p.is_active = true
+        """)
 
         summary = cursor.fetchone()
-
-        cursor.close()
-        conn.close()
 
         return {
             "status": "success",
@@ -257,6 +283,12 @@ async def get_inventory_general(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching inventory: {str(e)}")
+    finally:
+        # Always close cursor and connection to prevent leaks
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 
 # ============================================================================
@@ -304,21 +336,26 @@ async def get_warehouse_inventory(
             }
         }
     """
+    conn = None
+    cursor = None
     try:
         conn = get_db_connection_dict()
         cursor = conn.cursor()
 
-        # Verify warehouse exists
+        # Verify warehouse exists (Relbase only)
         cursor.execute("""
-            SELECT code, name, update_method
+            SELECT code, name, update_method, external_id, source
             FROM warehouses
-            WHERE code = %s AND is_active = true
+            WHERE code = %s
+              AND is_active = true
+              AND source = 'relbase'
+              AND external_id IS NOT NULL
         """, (warehouse_code,))
 
         warehouse = cursor.fetchone()
 
         if not warehouse:
-            raise HTTPException(status_code=404, detail=f"Warehouse '{warehouse_code}' not found")
+            raise HTTPException(status_code=404, detail=f"Relbase warehouse '{warehouse_code}' not found or inactive")
 
         # Build WHERE clause
         where_conditions = ["1=1"]
@@ -333,22 +370,35 @@ async def get_warehouse_inventory(
 
         where_clause = " AND ".join(where_conditions)
 
-        # Get inventory for this warehouse
+        # Get inventory for this warehouse with lot details
         cursor.execute(f"""
             SELECT
                 p.sku,
                 p.name,
                 p.category,
-                ws.quantity as stock,
+                SUM(ws.quantity) as stock,
+                json_agg(
+                    json_build_object(
+                        'lot_number', ws.lot_number,
+                        'quantity', ws.quantity,
+                        'expiration_date', ws.expiration_date,
+                        'last_updated', ws.last_updated
+                    )
+                    ORDER BY ws.expiration_date NULLS LAST, ws.lot_number
+                ) as lots,
                 CASE
                     WHEN (SELECT SUM(quantity) FROM warehouse_stock WHERE product_id = p.id) > 0
-                    THEN ROUND((ws.quantity::numeric / (SELECT SUM(quantity) FROM warehouse_stock WHERE product_id = p.id)) * 100, 1)
+                    THEN ROUND((SUM(ws.quantity)::numeric / (SELECT SUM(quantity) FROM warehouse_stock WHERE product_id = p.id)) * 100, 1)
                     ELSE 0
                 END as percentage_of_total
             FROM warehouse_stock ws
             JOIN products p ON p.id = ws.product_id
             JOIN warehouses w ON w.id = ws.warehouse_id
-            WHERE w.code = %s AND p.is_active = true AND {where_clause}
+            WHERE w.code = %s
+              AND w.source = 'relbase'
+              AND p.is_active = true
+              AND {where_clause}
+            GROUP BY p.id, p.sku, p.name, p.category
             ORDER BY p.category, p.name
         """, params)
 
@@ -357,18 +407,17 @@ async def get_warehouse_inventory(
         # Get summary
         cursor.execute("""
             SELECT
-                COUNT(*) as total_products,
+                COUNT(DISTINCT ws.product_id) as total_products,
                 COALESCE(SUM(ws.quantity), 0) as total_stock,
+                COUNT(ws.id) as total_lots,
                 MAX(ws.last_updated) as last_updated
             FROM warehouse_stock ws
             JOIN warehouses w ON w.id = ws.warehouse_id
             WHERE w.code = %s
+              AND w.source = 'relbase'
         """, (warehouse_code,))
 
         summary = cursor.fetchone()
-
-        cursor.close()
-        conn.close()
 
         return {
             "status": "success",
@@ -381,6 +430,12 @@ async def get_warehouse_inventory(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching warehouse inventory: {str(e)}")
+    finally:
+        # Always close cursor and connection to prevent leaks
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 
 # ============================================================================
@@ -417,6 +472,8 @@ async def get_inventory_summary():
             }
         }
     """
+    conn = None
+    cursor = None
     try:
         conn = get_db_connection_dict()
         cursor = conn.cursor()
@@ -459,9 +516,6 @@ async def get_inventory_summary():
         """)
         by_category = cursor.fetchall()
 
-        cursor.close()
-        conn.close()
-
         return {
             "status": "success",
             "data": {
@@ -473,6 +527,12 @@ async def get_inventory_summary():
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching summary: {str(e)}")
+    finally:
+        # Always close cursor and connection to prevent leaks
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 
 # ============================================================================
@@ -507,6 +567,8 @@ async def upload_warehouse_inventory(
             "timestamp": "2025-11-14T10:30:00Z"
         }
     """
+    conn = None
+    cursor = None
     try:
         conn = get_db_connection_dict()
         cursor = conn.cursor()
@@ -521,8 +583,6 @@ async def upload_warehouse_inventory(
         warehouse = cursor.fetchone()
 
         if not warehouse:
-            cursor.close()
-            conn.close()
             raise HTTPException(status_code=404, detail=f"Warehouse '{warehouse_code}' not found")
 
         warehouse_id = warehouse['id']
@@ -533,8 +593,6 @@ async def upload_warehouse_inventory(
         try:
             df = pd.read_excel(io.BytesIO(contents))
         except Exception as e:
-            cursor.close()
-            conn.close()
             raise HTTPException(status_code=400, detail=f"Error reading Excel file: {str(e)}")
 
         # 3. Parse based on warehouse type
@@ -548,8 +606,6 @@ async def upload_warehouse_inventory(
         if warehouse_code.startswith('amplifica'):
             # Amplifica format: [SKU, Nombre, Stock Disponible]
             if 'SKU' not in df.columns or 'Stock Disponible' not in df.columns:
-                cursor.close()
-                conn.close()
                 raise HTTPException(
                     status_code=400,
                     detail=f"Invalid Amplifica format. Expected columns: SKU, Nombre, Stock Disponible. Got: {list(df.columns)}"
@@ -616,8 +672,6 @@ async def upload_warehouse_inventory(
             # First row contains headers, actual data starts from row 1
 
             if len(df) < 2:
-                cursor.close()
-                conn.close()
                 raise HTTPException(status_code=400, detail="Packner file must have at least 2 rows (header + data)")
 
             # Skip first row (header) and use actual column names
@@ -681,8 +735,6 @@ async def upload_warehouse_inventory(
                     })
 
         else:
-            cursor.close()
-            conn.close()
             raise HTTPException(
                 status_code=400,
                 detail=f"Upload not supported for warehouse '{warehouse_code}'. Only Amplifica and Packner warehouses support manual upload."
@@ -690,8 +742,6 @@ async def upload_warehouse_inventory(
 
         # Commit changes
         conn.commit()
-        cursor.close()
-        conn.close()
 
         return {
             "status": "success",
@@ -706,10 +756,15 @@ async def upload_warehouse_inventory(
     except HTTPException:
         raise
     except Exception as e:
-        try:
-            conn.rollback()
-            cursor.close()
-            conn.close()
-        except:
-            pass
+        if conn:
+            try:
+                conn.rollback()
+            except:
+                pass
         raise HTTPException(status_code=500, detail=f"Error uploading inventory: {str(e)}")
+    finally:
+        # Always close cursor and connection to prevent leaks
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()

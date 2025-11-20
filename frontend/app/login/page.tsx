@@ -59,6 +59,7 @@ export default function LoginPage() {
                 width={80}
                 height={80}
                 className="relative object-contain"
+                style={{ height: 'auto' }}
               />
             </div>
           </div>

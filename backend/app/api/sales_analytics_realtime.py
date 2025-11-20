@@ -42,6 +42,8 @@ async def get_sales_analytics_realtime(
     for perfect data alignment
     """
 
+    conn = None
+    cursor = None
     try:
         conn = get_db_connection_dict()
         cursor = conn.cursor()
@@ -62,14 +64,15 @@ async def get_sales_analytics_realtime(
             where_clauses.append("o.invoice_status IN ('accepted', 'accepted_objection')")
 
         # Date filters (INCLUSIVE on both ends, matching Audit endpoint)
+        # Cast to date to include full days (avoid timestamp midnight issue)
         if from_date and to_date:
-            where_clauses.append("o.order_date >= %s AND o.order_date <= %s")
+            where_clauses.append("o.order_date::date >= %s AND o.order_date::date <= %s")
             params.extend([from_date, to_date])
         elif from_date:
-            where_clauses.append("o.order_date >= %s")
+            where_clauses.append("o.order_date::date >= %s")
             params.append(from_date)
         elif to_date:
-            where_clauses.append("o.order_date <= %s")
+            where_clauses.append("o.order_date::date <= %s")
             params.append(to_date)
         # No else clause - require explicit date filter from frontend (Option C)
 
@@ -323,9 +326,6 @@ async def get_sales_analytics_realtime(
         cursor.execute(count_query, params)
         total_items = cursor.fetchone()['count']
 
-        cursor.close()
-        conn.close()
-
         return {
             "status": "success",
             "data": {
@@ -366,3 +366,9 @@ async def get_sales_analytics_realtime(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching sales analytics: {str(e)}")
+    finally:
+        # Always close cursor and connection to prevent leaks
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()

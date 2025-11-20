@@ -17,8 +17,8 @@ export const metadata: Metadata = {
   title: "Grana Platform - Sistema de Gestión",
   description: "Plataforma de integración y análisis de datos para Grana SpA",
   icons: {
-    icon: '/images/granooo.jpg',
-    apple: '/images/granooo.jpg',
+    icon: '/images/logo_grana.avif',
+    apple: '/images/logo_grana.avif',
   },
 };
 

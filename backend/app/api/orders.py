@@ -140,6 +140,8 @@ async def get_executive_kpis(
 
     Uses exponential smoothing with seasonal adjustment for projections.
     """
+    conn = None
+    cursor = None
     try:
         from app.core.database import get_db_connection_dict
 
@@ -197,9 +199,6 @@ async def get_executive_kpis(
 
         cursor.execute(query_2025, params_2025)
         data_2025 = cursor.fetchall()
-
-        cursor.close()
-        conn.close()
 
         # Process data
         current_date = datetime.now()
@@ -369,6 +368,12 @@ async def get_executive_kpis(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching executive KPIs: {str(e)}")
+    finally:
+        # Always close cursor and connection to prevent leaks
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 
 @router.get("/{order_id}")
