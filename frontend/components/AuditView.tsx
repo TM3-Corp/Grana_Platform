@@ -19,6 +19,7 @@ interface AuditData {
   item_id: number;
   sku: string;
   sku_primario?: string;
+  sku_primario_name?: string;  // Formatted product name for SKU Primario (e.g., "Barra Keto Nuez")
   match_type?: string;
   pack_quantity?: number;
   product_name: string;
@@ -1184,7 +1185,7 @@ export default function AuditView() {
             <>
               {Object.entries(groupedData).map(([groupKey, groupItems]) => {
                 // Calculate group subtotals based on mode
-                let groupUnidades, groupTotal, groupPedidos;
+                let groupUnidades, groupTotal, groupPedidos, groupSkuPrimarioName;
 
                 if (isAggregatedMode && groupItems[0]) {
                   // AGGREGATED MODE: Use pre-computed totals from server
@@ -1192,11 +1193,14 @@ export default function AuditView() {
                   groupUnidades = agg.cantidad || 0;  // cantidad = total units
                   groupTotal = agg.total_revenue || 0;
                   groupPedidos = agg.pedidos || 0;
+                  groupSkuPrimarioName = agg.sku_primario_name || null;
                 } else {
                   // DETAIL MODE: Calculate from individual items
                   groupUnidades = groupItems.reduce((sum, item) => sum + (item.unidades || 0), 0);
                   groupTotal = groupItems.reduce((sum, item) => sum + (item.item_subtotal || 0), 0);
                   groupPedidos = new Set(groupItems.map(item => item.order_external_id)).size;
+                  // Get sku_primario_name from first item if grouping by sku_primario
+                  groupSkuPrimarioName = groupBy === 'sku_primario' && groupItems[0] ? groupItems[0].sku_primario_name : null;
                 }
 
                 const isCollapsed = collapsedGroups.has(groupKey);
@@ -1214,7 +1218,12 @@ export default function AuditView() {
                             {isCollapsed ? '▶' : '▼'}
                           </span>
                           <h3 className="font-semibold text-gray-900">
-                            {groupKey} <span className="text-sm font-normal text-gray-600">
+                            {groupKey}
+                            {groupSkuPrimarioName && groupBy === 'sku_primario' && (
+                              <span className="font-normal"> - {groupSkuPrimarioName}</span>
+                            )}
+                            {' '}
+                            <span className="text-sm font-normal text-gray-600">
                               ({isAggregatedMode ? `${groupPedidos} pedidos` : `${groupItems.length} registros`})
                             </span>
                           </h3>
@@ -1305,10 +1314,15 @@ export default function AuditView() {
                                           {item.sku || 'SIN SKU'}
                                         </div>
                                       </td>
-                                      <td className="px-4 py-3 text-sm max-w-32">
+                                      <td className="px-4 py-3 text-sm">
                                         <div className="text-blue-600 font-mono text-xs break-words">
                                           {item.sku_primario || '-'}
                                         </div>
+                                        {item.sku_primario_name && (
+                                          <div className="text-gray-700 text-xs mt-1 font-normal">
+                                            {item.sku_primario_name}
+                                          </div>
+                                        )}
                                       </td>
                                       <td className="px-4 py-3 whitespace-nowrap text-sm">
                                         <span className="font-medium text-gray-900">
@@ -1316,9 +1330,8 @@ export default function AuditView() {
                                         </span>
                                       </td>
                                       <td className="px-4 py-3 text-sm text-gray-900 max-w-48">
-                                        <div className="break-words">{item.product_name}</div>
-                                        <div className="text-xs text-gray-500 break-words">
-                                          {item.family}
+                                        <div className="break-words">
+                                          {item.product_name ? item.product_name.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : '-'}
                                         </div>
                                       </td>
                                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
@@ -1421,10 +1434,15 @@ export default function AuditView() {
                               {item.sku || 'SIN SKU'}
                             </div>
                           </td>
-                          <td className="px-4 py-3 text-sm max-w-32">
+                          <td className="px-4 py-3 text-sm">
                             <div className="text-blue-600 font-mono text-xs break-words">
                               {item.sku_primario || '-'}
                             </div>
+                            {item.sku_primario_name && (
+                              <div className="text-gray-700 text-xs mt-1 font-normal">
+                                {item.sku_primario_name}
+                              </div>
+                            )}
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap text-sm">
                             <span className="font-medium text-gray-900">
@@ -1432,9 +1450,8 @@ export default function AuditView() {
                             </span>
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-900 max-w-48">
-                            <div className="break-words">{item.product_name}</div>
-                            <div className="text-xs text-gray-500 break-words">
-                              {item.family}
+                            <div className="break-words">
+                              {item.product_name ? item.product_name.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : '-'}
                             </div>
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
