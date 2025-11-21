@@ -275,10 +275,42 @@ async def get_inventory_general(
 
         summary = cursor.fetchone()
 
+        # Get expiration stats from materialized view
+        cursor.execute("""
+            SELECT
+                -- Expired lots
+                COUNT(CASE WHEN expiration_status = 'Expired' THEN 1 END) as expired_lots,
+                COALESCE(SUM(CASE WHEN expiration_status = 'Expired' THEN quantity ELSE 0 END), 0) as expired_units,
+
+                -- Expiring soon (30 days)
+                COUNT(CASE WHEN expiration_status = 'Expiring Soon' THEN 1 END) as expiring_soon_lots,
+                COALESCE(SUM(CASE WHEN expiration_status = 'Expiring Soon' THEN quantity ELSE 0 END), 0) as expiring_soon_units,
+
+                -- Valid lots (> 30 days)
+                COUNT(CASE WHEN expiration_status = 'Valid' THEN 1 END) as valid_lots,
+                COALESCE(SUM(CASE WHEN expiration_status = 'Valid' THEN quantity ELSE 0 END), 0) as valid_units,
+
+                -- No date
+                COUNT(CASE WHEN expiration_status = 'No Date' THEN 1 END) as no_date_lots,
+                COALESCE(SUM(CASE WHEN expiration_status = 'No Date' THEN quantity ELSE 0 END), 0) as no_date_units
+            FROM warehouse_stock_by_lot
+            WHERE warehouse_code IN (
+                SELECT code FROM warehouses
+                WHERE is_active = true
+                  AND source = 'relbase'
+                  AND external_id IS NOT NULL
+            )
+        """)
+
+        expiration_stats = cursor.fetchone()
+
         return {
             "status": "success",
             "data": products,
-            "summary": summary
+            "summary": {
+                **summary,
+                "expiration": expiration_stats
+            }
         }
 
     except Exception as e:
@@ -357,49 +389,60 @@ async def get_warehouse_inventory(
         if not warehouse:
             raise HTTPException(status_code=404, detail=f"Relbase warehouse '{warehouse_code}' not found or inactive")
 
-        # Build WHERE clause
+        # Build WHERE clause (using view column names)
         where_conditions = ["1=1"]
-        params = [warehouse_code]
+        # First param for CTE, second for main query
+        params = [warehouse_code, warehouse_code]
 
         if search:
-            where_conditions.append("(p.sku ILIKE %s OR p.name ILIKE %s)")
+            where_conditions.append("(v.sku ILIKE %s OR v.product_name ILIKE %s)")
             params.extend([f"%{search}%", f"%{search}%"])
 
         if only_with_stock:
-            where_conditions.append("ws.quantity > 0")
+            where_conditions.append("v.quantity > 0")
 
         where_clause = " AND ".join(where_conditions)
 
-        # Get inventory for this warehouse with lot details
+        # Get inventory for this warehouse with lot details from view
         cursor.execute(f"""
+            WITH warehouse_total AS (
+                SELECT SUM(quantity) as total
+                FROM warehouse_stock_by_lot
+                WHERE warehouse_code = %s
+            )
             SELECT
-                p.sku,
-                p.name,
-                p.category,
-                SUM(ws.quantity) as stock,
+                v.sku,
+                v.product_name as name,
+                v.category,
+                SUM(v.quantity) as stock,
                 json_agg(
                     json_build_object(
-                        'lot_number', ws.lot_number,
-                        'quantity', ws.quantity,
-                        'expiration_date', ws.expiration_date,
-                        'last_updated', ws.last_updated
+                        'lot_number', v.lot_number,
+                        'quantity', v.quantity,
+                        'expiration_date', v.expiration_date,
+                        'last_updated', v.last_updated,
+                        'days_to_expiration', v.days_to_expiration,
+                        'expiration_status', v.expiration_status
                     )
-                    ORDER BY ws.expiration_date NULLS LAST, ws.lot_number
+                    ORDER BY v.expiration_date NULLS LAST, v.lot_number
                 ) as lots,
+                -- %% of this warehouse's total inventory
                 CASE
-                    WHEN (SELECT SUM(quantity) FROM warehouse_stock WHERE product_id = p.id) > 0
-                    THEN ROUND((SUM(ws.quantity)::numeric / (SELECT SUM(quantity) FROM warehouse_stock WHERE product_id = p.id)) * 100, 1)
+                    WHEN (SELECT total FROM warehouse_total) > 0
+                    THEN ROUND((SUM(v.quantity)::numeric / (SELECT total FROM warehouse_total)) * 100, 1)
                     ELSE 0
-                END as percentage_of_total
-            FROM warehouse_stock ws
-            JOIN products p ON p.id = ws.product_id
-            JOIN warehouses w ON w.id = ws.warehouse_id
-            WHERE w.code = %s
-              AND w.source = 'relbase'
-              AND p.is_active = true
+                END as percentage_of_warehouse,
+                -- %% of this product's total inventory across all warehouses
+                CASE
+                    WHEN (SELECT SUM(quantity) FROM warehouse_stock_by_lot WHERE sku = v.sku) > 0
+                    THEN ROUND((SUM(v.quantity)::numeric / (SELECT SUM(quantity) FROM warehouse_stock_by_lot WHERE sku = v.sku)) * 100, 1)
+                    ELSE 0
+                END as percentage_of_product
+            FROM warehouse_stock_by_lot v
+            WHERE v.warehouse_code = %s
               AND {where_clause}
-            GROUP BY p.id, p.sku, p.name, p.category
-            ORDER BY p.category, p.name
+            GROUP BY v.sku, v.product_name, v.category
+            ORDER BY v.category, v.product_name
         """, params)
 
         products = cursor.fetchall()
@@ -419,11 +462,38 @@ async def get_warehouse_inventory(
 
         summary = cursor.fetchone()
 
+        # Get expiration stats for this warehouse from view
+        cursor.execute("""
+            SELECT
+                -- Expired lots
+                COUNT(CASE WHEN expiration_status = 'Expired' THEN 1 END) as expired_lots,
+                COALESCE(SUM(CASE WHEN expiration_status = 'Expired' THEN quantity ELSE 0 END), 0) as expired_units,
+
+                -- Expiring soon (30 days)
+                COUNT(CASE WHEN expiration_status = 'Expiring Soon' THEN 1 END) as expiring_soon_lots,
+                COALESCE(SUM(CASE WHEN expiration_status = 'Expiring Soon' THEN quantity ELSE 0 END), 0) as expiring_soon_units,
+
+                -- Valid lots (> 30 days)
+                COUNT(CASE WHEN expiration_status = 'Valid' THEN 1 END) as valid_lots,
+                COALESCE(SUM(CASE WHEN expiration_status = 'Valid' THEN quantity ELSE 0 END), 0) as valid_units,
+
+                -- No date
+                COUNT(CASE WHEN expiration_status = 'No Date' THEN 1 END) as no_date_lots,
+                COALESCE(SUM(CASE WHEN expiration_status = 'No Date' THEN quantity ELSE 0 END), 0) as no_date_units
+            FROM warehouse_stock_by_lot
+            WHERE warehouse_code = %s
+        """, (warehouse_code,))
+
+        expiration_stats = cursor.fetchone()
+
         return {
             "status": "success",
             "warehouse": warehouse,
             "data": products,
-            "summary": summary
+            "summary": {
+                **summary,
+                "expiration": expiration_stats
+            }
         }
 
     except HTTPException:
@@ -642,11 +712,11 @@ async def upload_warehouse_inventory(
                 if product:
                     product_id = product['id']
 
-                    # Update or insert warehouse_stock
+                    # Update or insert warehouse_stock (use default lot number for manual uploads)
                     cursor.execute("""
-                        INSERT INTO warehouse_stock (product_id, warehouse_id, quantity, last_updated, updated_by)
-                        VALUES (%s, %s, %s, NOW(), 'manual_upload')
-                        ON CONFLICT (product_id, warehouse_id)
+                        INSERT INTO warehouse_stock (product_id, warehouse_id, lot_number, quantity, last_updated, updated_by)
+                        VALUES (%s, %s, 'MANUAL-UPLOAD', %s, NOW(), 'manual_upload')
+                        ON CONFLICT (product_id, warehouse_id, lot_number)
                         DO UPDATE SET
                             quantity = EXCLUDED.quantity,
                             last_updated = NOW(),
@@ -709,11 +779,11 @@ async def upload_warehouse_inventory(
                 if product:
                     product_id = product['id']
 
-                    # Update or insert warehouse_stock
+                    # Update or insert warehouse_stock (use default lot number for manual uploads)
                     cursor.execute("""
-                        INSERT INTO warehouse_stock (product_id, warehouse_id, quantity, last_updated, updated_by)
-                        VALUES (%s, %s, %s, NOW(), 'manual_upload')
-                        ON CONFLICT (product_id, warehouse_id)
+                        INSERT INTO warehouse_stock (product_id, warehouse_id, lot_number, quantity, last_updated, updated_by)
+                        VALUES (%s, %s, 'MANUAL-UPLOAD', %s, NOW(), 'manual_upload')
+                        ON CONFLICT (product_id, warehouse_id, lot_number)
                         DO UPDATE SET
                             quantity = EXCLUDED.quantity,
                             last_updated = NOW(),

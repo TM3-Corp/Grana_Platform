@@ -4,21 +4,17 @@ import { useState, useRef } from 'react';
 
 interface InventoryUploadButtonProps {
   warehouseCode: string;
-  warehouseName: string;
-  onUploadSuccess: () => void;
+  warehouseName?: string;
+  onUploadSuccess?: () => void;
 }
 
-export default function InventoryUploadButton({
-  warehouseCode,
-  warehouseName,
-  onUploadSuccess,
-}: InventoryUploadButtonProps) {
-  const [uploading, setUploading] = useState(false);
-  const [uploadResult, setUploadResult] = useState<{
-    status: 'success' | 'error';
+export default function InventoryUploadButton({ warehouseCode, warehouseName, onUploadSuccess }: InventoryUploadButtonProps) {
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<{
+    type: 'success' | 'error' | null;
     message: string;
     details?: any;
-  } | null>(null);
+  }>({ type: null, message: '' });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -26,23 +22,25 @@ export default function InventoryUploadButton({
     if (!file) return;
 
     // Validate file type
-    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
-      setUploadResult({
-        status: 'error',
-        message: 'Por favor selecciona un archivo Excel (.xlsx o .xls)',
+    const fileName = file.name.toLowerCase();
+    if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) {
+      setUploadStatus({
+        type: 'error',
+        message: 'Por favor selecciona un archivo Excel (.xlsx o .xls)'
       });
       return;
     }
 
-    setUploading(true);
-    setUploadResult(null);
+    setIsUploading(true);
+    setUploadStatus({ type: null, message: '' });
 
     try {
       const formData = new FormData();
       formData.append('file', file);
 
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
       const response = await fetch(
-        `http://localhost:8000/api/v1/warehouse-inventory/upload?warehouse_code=${warehouseCode}`,
+        `${apiUrl}/api/v1/warehouse-inventory/upload?warehouse_code=${warehouseCode}`,
         {
           method: 'POST',
           body: formData,
@@ -55,25 +53,30 @@ export default function InventoryUploadButton({
         throw new Error(data.detail || 'Error al subir el archivo');
       }
 
-      setUploadResult({
-        status: 'success',
-        message: `✅ Inventario actualizado: ${data.products_updated} productos actualizados${
-          data.products_not_found > 0 ? `, ${data.products_not_found} no encontrados` : ''
-        }`,
-        details: data,
+      // Success
+      setUploadStatus({
+        type: 'success',
+        message: `✅ Inventario actualizado exitosamente`,
+        details: {
+          productos_actualizados: data.products_updated,
+          productos_no_encontrados: data.products_not_found,
+        }
       });
 
-      // Call success callback to refresh data
-      setTimeout(() => {
-        onUploadSuccess();
-      }, 1500);
+      // Call success callback
+      if (onUploadSuccess) {
+        setTimeout(() => {
+          onUploadSuccess();
+        }, 1500);
+      }
+
     } catch (error: any) {
-      setUploadResult({
-        status: 'error',
-        message: error.message || 'Error al subir el archivo',
+      setUploadStatus({
+        type: 'error',
+        message: error.message || 'Error al subir el archivo'
       });
     } finally {
-      setUploading(false);
+      setIsUploading(false);
       // Reset file input
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
@@ -81,63 +84,12 @@ export default function InventoryUploadButton({
     }
   };
 
-  const handleClick = () => {
+  const handleButtonClick = () => {
     fileInputRef.current?.click();
   };
 
   return (
     <div className="flex flex-col gap-2">
-      {/* Upload Button */}
-      <button
-        onClick={handleClick}
-        disabled={uploading}
-        className={`
-          flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all duration-300
-          ${
-            uploading
-              ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
-              : 'bg-gradient-to-r from-green-500 to-green-600 text-white hover:from-green-600 hover:to-green-700 shadow-sm hover:shadow-md'
-          }
-        `}
-      >
-        {uploading ? (
-          <>
-            <svg
-              className="w-4 h-4 animate-spin"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
-            <span>Subiendo...</span>
-          </>
-        ) : (
-          <>
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-              />
-            </svg>
-            <span>Subir Excel</span>
-          </>
-        )}
-      </button>
-
-      {/* Hidden File Input */}
       <input
         ref={fileInputRef}
         type="file"
@@ -146,47 +98,57 @@ export default function InventoryUploadButton({
         className="hidden"
       />
 
-      {/* Upload Result */}
-      {uploadResult && (
-        <div
-          className={`
-            p-3 rounded-lg text-sm border-l-4 ${
-              uploadResult.status === 'success'
-                ? 'bg-green-50 border-green-500 text-green-800'
-                : 'bg-red-50 border-red-500 text-red-800'
-            }
-          `}
-        >
-          <p className="font-medium">{uploadResult.message}</p>
-          {uploadResult.details && uploadResult.details.products_not_found > 0 && (
-            <button
-              onClick={() => {
-                console.log('Products not found:', uploadResult.details.details);
-                alert(
-                  'SKUs no encontrados:\n' +
-                    uploadResult.details.details
-                      .filter((d: any) => d.status === 'not_found')
-                      .map((d: any) => d.sku)
-                      .join(', ')
-                );
-              }}
-              className="text-xs underline mt-1 hover:text-green-900"
-            >
-              Ver productos no encontrados
-            </button>
+      <button
+        onClick={handleButtonClick}
+        disabled={isUploading || !warehouseCode}
+        className={`
+          px-4 py-2 rounded-lg font-medium transition-all
+          ${isUploading || !warehouseCode
+            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+            : 'bg-blue-600 hover:bg-blue-700 text-white hover:shadow-lg'
+          }
+        `}
+      >
+        {isUploading ? (
+          <span className="flex items-center gap-2">
+            <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Subiendo...
+          </span>
+        ) : (
+          <span className="flex items-center gap-2">
+            📤 Subir Excel
+          </span>
+        )}
+      </button>
+
+      {/* Status messages */}
+      {uploadStatus.type && (
+        <div className={`
+          p-3 rounded-lg text-sm
+          ${uploadStatus.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : ''}
+          ${uploadStatus.type === 'error' ? 'bg-red-50 text-red-800 border border-red-200' : ''}
+        `}>
+          <p className="font-medium">{uploadStatus.message}</p>
+          {uploadStatus.details && (
+            <div className="mt-2 text-xs space-y-1">
+              <p>✅ Productos actualizados: {uploadStatus.details.productos_actualizados}</p>
+              {uploadStatus.details.productos_no_encontrados > 0 && (
+                <p>⚠️ Productos no encontrados: {uploadStatus.details.productos_no_encontrados}</p>
+              )}
+            </div>
           )}
         </div>
       )}
 
-      {/* Info */}
-      <p className="text-xs text-gray-500 mt-1">
-        Formato esperado:{' '}
-        <span className="font-mono">
-          {warehouseCode.startsWith('amplifica')
-            ? 'SKU, Nombre, Stock Disponible'
-            : 'Articulo, Descripción, Cantidad'}
-        </span>
-      </p>
+      {/* Help text */}
+      {!uploadStatus.type && (
+        <p className="text-xs text-gray-500">
+          Formato: Excel con columnas [SKU, Nombre, Stock Disponible]
+        </p>
+      )}
     </div>
   );
 }
