@@ -5,127 +5,104 @@ Provides comprehensive data validation and integrity checking
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional, List
 import os
-from pathlib import Path
-import csv
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from app.services.product_catalog_service import ProductCatalogService
 
 router = APIRouter()
 
 # Database connection
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Load product mapping from CSV
-def load_product_mapping():
-    """Load Codigos_Grana_Ingles.csv for product validation (includes CAJA MÁSTER and bilingual SKUs)"""
-    csv_path = Path(__file__).parent.parent.parent.parent / 'public/Archivos_Compartidos/Codigos_Grana_Ingles.csv'
+# Initialize Product Catalog Service (replaces CSV dependency)
+_product_catalog_service = None
 
+def get_product_catalog_service() -> ProductCatalogService:
+    """Get or initialize the ProductCatalogService singleton"""
+    global _product_catalog_service
+    if _product_catalog_service is None:
+        _product_catalog_service = ProductCatalogService()
+    return _product_catalog_service
+
+# Load product mapping from database (replaces CSV dependency)
+def load_product_mapping():
+    """
+    Load product catalog from database via ProductCatalogService.
+
+    This replaces the CSV-based approach with database queries.
+    Railway doesn't have access to the CSV file, so we must use the database.
+
+    Returns: (product_map, catalog_skus, catalog_master_skus, conversion_map)
+    """
     product_map = {}
     catalog_skus = set()
     catalog_master_skus = set()
-    conversion_map = {}  # Track conversion factors and SKU primario
-    all_valid_skus = set()  # ALL valid SKUs from CSV (both normal and caja master)
+    conversion_map = {}
 
     try:
-        # FIRST PASS: Collect all valid SKUs
-        with open(csv_path, 'r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                sku = row.get('SKU', '').strip()
-                if sku:
-                    all_valid_skus.add(sku)
-                master_sku = row.get('SKU CAJA MÁSTER', '').strip()
-                if master_sku:
-                    all_valid_skus.add(master_sku)
+        # Get product catalog from database
+        service = get_product_catalog_service()
+        all_products = service.get_all_products()
 
-        # SECOND PASS: Build product map and conversion map
-        with open(csv_path, 'r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                # Parse conversion data
-                units_per_display = row.get('UNIDADES POR DISPLAY', '').strip()
-                items_por_cm = row.get('Items por CM', '').strip()
+        # Build product map and catalog sets
+        for sku, product_data in all_products.items():
+            # Add to catalog SKUs
+            catalog_skus.add(sku)
 
-                # Normal SKU
-                sku = row.get('SKU', '').strip()
-                if sku:
-                    catalog_skus.add(sku)
+            # Check if it's a master SKU
+            if product_data.get('is_master_sku'):
+                catalog_master_skus.add(sku)
 
-                    # Calculate what the primario WOULD be
-                    base_code = sku.split('_')[0] if '_' in sku else sku
-                    potential_primario = f"{base_code}_U04010" if sku.endswith('10') else f"{base_code}_U04020"
+            # Get conversion factor
+            # Normal SKUs use units_per_display, master SKUs use items_per_master_box
+            if product_data.get('is_master_sku'):
+                conversion_factor = product_data.get('items_per_master_box', 1) or 1
+            else:
+                conversion_factor = product_data.get('units_per_display', 1) or 1
 
-                    # CRITICAL: Only use it if it actually exists in the CSV
-                    # If it doesn't exist, the SKU is its own primario
-                    sku_primario = potential_primario if potential_primario in all_valid_skus else sku
+            # Get SKU Primario
+            sku_primario = product_data.get('primario', sku)
 
-                    # For normal SKUs, use UNIDADES POR DISPLAY (not Items por CM)
-                    conversion_factor = int(units_per_display) if units_per_display and units_per_display.isdigit() else 1
+            # Build product map entry
+            product_map[sku] = {
+                'category': product_data.get('category', ''),
+                'family': product_data.get('product_name', ''),
+                'format': 'CAJA MASTER' if product_data.get('is_master_sku') else product_data.get('format', ''),
+                'product_name': product_data.get('product_name', ''),
+                'in_catalog': True,
+                'tipo': 'Caja Master' if product_data.get('is_master_sku') else 'Normal',
+                'conversion_factor': conversion_factor,
+                'sku_primario': sku_primario
+            }
 
-                    product_map[sku] = {
-                        'category': row.get('CATEGORÍA', ''),
-                        'family': row.get('PRODUCTO', ''),
-                        'format': row.get('TIPO ENVASE UNID', ''),
-                        'product_name': row.get('PRODUCTO', ''),
-                        'in_catalog': True,
-                        'tipo': 'Normal',
-                        'conversion_factor': conversion_factor,
-                        'sku_primario': sku_primario
-                    }
+            # Build conversion map entry
+            base_code = product_data.get('base_code', sku.split('_')[0] if '_' in sku else sku)
+            conversion_map[sku] = {
+                'factor': conversion_factor,
+                'primario': sku_primario,
+                'base_code': base_code
+            }
 
-                    # Store in conversion map
-                    conversion_map[sku] = {
-                        'factor': conversion_factor,
-                        'primario': sku_primario,
-                        'base_code': base_code
-                    }
+        print(f"✅ Loaded {len(product_map)} products from database")
 
-                # CAJA MÁSTER SKU
-                master_sku = row.get('SKU CAJA MÁSTER', '').strip()
-                if master_sku:
-                    catalog_master_skus.add(master_sku)
-
-                    # Calculate what the primario WOULD be
-                    base_code = master_sku.split('_')[0] if '_' in master_sku else master_sku
-                    potential_primario = f"{base_code}_U04010" if master_sku.endswith('10') else f"{base_code}_U04020"
-
-                    # CRITICAL: Only use it if it actually exists in the CSV
-                    # If it doesn't exist, the SKU is its own primario
-                    sku_primario = potential_primario if potential_primario in all_valid_skus else master_sku
-
-                    # Caja master uses Items por CM for conversion
-                    cm_conversion = int(items_por_cm) if items_por_cm and items_por_cm.isdigit() else 1
-
-                    product_map[master_sku] = {
-                        'category': row.get('CATEGORÍA', ''),
-                        'family': row.get('NOMBRE CAJA MÁSTER', ''),
-                        'format': 'CAJA MASTER',
-                        'product_name': row.get('NOMBRE CAJA MÁSTER', ''),
-                        'in_catalog': True,
-                        'tipo': 'Caja Master',
-                        'conversion_factor': cm_conversion,
-                        'sku_primario': sku_primario
-                    }
-
-                    # Store in conversion map
-                    conversion_map[master_sku] = {
-                        'factor': cm_conversion,
-                        'primario': sku_primario,
-                        'base_code': base_code
-                    }
-    except FileNotFoundError:
-        print(f"Warning: Product catalog CSV not found at {csv_path}")
+    except Exception as e:
+        print(f"❌ Error loading product catalog from database: {e}")
+        # Return empty catalogs if database fails
+        pass
 
     return product_map, catalog_skus, catalog_master_skus, conversion_map
 
 
-def get_sku_primario(sku: str, conversion_map: dict) -> str:
+def get_sku_primario(sku: str, conversion_map: dict = None) -> str:
     """
     Get the SKU Primario (base/primary SKU) for any SKU variant.
     Returns the X1 variant (_U04010 for Spanish, _U04020 for English) if it exists.
     If it doesn't exist in the catalog, returns the SKU itself.
 
     CRITICAL: We NEVER invent SKU codes that don't exist in the catalog.
+
+    Phase 3: Now uses ProductCatalogService (database) instead of CSV.
+    The conversion_map parameter is kept for backward compatibility but is ignored.
 
     Example:
         BAKC_U20010 → BAKC_U04010 (primary exists in catalog)
@@ -134,20 +111,19 @@ def get_sku_primario(sku: str, conversion_map: dict) -> str:
     if not sku:
         return None
 
-    # Check if we have it in conversion map (this is the authoritative source)
-    if sku in conversion_map:
-        return conversion_map[sku]['primario']
-
-    # Fallback: If SKU not in conversion map, it's its own primario
-    # We NEVER invent codes that don't exist
-    return sku
+    # Phase 3: Use ProductCatalogService (database query)
+    service = get_product_catalog_service()
+    return service.get_sku_primario(sku)
 
 
-def calculate_units(sku: str, quantity: int, conversion_map: dict) -> int:
+def calculate_units(sku: str, quantity: int, conversion_map: dict = None) -> int:
     """
     Calculate total units based on SKU and quantity.
 
     Formula: Units = Quantity × Conversion Factor
+
+    Phase 3: Now uses ProductCatalogService (database) instead of CSV.
+    The conversion_map parameter is kept for backward compatibility but is ignored.
 
     Examples:
         - BAKC_U04010 (X1): 10 × 1 = 10 units
@@ -157,26 +133,9 @@ def calculate_units(sku: str, quantity: int, conversion_map: dict) -> int:
     if not sku or quantity is None:
         return 0
 
-    # Get conversion factor from map
-    if sku in conversion_map:
-        conversion_factor = conversion_map[sku]['factor']
-        return quantity * conversion_factor
-
-    # Fallback: Try to determine from SKU pattern
-    # X1 variants (_U04010, _U04020) = 1 unit
-    if '_U04' in sku:
-        return quantity * 1
-
-    # X5 variants (_U20010, _U20020) = 5 units
-    if '_U20' in sku:
-        return quantity * 5
-
-    # X16 variants (_U64010, _U64020) = 16 units
-    if '_U64' in sku:
-        return quantity * 16
-
-    # Default to 1:1 if unknown
-    return quantity
+    # Phase 3: Use ProductCatalogService (database query)
+    service = get_product_catalog_service()
+    return service.calculate_units(sku, quantity)
 
 
 def map_sku_with_quantity(sku, product_name, product_map, catalog_skus, catalog_master_skus, source=None):
@@ -596,9 +555,14 @@ async def get_audit_data(
 
                     # Convert to list format
                     aggregated_data = []
+                    service = get_product_catalog_service()
                     for group_value, stats in groups.items():
+                        # Get product name for this SKU Primario
+                        sku_primario_name = service.get_product_name_for_sku_primario(group_value) if group_value != 'SIN CLASIFICAR' else None
+
                         aggregated_data.append({
                             'group_value': group_value,
+                            'sku_primario_name': sku_primario_name,
                             'pedidos': len(stats['pedidos']),
                             'cantidad': stats['cantidad'],
                             'total_revenue': stats['total_revenue']
@@ -1069,10 +1033,15 @@ async def get_audit_data(
                         # Get SKU Primario
                         sku_primario = get_sku_primario(official_sku, conversion_map)
 
+                        # Get SKU Primario Name (formatted)
+                        service = get_product_catalog_service()
+                        sku_primario_name = service.get_product_name_for_sku_primario(sku_primario) if sku_primario else None
+
                         # Calculate total units
                         unidades = calculate_units(official_sku, quantity, conversion_map)
 
                         row_dict['sku_primario'] = sku_primario
+                        row_dict['sku_primario_name'] = sku_primario_name
                         row_dict['unidades'] = unidades
                         row_dict['pack_quantity'] = pack_qty
                         row_dict['match_type'] = match_type
@@ -1083,13 +1052,18 @@ async def get_audit_data(
                         row_dict['in_catalog'] = True
 
                         # Also include conversion factor for reference
-                        if official_sku in conversion_map:
-                            row_dict['conversion_factor'] = conversion_map[official_sku]['factor']
+                        # Phase 3: Get from ProductCatalogService
+                        service = get_product_catalog_service()
+                        catalog_product = service.get_product_info(official_sku)
+                        if catalog_product:
+                            # Use units_per_display for conversion factor
+                            row_dict['conversion_factor'] = catalog_product.get('units_per_display', 1) or 1
                         else:
                             row_dict['conversion_factor'] = 1
                     else:
                         # Not mapped
                         row_dict['sku_primario'] = None
+                        row_dict['sku_primario_name'] = None
                         row_dict['unidades'] = quantity  # Default to quantity if not mapped
                         row_dict['pack_quantity'] = 1
                         row_dict['match_type'] = 'no_match'
