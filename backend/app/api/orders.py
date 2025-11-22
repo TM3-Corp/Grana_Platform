@@ -148,17 +148,16 @@ async def get_executive_kpis(
         conn = get_db_connection_dict()
         cursor = conn.cursor()
 
-        # Build WHERE clause for product family filter
+        # Build JOIN and WHERE clause for product family filter
+        family_join = ""
         family_filter = ""
         params_2024 = []
         params_2025 = []
 
         if product_family and product_family.upper() != "TODAS":
-            family_filter = """
-                AND oi.product_sku IN (
-                    SELECT sku FROM products WHERE category = %s
-                )
-            """
+            # Use JOIN instead of subquery for better performance
+            family_join = "LEFT JOIN products p ON p.sku = oi.product_sku"
+            family_filter = "AND p.category = %s"
             params_2024 = [product_family.upper()]
             params_2025 = [product_family.upper()]
 
@@ -170,6 +169,7 @@ async def get_executive_kpis(
                 COALESCE(SUM(oi.subtotal), 0) as total_revenue
             FROM orders o
             LEFT JOIN order_items oi ON oi.order_id = o.id
+            {family_join}
             WHERE EXTRACT(YEAR FROM o.order_date) = 2024
             AND o.source = 'relbase'
             AND o.invoice_status IN ('accepted', 'accepted_objection')
@@ -189,6 +189,7 @@ async def get_executive_kpis(
                 COALESCE(SUM(oi.subtotal), 0) as total_revenue
             FROM orders o
             LEFT JOIN order_items oi ON oi.order_id = o.id
+            {family_join}
             WHERE EXTRACT(YEAR FROM o.order_date) = 2025
             AND o.source = 'relbase'
             AND o.invoice_status IN ('accepted', 'accepted_objection')
