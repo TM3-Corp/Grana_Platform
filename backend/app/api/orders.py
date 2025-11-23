@@ -143,9 +143,9 @@ async def get_executive_kpis(
     conn = None
     cursor = None
     try:
-        from app.core.database import get_db_connection_dict
+        from app.core.database import get_db_connection_dict_with_retry
 
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         # Build JOIN and WHERE clause for product family filter

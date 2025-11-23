@@ -8,7 +8,7 @@ Date: 2025-10-17
 """
 from typing import List, Optional, Tuple, Dict, Any
 from app.domain.order import Order, OrderItem
-from app.core.database import get_db_connection_dict
+from app.core.database import get_db_connection_dict_with_retry
 
 
 class OrderRepository:
@@ -29,7 +29,7 @@ class OrderRepository:
         Returns:
             Order with all related data or None if not found
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -113,7 +113,7 @@ class OrderRepository:
         Returns:
             Tuple of (list of orders, total count)
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -245,7 +245,7 @@ class OrderRepository:
         Returns:
             List of orders
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -281,7 +281,7 @@ class OrderRepository:
         Returns:
             Dict with order stats (totals, by_source, by_status, by_payment_status)
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -373,7 +373,7 @@ class OrderRepository:
         Returns:
             Dict with analytics data (sales_by_period, source_distribution, top_products, kpis, growth_rates)
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -547,7 +547,7 @@ class OrderRepository:
         Returns:
             Count of matching orders
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:

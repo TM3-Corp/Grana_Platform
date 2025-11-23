@@ -142,14 +142,14 @@ def update_warehouse_stock(conn, product_id, warehouse_id, quantity):
     cur = conn.cursor()
 
     cur.execute("""
-        INSERT INTO warehouse_stock (product_id, warehouse_id, quantity, last_updated, updated_by)
-        VALUES (%s, %s, %s, NOW(), 'mercadolibre_api')
-        ON CONFLICT (product_id, warehouse_id)
+        INSERT INTO warehouse_stock (product_id, warehouse_id, lot_number, quantity, last_updated, updated_by)
+        VALUES (%s, %s, %s, %s, NOW(), 'mercadolibre_api')
+        ON CONFLICT (product_id, warehouse_id, lot_number)
         DO UPDATE SET
             quantity = EXCLUDED.quantity,
             last_updated = NOW(),
             updated_by = 'mercadolibre_api'
-    """, (product_id, warehouse_id, quantity))
+    """, (product_id, warehouse_id, 'ML-SYNC', quantity))
 
     conn.commit()
     cur.close()

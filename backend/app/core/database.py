@@ -132,3 +132,152 @@ def get_supabase():
             ...
     """
     return supabase
+
+
+# ============================================================================
+# Database Connection with Retry Logic (SSL Failure Recovery)
+# ============================================================================
+
+import time
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def get_db_connection_with_retry(max_retries=3, retry_delay=1.0):
+    """
+    Get a psycopg2 connection with automatic retry on SSL/connection failures
+
+    This function handles intermittent Supabase connection issues by:
+    - Retrying failed connections up to max_retries times
+    - Adding exponential backoff between retries
+    - Logging connection attempts for debugging
+
+    Args:
+        max_retries: Maximum number of connection attempts (default: 3)
+        retry_delay: Initial delay between retries in seconds (default: 1.0)
+
+    Returns:
+        psycopg2 connection object
+
+    Raises:
+        psycopg2.OperationalError: If all retry attempts fail
+
+    Example:
+        conn = get_db_connection_with_retry()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM orders")
+        results = cursor.fetchall()
+        cursor.close()
+        conn.close()
+    """
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        raise Exception("DATABASE_URL not configured")
+
+    last_error = None
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            logger.debug(f"Database connection attempt {attempt}/{max_retries}")
+            conn = psycopg2.connect(database_url)
+
+            # Test connection with a simple query
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1")
+            cursor.close()
+
+            logger.debug(f"Database connection successful on attempt {attempt}")
+            return conn
+
+        except psycopg2.OperationalError as e:
+            last_error = e
+            error_msg = str(e)
+
+            # Check if it's an SSL connection error
+            if "SSL connection has been closed unexpectedly" in error_msg:
+                logger.warning(f"SSL connection error on attempt {attempt}/{max_retries}: {error_msg}")
+            else:
+                logger.warning(f"Connection error on attempt {attempt}/{max_retries}: {error_msg}")
+
+            # Don't retry on last attempt
+            if attempt < max_retries:
+                # Exponential backoff
+                delay = retry_delay * (2 ** (attempt - 1))
+                logger.info(f"Retrying in {delay:.2f} seconds...")
+                time.sleep(delay)
+            else:
+                logger.error(f"All {max_retries} connection attempts failed")
+                raise last_error
+
+        except Exception as e:
+            # For non-connection errors, fail immediately
+            logger.error(f"Unexpected error during connection: {e}")
+            raise
+
+    # Should never reach here, but just in case
+    raise last_error if last_error else Exception("Connection failed after all retries")
+
+
+def get_db_connection_dict_with_retry(max_retries=3, retry_delay=1.0):
+    """
+    Get a psycopg2 connection with RealDictCursor and automatic retry
+
+    Same as get_db_connection_with_retry but returns dicts instead of tuples.
+
+    Args:
+        max_retries: Maximum number of connection attempts (default: 3)
+        retry_delay: Initial delay between retries in seconds (default: 1.0)
+
+    Returns:
+        psycopg2 connection with RealDictCursor
+
+    Example:
+        conn = get_db_connection_dict_with_retry()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM orders")
+        results = cursor.fetchall()  # Returns list of dicts
+        cursor.close()
+        conn.close()
+    """
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        raise Exception("DATABASE_URL not configured")
+
+    last_error = None
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            logger.debug(f"Database connection (dict) attempt {attempt}/{max_retries}")
+            conn = psycopg2.connect(database_url, cursor_factory=RealDictCursor)
+
+            # Test connection with a simple query
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1")
+            cursor.close()
+
+            logger.debug(f"Database connection (dict) successful on attempt {attempt}")
+            return conn
+
+        except psycopg2.OperationalError as e:
+            last_error = e
+            error_msg = str(e)
+
+            if "SSL connection has been closed unexpectedly" in error_msg:
+                logger.warning(f"SSL connection error on attempt {attempt}/{max_retries}: {error_msg}")
+            else:
+                logger.warning(f"Connection error on attempt {attempt}/{max_retries}: {error_msg}")
+
+            if attempt < max_retries:
+                delay = retry_delay * (2 ** (attempt - 1))
+                logger.info(f"Retrying in {delay:.2f} seconds...")
+                time.sleep(delay)
+            else:
+                logger.error(f"All {max_retries} connection attempts failed")
+                raise last_error
+
+        except Exception as e:
+            logger.error(f"Unexpected error during connection: {e}")
+            raise
+
+    raise last_error if last_error else Exception("Connection failed after all retries")

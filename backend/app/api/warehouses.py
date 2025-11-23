@@ -18,7 +18,7 @@ import pandas as pd
 import io
 from datetime import datetime
 
-from app.core.database import get_db_connection_dict
+from app.core.database import get_db_connection_dict_with_retry
 
 
 # ============================================================================
@@ -103,7 +103,7 @@ async def get_warehouses():
     conn = None
     cursor = None
     try:
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         cursor.execute("""
@@ -194,7 +194,7 @@ async def get_inventory_general(
     conn = None
     cursor = None
     try:
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         # Build WHERE clause for products
@@ -371,7 +371,7 @@ async def get_warehouse_inventory(
     conn = None
     cursor = None
     try:
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         # Verify warehouse exists (Relbase only)
@@ -545,7 +545,7 @@ async def get_inventory_summary():
     conn = None
     cursor = None
     try:
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         # Overall stats
@@ -640,7 +640,7 @@ async def upload_warehouse_inventory(
     conn = None
     cursor = None
     try:
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         # 1. Verify warehouse exists
