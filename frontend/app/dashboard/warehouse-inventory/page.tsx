@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import Navigation from '@/components/Navigation';
-import EnhancedWarehouseInventoryTable from '@/components/inventory/EnhancedWarehouseInventoryTable';
+import DynamicWarehouseInventoryTable from '@/components/inventory/DynamicWarehouseInventoryTable';
 import EnhancedSummaryCard from '@/components/inventory/EnhancedSummaryCard';
 
 interface InventoryProduct {
@@ -11,15 +11,23 @@ interface InventoryProduct {
   name: string;
   category: string | null;
   subfamily: string | null;
-  stock_amplifica_centro: number;
-  stock_amplifica_lareina: number;
-  stock_amplifica_lobarnechea: number;
-  stock_amplifica_quilicura: number;
-  stock_packner: number;
-  stock_orinoco: number;
-  stock_mercadolibre: number;
+  warehouses: {
+    [warehouse_code: string]: number;
+  };
   stock_total: number;
+  lot_count: number;
   last_updated: string | null;
+}
+
+interface ExpirationStats {
+  expired_lots: number;
+  expired_units: number;
+  expiring_soon_lots: number;
+  expiring_soon_units: number;
+  valid_lots: number;
+  valid_units: number;
+  no_date_lots: number;
+  no_date_units: number;
 }
 
 interface InventorySummary {
@@ -27,6 +35,8 @@ interface InventorySummary {
   total_stock: number;
   products_with_stock: number;
   products_without_stock: number;
+  active_warehouses: number;
+  expiration?: ExpirationStats;
 }
 
 interface APIResponse {
@@ -175,7 +185,14 @@ export default function WarehouseInventoryPage() {
 
       {/* Enhanced Summary Cards */}
       {summary && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-6 mb-8">
+          <EnhancedSummaryCard
+            title="Bodegas Activas"
+            value={summary.active_warehouses}
+            icon="🏢"
+            color="blue"
+            subtitle="De Relbase"
+          />
           <EnhancedSummaryCard
             title="Total Productos"
             value={summary.total_products}
@@ -187,7 +204,7 @@ export default function WarehouseInventoryPage() {
             title="Stock Total"
             value={summary.total_stock}
             icon="📊"
-            color="blue"
+            color="amber"
             subtitle="Unidades disponibles"
           />
           <EnhancedSummaryCard
@@ -195,15 +212,33 @@ export default function WarehouseInventoryPage() {
             value={summary.products_with_stock}
             icon="✅"
             color="green"
-            subtitle={`${((summary.products_with_stock / summary.total_products) * 100).toFixed(1)}% del total`}
+            subtitle={`${summary.total_products > 0 ? ((summary.products_with_stock / summary.total_products) * 100).toFixed(1) : 0}% del total`}
           />
           <EnhancedSummaryCard
             title="Sin Stock"
             value={summary.products_without_stock}
             icon="⚠️"
             color="gray"
-            subtitle={`${((summary.products_without_stock / summary.total_products) * 100).toFixed(1)}% del total`}
+            subtitle={`${summary.total_products > 0 ? ((summary.products_without_stock / summary.total_products) * 100).toFixed(1) : 0}% del total`}
           />
+          {summary.expiration && (
+            <>
+              <EnhancedSummaryCard
+                title="Próximos a Vencer"
+                value={summary.expiration.expiring_soon_lots}
+                icon="⏰"
+                color="amber"
+                subtitle={`${summary.expiration.expiring_soon_units.toLocaleString()} unidades (30 días)`}
+              />
+              <EnhancedSummaryCard
+                title="Vencidos"
+                value={summary.expiration.expired_lots}
+                icon="❌"
+                color="red"
+                subtitle={`${summary.expiration.expired_units.toLocaleString()} unidades`}
+              />
+            </>
+          )}
         </div>
       )}
 
@@ -365,8 +400,8 @@ export default function WarehouseInventoryPage() {
         </div>
       )}
 
-      {/* Enhanced Inventory Table */}
-      <EnhancedWarehouseInventoryTable products={products} mode="general" loading={loading} />
+      {/* Dynamic Inventory Table (Relbase Warehouses) */}
+      <DynamicWarehouseInventoryTable products={products} loading={loading} />
     </div>
     </>
   );

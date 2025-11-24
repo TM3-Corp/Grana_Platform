@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import Image from 'next/image';
 import Navigation from '@/components/Navigation';
 import EnhancedWarehouseInventoryTable from '@/components/inventory/EnhancedWarehouseInventoryTable';
+import ExpandableProductTable from '@/components/inventory/ExpandableProductTable';
 import EnhancedSummaryCard from '@/components/inventory/EnhancedSummaryCard';
 import WarehouseCard from '@/components/inventory/WarehouseCard';
 import InventoryUploadButton from '@/components/inventory/InventoryUploadButton';
@@ -18,18 +19,42 @@ interface Warehouse {
   is_active: boolean;
 }
 
+interface LotInfo {
+  lot_number: string;
+  quantity: number;
+  expiration_date: string | null;
+  last_updated: string;
+  days_to_expiration?: number | null;
+  expiration_status?: 'No Date' | 'Expired' | 'Expiring Soon' | 'Valid';
+}
+
+interface ExpirationStats {
+  expired_lots: number;
+  expired_units: number;
+  expiring_soon_lots: number;
+  expiring_soon_units: number;
+  valid_lots: number;
+  valid_units: number;
+  no_date_lots: number;
+  no_date_units: number;
+}
+
 interface WarehouseProduct {
   sku: string;
   name: string;
   category: string | null;
   stock: number;
-  percentage_of_total: number;
+  lots: LotInfo[];
+  percentage_of_warehouse?: number;  // Opcional - solo para vista warehouse-specific
+  percentage_of_product?: number;     // Opcional - solo para vista warehouse-specific
 }
 
 interface WarehouseSummary {
   total_products: number;
   total_stock: number;
+  total_lots: number;
   last_updated: string | null;
+  expiration?: ExpirationStats;
 }
 
 interface WarehouseInventoryResponse {
@@ -315,7 +340,7 @@ export default function WarehouseSpecificInventoryPage() {
 
       {/* Enhanced Summary Cards */}
       {summary && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
           <EnhancedSummaryCard
             title="Productos en Bodega"
             value={summary.total_products}
@@ -331,13 +356,19 @@ export default function WarehouseSpecificInventoryPage() {
             subtitle="Unidades disponibles"
           />
           <EnhancedSummaryCard
+            title="Total Lotes"
+            value={summary.total_lots}
+            icon="📦"
+            color="amber"
+            subtitle="Con tracking"
+          />
+          <EnhancedSummaryCard
             title="Última Actualización"
             value={
               summary.last_updated
                 ? new Date(summary.last_updated).toLocaleDateString('es-CL', {
                     day: 'numeric',
                     month: 'short',
-                    year: 'numeric',
                   })
                 : 'N/A'
             }
@@ -352,6 +383,24 @@ export default function WarehouseSpecificInventoryPage() {
                 : 'No disponible'
             }
           />
+          {summary.expiration && (
+            <>
+              <EnhancedSummaryCard
+                title="Próximos a Vencer"
+                value={summary.expiration.expiring_soon_lots}
+                icon="⏰"
+                color="amber"
+                subtitle={`${summary.expiration.expiring_soon_units.toLocaleString()} unidades (30 días)`}
+              />
+              <EnhancedSummaryCard
+                title="Vencidos"
+                value={summary.expiration.expired_lots}
+                icon="❌"
+                color="red"
+                subtitle={`${summary.expiration.expired_units.toLocaleString()} unidades`}
+              />
+            </>
+          )}
         </div>
       )}
 
@@ -482,10 +531,17 @@ export default function WarehouseSpecificInventoryPage() {
           <h3 className="text-xl font-semibold text-gray-900 mb-2">Selecciona una bodega</h3>
           <p className="text-gray-600">Elige una bodega arriba para ver su inventario</p>
         </div>
-      ) : (
+      ) : selectedWarehouse === 'amplifica' ? (
+        // Multi-warehouse view: use standard table
         <EnhancedWarehouseInventoryTable
           products={products}
-          mode={selectedWarehouse === 'amplifica' ? 'amplifica' : 'warehouse'}
+          mode="amplifica"
+          loading={loading}
+        />
+      ) : (
+        // Single warehouse view: use expandable table with lot details
+        <ExpandableProductTable
+          products={products}
           loading={loading}
         />
       )}
