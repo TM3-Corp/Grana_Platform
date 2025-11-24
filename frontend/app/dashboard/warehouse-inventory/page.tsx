@@ -56,10 +56,52 @@ export default function WarehouseInventoryPage() {
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
-  const [showOnlyWithStock, setShowOnlyWithStock] = useState(false);
+  const [showOnlyWithStock, setShowOnlyWithStock] = useState(true); // ✅ Default to true
+  const [showLowStockOnly, setShowLowStockOnly] = useState(false);
+  const [minStockSuggestions, setMinStockSuggestions] = useState<Record<string, number>>({});
 
   // Get unique categories
   const categories = [...new Set(products.map((p) => p.category).filter(Boolean))].sort() as string[];
+
+  // Enrich products with min_stock from suggestions or database
+  const enrichedProducts = products.map(product => ({
+    ...product,
+    min_stock: product.min_stock || minStockSuggestions[product.sku] || 0
+  }));
+
+  // Apply client-side filters for low stock
+  const filteredProducts = enrichedProducts.filter(product => {
+    if (showLowStockOnly) {
+      // Show products where current stock is below their minimum stock
+      return product.stock_total > 0 && product.stock_total < product.min_stock;
+    }
+    return true;
+  });
+
+  // Fetch minimum stock suggestions from backend
+  const fetchMinStockSuggestions = async () => {
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${apiUrl}/api/v1/products/minimum-stock-suggestions`);
+
+      if (!response.ok) {
+        console.error('Failed to fetch min stock suggestions');
+        return;
+      }
+
+      const data = await response.json();
+
+      // Convert API response to { SKU: suggested_min_stock } mapping
+      const suggestions: Record<string, number> = {};
+      Object.keys(data.data).forEach(sku => {
+        suggestions[sku] = data.data[sku].suggested_min_stock;
+      });
+
+      setMinStockSuggestions(suggestions);
+    } catch (err) {
+      console.error('Error fetching min stock suggestions:', err);
+    }
+  };
 
   // Fetch inventory data
   const fetchInventory = async (showRefreshAnimation = false) => {
@@ -93,6 +135,13 @@ export default function WarehouseInventoryPage() {
     }
   };
 
+  // Fetch minimum stock suggestions once on mount
+  useEffect(() => {
+    if (status === 'authenticated') {
+      fetchMinStockSuggestions();
+    }
+  }, [status]);
+
   // Load data on mount and when filters change
   useEffect(() => {
     if (status === 'authenticated') {
@@ -109,10 +158,11 @@ export default function WarehouseInventoryPage() {
   const handleClearFilters = () => {
     setSearchQuery('');
     setSelectedCategory('');
-    setShowOnlyWithStock(false);
+    setShowOnlyWithStock(true); // Reset to default (true)
+    setShowLowStockOnly(false);
   };
 
-  const hasActiveFilters = searchQuery || selectedCategory || showOnlyWithStock;
+  const hasActiveFilters = searchQuery || selectedCategory || !showOnlyWithStock || showLowStockOnly;
 
   // Handle auth loading
   if (status === 'loading') {
@@ -266,9 +316,9 @@ export default function WarehouseInventoryPage() {
           )}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Search */}
-          <div className="md:col-span-2">
+          <div className="lg:col-span-2">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Buscar Producto
             </label>
@@ -347,6 +397,25 @@ export default function WarehouseInventoryPage() {
           </div>
         </div>
 
+        {/* Second Row - Low Stock Filter */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+          {/* Low Stock Toggle */}
+          <div className="flex items-center">
+            <label className="flex items-center gap-3 cursor-pointer bg-amber-50 px-4 py-3 rounded-xl hover:bg-amber-100 transition-colors w-full border-2 border-amber-200">
+              <input
+                type="checkbox"
+                checked={showLowStockOnly}
+                onChange={(e) => setShowLowStockOnly(e.target.checked)}
+                className="w-5 h-5 text-amber-600 border-amber-300 rounded focus:ring-amber-500 transition-all"
+              />
+              <span className="text-sm font-medium text-amber-900 flex items-center gap-2">
+                <span>⚠️</span>
+                <span>Stock bajo (por producto)</span>
+              </span>
+            </label>
+          </div>
+        </div>
+
         {/* Active Filters Display */}
         {hasActiveFilters && (
           <div className="mt-4 pt-4 border-t border-gray-200">
@@ -382,6 +451,16 @@ export default function WarehouseInventoryPage() {
                   </button>
                 </span>
               )}
+              {showLowStockOnly && (
+                <span className="inline-flex items-center gap-1 px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-sm font-medium">
+                  ⚠️ Stock bajo
+                  <button onClick={() => setShowLowStockOnly(false)} className="hover:bg-amber-200 rounded-full p-0.5">
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </span>
+              )}
             </div>
           </div>
         )}
@@ -401,7 +480,7 @@ export default function WarehouseInventoryPage() {
       )}
 
       {/* Dynamic Inventory Table (Relbase Warehouses) */}
-      <DynamicWarehouseInventoryTable products={products} loading={loading} />
+      <DynamicWarehouseInventoryTable products={filteredProducts} loading={loading} />
     </div>
     </>
   );

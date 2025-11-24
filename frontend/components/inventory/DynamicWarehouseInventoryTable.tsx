@@ -14,6 +14,7 @@ interface DynamicInventoryProduct {
   stock_total: number;
   lot_count: number;
   last_updated: string | null;
+  min_stock?: number; // Minimum stock level (from database or calculated from sales)
 }
 
 interface DynamicWarehouseInventoryTableProps {
@@ -29,6 +30,11 @@ export default function DynamicWarehouseInventoryTable({
 }: DynamicWarehouseInventoryTableProps) {
   const [sortField, setSortField] = useState<string>('category');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+
+  // Inline editing state
+  const [editingSku, setEditingSku] = useState<string | null>(null);
+  const [editingValue, setEditingValue] = useState<number>(0);
+  const [saving, setSaving] = useState(false);
 
   // Extract unique warehouse codes from products
   const warehouseCodes = useMemo(() => {
@@ -59,6 +65,57 @@ export default function DynamicWarehouseInventoryTable({
     }
   };
 
+  // Inline editing handlers
+  const startEditing = (sku: string, currentValue: number) => {
+    setEditingSku(sku);
+    setEditingValue(currentValue);
+  };
+
+  const cancelEditing = () => {
+    setEditingSku(null);
+    setEditingValue(0);
+  };
+
+  const saveMinStock = async (sku: string, newValue: number) => {
+    if (newValue < 0) {
+      alert('El stock mínimo no puede ser negativo');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${apiUrl}/api/v1/products/${sku}/min-stock`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ min_stock: newValue }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update minimum stock');
+      }
+
+      // Update the product in the local state
+      const updatedProducts = products.map(p =>
+        p.sku === sku ? { ...p, min_stock: newValue } : p
+      );
+
+      // Note: Since products is a prop, we can't directly update it
+      // The parent component should refetch data or we need to emit an event
+      // For now, the change will be reflected after the next data refresh
+
+      setEditingSku(null);
+      setEditingValue(0);
+    } catch (error) {
+      console.error('Error updating min stock:', error);
+      alert('Error al actualizar el stock mínimo');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // Sorted products
   const sortedProducts = useMemo(() => {
     return [...products].sort((a, b) => {
@@ -80,6 +137,9 @@ export default function DynamicWarehouseInventoryTable({
       } else if (sortField === 'lot_count') {
         aVal = a.lot_count;
         bVal = b.lot_count;
+      } else if (sortField === 'min_stock') {
+        aVal = a.min_stock || 0;
+        bVal = b.min_stock || 0;
       } else if (warehouseCodes.includes(sortField)) {
         aVal = a.warehouses?.[sortField] || 0;
         bVal = b.warehouses?.[sortField] || 0;
@@ -175,6 +235,7 @@ export default function DynamicWarehouseInventoryTable({
 
               <HeaderCell label="Lotes" field="lot_count" />
               <HeaderCell label="Total" field="stock_total" />
+              <HeaderCell label="Stock Mínimo" field="min_stock" />
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-100">
@@ -233,6 +294,43 @@ export default function DynamicWarehouseInventoryTable({
                   <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent text-base">
                     {product.stock_total.toLocaleString()}
                   </span>
+                </td>
+
+                {/* Minimum stock (editable) */}
+                <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
+                  {editingSku === product.sku ? (
+                    // Editing mode: show input
+                    <input
+                      type="number"
+                      min="0"
+                      value={editingValue}
+                      onChange={(e) => setEditingValue(parseInt(e.target.value) || 0)}
+                      onBlur={() => saveMinStock(product.sku, editingValue)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          saveMinStock(product.sku, editingValue);
+                        } else if (e.key === 'Escape') {
+                          cancelEditing();
+                        }
+                      }}
+                      disabled={saving}
+                      autoFocus
+                      className="w-20 px-2 py-1 text-center border-2 border-blue-400 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    />
+                  ) : (
+                    // View mode: show clickable span
+                    <span
+                      onClick={() => startEditing(product.sku, product.min_stock || 0)}
+                      className={`inline-flex items-center justify-center min-w-[80px] px-3 py-1 rounded-md font-medium cursor-pointer transition-all hover:ring-2 hover:ring-blue-400 ${
+                        product.stock_total < (product.min_stock || 0)
+                          ? 'bg-red-100 text-red-800 ring-2 ring-red-300'
+                          : 'bg-gray-100 text-gray-700'
+                      }`}
+                      title={product.min_stock ? `Click para editar. Stock mínimo: ${product.min_stock.toLocaleString()} (basado en ventas)` : 'Click para establecer stock mínimo'}
+                    >
+                      {product.min_stock ? product.min_stock.toLocaleString() : '-'}
+                    </span>
+                  )}
                 </td>
               </tr>
             ))}

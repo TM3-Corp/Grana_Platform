@@ -121,33 +121,40 @@ class ProductCatalogService:
                     master_sku_lookup[product['sku_master']] = dict(product)
 
             # Calculate SKU Primario for each product
-            # Rule: SKU Primario = base_code + "_U04010" (Spanish X1 variant)
-            # BUT: Only if it exists in catalog! Otherwise, SKU is its own primario.
+            # Rule: SKU Primario = SKU with same base_code AND units_per_display = 1 AND language = 'ESPAÑOL'
+            # This is the minimal unit for each product family (Spanish version only)
+
+            # First pass: Build a map of base_code -> minimal unit SKU (Spanish only)
+            base_code_to_primario = {}
             for sku, data in catalog.items():
                 base_code = data['base_code']
-                if base_code:
-                    # Try to find the _U04010 variant (Spanish X1)
-                    primario_candidate = f"{base_code}_U04010"
-                    if primario_candidate in catalog:
-                        data['primario'] = primario_candidate
-                    else:
-                        # X1 variant doesn't exist, SKU is its own primario
-                        data['primario'] = sku
+                units_per_display = data.get('units_per_display')
+                language = data.get('language', '').upper()
+
+                if base_code and units_per_display == 1 and language == 'ESPAÑOL':
+                    # This is a Spanish minimal unit (X1) - it's the SKU Primario
+                    # Only Spanish products are used as primarios
+                    base_code_to_primario[base_code] = sku
+
+            # Second pass: Assign SKU Primario to all products
+            for sku, data in catalog.items():
+                base_code = data['base_code']
+                if base_code and base_code in base_code_to_primario:
+                    # Found minimal unit for this base_code
+                    data['primario'] = base_code_to_primario[base_code]
                 else:
-                    # No base_code, SKU is its own primario
+                    # No minimal unit found, SKU is its own primario
                     data['primario'] = sku
 
             # ALSO calculate SKU Primario for master SKUs in lookup
             for master_sku, data in master_sku_lookup.items():
                 base_code = data['base_code']
-                if base_code:
-                    primario_candidate = f"{base_code}_U04010"
-                    if primario_candidate in catalog:
-                        data['primario'] = primario_candidate
-                    else:
-                        data['primario'] = master_sku
+                if base_code and base_code in base_code_to_primario:
+                    # Found minimal unit for this base_code
+                    data['primario'] = base_code_to_primario[base_code]
                 else:
-                    data['primario'] = master_sku
+                    # No minimal unit found, use the product SKU (not master SKU)
+                    data['primario'] = data.get('sku', master_sku)
 
             cursor.close()
             conn.close()
@@ -267,29 +274,47 @@ class ProductCatalogService:
             conversion_factor = product.get('items_per_master_box', 1)
             return quantity * (conversion_factor or 1)
 
-        # Fallback: Try to determine from SKU pattern
-        # X1 variants (_U04010, _U04020) = 1 unit
-        if '_U04' in sku:
-            return quantity * 1
-
-        # X5 variants (_U20010, _U20020) = 5 units
-        if '_U20' in sku:
-            return quantity * 5
-
-        # X7 variants (_U25010, _U25020) = 7 units
-        if '_U25' in sku:
-            return quantity * 7
-
-        # X16 variants (_U64010, _U64020) = 16 units
-        if '_U64' in sku:
-            return quantity * 16
-
-        # X18 variants (_U54010, _U54020) = 18 units
-        if '_U54' in sku:
-            return quantity * 18
-
-        # Unknown pattern: Assume 1:1 conversion
+        # SKU not found in catalog - return 1:1 conversion (no fallback patterns)
+        # This ensures we rely 100% on the database
+        # Products not in catalog will show quantity as units, making them easy to identify
         return quantity * 1
+
+    def get_conversion_factor(self, sku: str) -> int:
+        """
+        Get the conversion factor for a SKU (without multiplying by quantity)
+
+        This is used to display the conversion factor indicator in the UI (e.g., "×140")
+
+        IMPORTANT: Returns 1 if SKU not found in catalog (no fallback patterns).
+        This ensures we rely 100% on database data and can identify missing products.
+
+        Returns:
+            - units_per_display for normal SKUs (1, 5, 16, etc.)
+            - items_per_master_box for master box SKUs (140, 200, etc.)
+            - 1 for unknown SKUs (indicates missing catalog entry)
+
+        Examples:
+            - BAKC_U04010 (X1): returns 1
+            - BAKC_U20010 (X5): returns 5
+            - BAKC_C02810 (Caja Master): returns 140
+            - UNKNOWN_SKU: returns 1 (not in catalog)
+        """
+        if not sku:
+            return 1
+
+        catalog = self._get_catalog()
+
+        # Try normal SKU first
+        if sku in catalog:
+            return catalog[sku].get('units_per_display', 1) or 1
+
+        # Try master box SKU lookup
+        if self._master_sku_lookup and sku in self._master_sku_lookup:
+            return self._master_sku_lookup[sku].get('items_per_master_box', 1) or 1
+
+        # SKU not found in catalog - return 1 (no fallback patterns)
+        # This helps identify products that need to be added to product_catalog table
+        return 1
 
     def get_product_info(self, sku: str) -> Optional[Dict]:
         """

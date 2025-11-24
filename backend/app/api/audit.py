@@ -49,9 +49,10 @@ def load_product_mapping():
             # Add to catalog SKUs
             catalog_skus.add(sku)
 
-            # Check if it's a master SKU
-            if product_data.get('is_master_sku'):
-                catalog_master_skus.add(sku)
+            # Check if product has a master box SKU, and add that master SKU to the set
+            # This allows us to map orders that contain master box SKUs (e.g., BAMC_C02810)
+            if product_data.get('sku_master'):
+                catalog_master_skus.add(product_data['sku_master'])
 
             # Get conversion factor
             # Normal SKUs use units_per_display, master SKUs use items_per_master_box
@@ -83,7 +84,33 @@ def load_product_mapping():
                 'base_code': base_code
             }
 
-        print(f"✅ Loaded {len(product_map)} products from database")
+            # ALSO add master box SKU to product_map (if it exists)
+            # This allows map_sku_with_quantity() to find master SKUs directly
+            # Example: order has BAMC_C02810 → needs product_map['BAMC_C02810']
+            if product_data.get('sku_master'):
+                master_sku = product_data['sku_master']
+                # Use items_per_master_box as conversion factor for master SKUs
+                master_conversion_factor = product_data.get('items_per_master_box', 1) or 1
+
+                product_map[master_sku] = {
+                    'category': product_data.get('category', ''),
+                    'family': product_data.get('product_name', ''),
+                    'format': 'CAJA MASTER',
+                    'product_name': product_data.get('product_name', ''),
+                    'in_catalog': True,
+                    'tipo': 'Caja Master',
+                    'conversion_factor': master_conversion_factor,
+                    'sku_primario': sku_primario
+                }
+
+                # Also add to conversion map
+                conversion_map[master_sku] = {
+                    'factor': master_conversion_factor,
+                    'primario': sku_primario,
+                    'base_code': base_code
+                }
+
+        print(f"✅ Loaded {len(product_map)} products from database (includes master box SKUs)")
 
     except Exception as e:
         print(f"❌ Error loading product catalog from database: {e}")
@@ -526,13 +553,18 @@ async def get_audit_data(
                     groups = defaultdict(lambda: {
                         'pedidos': set(),
                         'cantidad': 0,
+                        'total_unidades': 0,  # Add total_unidades accumulator
                         'total_revenue': 0
                     })
+
+                    # Get ProductCatalogService for unit conversion
+                    service = get_product_catalog_service()
 
                     for item in all_items:
                         sku = item['product_sku']
                         product_name = item['product_name']
                         order_source = item['order_source']
+                        quantity = item['quantity'] or 0
 
                         # Map SKU to primario using same logic as enrichment
                         official_sku, _, _, _, _ = map_sku_with_quantity(
@@ -548,14 +580,17 @@ async def get_audit_data(
                         # Use 'SIN CLASIFICAR' for unmapped SKUs
                         group_key = sku_primario if sku_primario else 'SIN CLASIFICAR'
 
+                        # Calculate converted units for this item
+                        converted_units = service.calculate_units(sku, quantity)
+
                         # Aggregate
                         groups[group_key]['pedidos'].add(item['order_external_id'])
-                        groups[group_key]['cantidad'] += item['quantity'] or 0
+                        groups[group_key]['cantidad'] += quantity
+                        groups[group_key]['total_unidades'] += converted_units  # Accumulate converted units
                         groups[group_key]['total_revenue'] += float(item['subtotal'] or 0)
 
                     # Convert to list format
                     aggregated_data = []
-                    service = get_product_catalog_service()
                     for group_value, stats in groups.items():
                         # Get product name for this SKU Primario
                         sku_primario_name = service.get_product_name_for_sku_primario(group_value) if group_value != 'SIN CLASIFICAR' else None
@@ -565,6 +600,7 @@ async def get_audit_data(
                             'sku_primario_name': sku_primario_name,
                             'pedidos': len(stats['pedidos']),
                             'cantidad': stats['cantidad'],
+                            'total_unidades': stats['total_unidades'],  # Include converted units
                             'total_revenue': stats['total_revenue']
                         })
 
@@ -606,7 +642,8 @@ async def get_audit_data(
                     'customer_name': "COALESCE(cust_direct.name, cust_channel.name, 'SIN NOMBRE')",
                     'category': 'p.category',
                     'channel_name': "COALESCE(ch.name, 'SIN CANAL')",
-                    'order_date': 'o.order_date::date'
+                    'order_date': 'o.order_date::date',
+                    'order_month': "TO_CHAR(o.order_date, 'YYYY-MM')"  # Group by year-month
                 }
 
                 if group_by and group_by in group_field_map:
@@ -726,12 +763,66 @@ async def get_audit_data(
                     cursor.execute(summary_query, params[:-2])  # Exclude limit/offset
                     summary_row = cursor.fetchone()
 
-                    # Convert aggregated rows to dicts
+                    # Convert aggregated rows to dicts and calculate proper total_unidades
                     aggregated_data = []
                     for row in agg_rows:
                         row_dict = dict(row)
                         # Convert Decimal to float for JSON serialization
                         row_dict['total_revenue'] = float(row_dict['total_revenue'] or 0)
+
+                        # Calculate actual total_unidades by fetching and converting units
+                        # Query order_items for this group and sum converted units
+                        group_value = row_dict['group_value']
+
+                        # Build query to get all order_items in this group
+                        unidades_query = f"""
+                            SELECT
+                                oi.product_sku,
+                                oi.quantity
+                            FROM orders o
+                            LEFT JOIN order_items oi ON oi.order_id = o.id
+                            LEFT JOIN products p ON p.sku = oi.product_sku
+                            LEFT JOIN channels ch ON ch.id = o.channel_id
+                            LEFT JOIN customers cust_direct
+                                ON cust_direct.id = o.customer_id
+                                AND cust_direct.source = o.source
+                            LEFT JOIN LATERAL (
+                                SELECT customer_external_id
+                                FROM customer_channel_rules ccr
+                                WHERE ccr.channel_external_id::text = (
+                                    CASE
+                                        WHEN o.customer_notes ~ '^\s*\\{{'
+                                        THEN o.customer_notes::json->>'channel_id_relbase'
+                                        ELSE NULL
+                                    END
+                                )
+                                AND ccr.is_active = TRUE
+                                LIMIT 1
+                            ) ccr_match ON true
+                            LEFT JOIN customers cust_channel
+                                ON cust_channel.external_id = ccr_match.customer_external_id
+                                AND cust_channel.source = 'relbase'
+                            WHERE {where_sql}
+                              AND {group_field} = %s
+                              AND oi.product_sku IS NOT NULL
+                        """
+
+                        cursor.execute(unidades_query, params[:-2] + [group_value])
+                        group_items = cursor.fetchall()
+
+                        # Calculate total converted units for this group
+                        total_unidades = 0
+                        service = get_product_catalog_service()
+                        for item in group_items:
+                            sku = item['product_sku']
+                            quantity = item['quantity'] or 0
+                            # Use ProductCatalogService to calculate converted units
+                            converted_units = service.calculate_units(sku, quantity)
+                            total_unidades += converted_units
+
+                        # Add the properly calculated total_unidades to the row
+                        row_dict['total_unidades'] = total_unidades
+
                         aggregated_data.append(row_dict)
 
                     # Return aggregated response
@@ -1053,13 +1144,9 @@ async def get_audit_data(
 
                         # Also include conversion factor for reference
                         # Phase 3: Get from ProductCatalogService
+                        # This properly handles both normal SKUs and master box SKUs
                         service = get_product_catalog_service()
-                        catalog_product = service.get_product_info(official_sku)
-                        if catalog_product:
-                            # Use units_per_display for conversion factor
-                            row_dict['conversion_factor'] = catalog_product.get('units_per_display', 1) or 1
-                        else:
-                            row_dict['conversion_factor'] = 1
+                        row_dict['conversion_factor'] = service.get_conversion_factor(official_sku)
                     else:
                         # Not mapped
                         row_dict['sku_primario'] = None

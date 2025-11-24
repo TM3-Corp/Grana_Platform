@@ -305,7 +305,7 @@ export default function WarehouseSpecificInventoryPage() {
 
         {/* All warehouses in a single row */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {/* Amplifica card */}
+          {/* Amplifica group card (consolidated view) */}
           <WarehouseCard
             code="amplifica"
             name="Amplifica"
@@ -314,6 +314,27 @@ export default function WarehouseSpecificInventoryPage() {
             isActive={selectedWarehouse === 'amplifica'}
             onClick={() => setSelectedWarehouse('amplifica')}
           />
+
+          {/* Individual Amplifica warehouses (for manual upload) */}
+          {amplificaWarehouses.map((warehouse) => {
+            const warehouseStats = summary && selectedWarehouse === warehouse.code
+              ? { stockCount: summary.total_stock, productCount: summary.total_products }
+              : undefined;
+
+            return (
+              <WarehouseCard
+                key={warehouse.code}
+                code={warehouse.code}
+                name={warehouse.name}
+                location={warehouse.location}
+                updateMethod={warehouse.update_method}
+                isActive={selectedWarehouse === warehouse.code}
+                onClick={() => setSelectedWarehouse(warehouse.code)}
+                stockCount={warehouseStats?.stockCount}
+                productCount={warehouseStats?.productCount}
+              />
+            );
+          })}
 
           {/* Other warehouses */}
           {otherWarehouses.map((warehouse) => {

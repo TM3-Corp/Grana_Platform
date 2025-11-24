@@ -221,7 +221,8 @@ export default function AuditView() {
         'sku_primario': 'sku_primario',  // ✅ Hybrid: server fetches + CSV maps + aggregates
         'category': 'category',
         'channel_name': 'channel_name',
-        'order_date': 'order_date'
+        'order_date': 'order_date',
+        'order_month': 'order_month'  // ✅ Group by year-month
       };
 
       // Only add group_by param if backend supports this groupBy value
@@ -904,6 +905,7 @@ export default function AuditView() {
             <option value="order_source">Fuente</option>
             <option value="channel_name">Canal</option>
             <option value="customer_name">Cliente</option>
+            <option value="order_month">Mes</option>
             <option value="sku">SKU Original</option>
             <option value="sku_primario">SKU Primario</option>
             <option value="family">Producto</option>
@@ -1185,17 +1187,19 @@ export default function AuditView() {
             <>
               {Object.entries(groupedData).map(([groupKey, groupItems]) => {
                 // Calculate group subtotals based on mode
-                let groupUnidades, groupTotal, groupPedidos, groupSkuPrimarioName;
+                let groupCantidad, groupUnidades, groupTotal, groupPedidos, groupSkuPrimarioName;
 
                 if (isAggregatedMode && groupItems[0]) {
                   // AGGREGATED MODE: Use pre-computed totals from server
                   const agg = groupItems[0] as any;
-                  groupUnidades = agg.cantidad || 0;  // cantidad = total units
+                  groupCantidad = agg.cantidad || 0;  // Raw quantity sum
+                  groupUnidades = agg.total_unidades || 0;  // Properly converted units
                   groupTotal = agg.total_revenue || 0;
                   groupPedidos = agg.pedidos || 0;
                   groupSkuPrimarioName = agg.sku_primario_name || null;
                 } else {
                   // DETAIL MODE: Calculate from individual items
+                  groupCantidad = groupItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
                   groupUnidades = groupItems.reduce((sum, item) => sum + (item.unidades || 0), 0);
                   groupTotal = groupItems.reduce((sum, item) => sum + (item.item_subtotal || 0), 0);
                   groupPedidos = new Set(groupItems.map(item => item.order_external_id)).size;
@@ -1230,7 +1234,11 @@ export default function AuditView() {
                         </button>
                         <div className="flex gap-6 text-sm">
                           <div className="text-right">
-                            <span className="text-gray-600">Total Unidades: </span>
+                            <span className="text-gray-600">Cantidad Total: </span>
+                            <span className="font-semibold text-orange-600">{groupCantidad.toLocaleString('es-CL')}</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-gray-600">Unidades Totales: </span>
                             <span className="font-semibold text-green-600">{groupUnidades.toLocaleString('es-CL')}</span>
                           </div>
                           <div className="text-right">
