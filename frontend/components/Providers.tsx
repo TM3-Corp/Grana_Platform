@@ -1,6 +1,7 @@
 'use client'
 
 import { SessionProvider } from 'next-auth/react'
+import FloatingChatWidget from '@/components/FloatingChatWidget'
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   return (
@@ -10,6 +11,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       refetchInterval={0}
     >
       {children}
+      <FloatingChatWidget />
     </SessionProvider>
   )
 }

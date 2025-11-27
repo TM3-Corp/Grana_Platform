@@ -85,7 +85,9 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
       // e.g., "5 nov"
     } else if (d.period.length === 7) {
       // Format: "2025-11" (YYYY-MM) - Monthly
-      date = new Date(d.period + '-01')
+      // Parse date components directly to avoid timezone conversion issues
+      const [year, month] = d.period.split('-').map(Number)
+      date = new Date(year, month - 1, 1)  // Use local timezone, not UTC
       label = date.toLocaleDateString('es-CL', {
         month: 'short',
         year: '2-digit'

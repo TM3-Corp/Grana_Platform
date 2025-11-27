@@ -14,7 +14,7 @@ env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(env_path)
 
 # Import API routers
-from app.api import conversion, shopify, products, orders, mercadolibre, product_mapping, relbase, audit, inventory, sales_analytics, sales_analytics_realtime, admin, warehouses
+from app.api import conversion, shopify, products, orders, mercadolibre, product_mapping, relbase, audit, inventory, sales_analytics, sales_analytics_realtime, admin, warehouses, chat
 
 # Import psycopg2 with error handling
 try:
@@ -112,6 +112,9 @@ app.include_router(inventory.router)
 # Warehouse Inventory routers (new system)
 app.include_router(warehouses.warehouses_router)
 app.include_router(warehouses.inventory_router)
+
+# Claude Chat for inventory queries
+app.include_router(chat.router)
 
 @app.get("/")
 async def root():

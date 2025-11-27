@@ -1,16 +1,21 @@
 """
 Configuración centralizada de la aplicación
 """
+from pathlib import Path
 from pydantic_settings import BaseSettings
 from pydantic import ConfigDict
 from typing import List, Optional
+
+# Get the absolute path to the backend .env file
+BACKEND_DIR = Path(__file__).parent.parent.parent  # app/core/config.py -> backend/
+ENV_FILE_PATH = BACKEND_DIR / ".env"
 
 
 class Settings(BaseSettings):
     """Configuración de la aplicación"""
 
     model_config = ConfigDict(
-        env_file=".env",
+        env_file=str(ENV_FILE_PATH),  # Use absolute path
         case_sensitive=True,
         extra="ignore"  # Allow extra environment variables without error
     )

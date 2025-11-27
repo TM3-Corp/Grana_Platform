@@ -9,13 +9,13 @@ Date: 2025-11-12
 from fastapi import APIRouter, Query, HTTPException
 from typing import List, Optional, Dict, Any
 import psycopg2
-import os
+import logging
 from datetime import datetime, timedelta
+from app.core.database import get_db_connection_with_retry
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
-# Database connection
-DATABASE_URL = os.getenv("DATABASE_URL")
 
 @router.get("")
 async def get_sales_analytics(
@@ -55,7 +55,7 @@ async def get_sales_analytics(
     """
 
     try:
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = get_db_connection_with_retry(max_retries=3, retry_delay=1.0)
         cur = conn.cursor()
 
         # Build base filters
@@ -416,5 +416,12 @@ async def get_sales_analytics(
             }
         }
 
+    except psycopg2.OperationalError as e:
+        logger.error(f"Database connection error: {str(e)}")
+        raise HTTPException(status_code=503, detail=f"Database connection failed after retries: {str(e)}")
+    except psycopg2.Error as e:
+        logger.error(f"Database query error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Database query failed: {str(e)}")
     except Exception as e:
+        logger.error(f"Unexpected error in sales analytics: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error fetching sales analytics: {str(e)}")

@@ -81,7 +81,8 @@ def get_db_connection():
         cursor.close()
         conn.close()
     """
-    database_url = os.getenv("DATABASE_URL")
+    # Use settings.DATABASE_URL which loads from .env file
+    database_url = settings.DATABASE_URL
     if not database_url:
         raise Exception("DATABASE_URL not configured")
 
@@ -107,7 +108,8 @@ def get_db_connection_dict():
         cursor.close()
         conn.close()
     """
-    database_url = os.getenv("DATABASE_URL")
+    # Use settings.DATABASE_URL which loads from .env file
+    database_url = settings.DATABASE_URL
     if not database_url:
         raise Exception("DATABASE_URL not configured")
 
@@ -171,7 +173,8 @@ def get_db_connection_with_retry(max_retries=3, retry_delay=1.0):
         cursor.close()
         conn.close()
     """
-    database_url = os.getenv("DATABASE_URL")
+    # Use settings.DATABASE_URL which loads from .env file
+    database_url = settings.DATABASE_URL
     if not database_url:
         raise Exception("DATABASE_URL not configured")
 
@@ -240,7 +243,8 @@ def get_db_connection_dict_with_retry(max_retries=3, retry_delay=1.0):
         cursor.close()
         conn.close()
     """
-    database_url = os.getenv("DATABASE_URL")
+    # Use settings.DATABASE_URL which loads from .env file
+    database_url = settings.DATABASE_URL
     if not database_url:
         raise Exception("DATABASE_URL not configured")
 
