@@ -415,6 +415,9 @@ class SyncService:
                             customer_id_relbase = dte_data.get('customer_id')
                             channel_id_relbase = dte_data.get('channel_id')
 
+                            # SII status from RelBase (accepted, accepted_objection, cancel, declined)
+                            sii_status = dte_data.get('sii_status', 'accepted')
+
                             # Map RelBase channel_id to internal channel via external_id
                             channel_id = fallback_channel_id  # Default to "Relbase" channel
                             if channel_id_relbase:
@@ -445,7 +448,7 @@ class SyncService:
                                  invoice_status, order_date, invoice_number, invoice_type, invoice_date,
                                  customer_notes, created_at)
                                 VALUES (%s, %s, 'relbase', %s, %s, %s, %s, %s, 'completed', 'paid',
-                                        'accepted', %s, %s, %s, %s, %s, NOW())
+                                        %s, %s, %s, %s, %s, %s, NOW())
                                 RETURNING id
                             """, (
                                 str(dte_id),
@@ -455,6 +458,7 @@ class SyncService:
                                 net,
                                 tax,
                                 total,
+                                sii_status,  # Use SII status from RelBase API
                                 order_date,
                                 folio,
                                 'invoice' if dte_data.get('type_document') == 33 else 'boleta',
