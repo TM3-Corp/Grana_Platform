@@ -392,24 +392,27 @@ class SyncService:
                                 errors.append(f"Could not fetch details for DTE {dte_id}")
                                 continue
 
-                            dte_data = dte_detail.get('data', {}).get('dte', {})
+                            # API returns data directly (not nested in 'dte')
+                            dte_data = dte_detail.get('data', {})
 
-                            # Parse DTE data
+                            # Parse DTE data (using correct Relbase field names)
                             folio = dte_data.get('folio', str(dte_id))
-                            total = float(dte_data.get('total', 0))
-                            tax = float(dte_data.get('tax', 0))
-                            net = float(dte_data.get('net', total - tax))
+                            total = float(dte_data.get('amount_total', 0))
+                            tax = float(dte_data.get('amount_iva', 0))
+                            net = float(dte_data.get('amount_neto', total - tax))
 
-                            # Parse date
-                            date_str = dte_data.get('date', dte_data.get('emission_date'))
+                            # Parse date (start_date or created_at)
+                            date_str = dte_data.get('start_date') or dte_data.get('created_at')
                             try:
-                                order_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                                if date_str:
+                                    order_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                                else:
+                                    order_date = datetime.now()
                             except:
                                 order_date = datetime.now()
 
-                            # Customer info
-                            receiver = dte_data.get('receiver', {})
-                            customer_rut = receiver.get('rut')
+                            # Customer info (customer_id is direct field, not nested)
+                            customer_id_relbase = dte_data.get('customer_id')
                             channel_id_relbase = dte_data.get('channel_id')
 
                             # Create order
@@ -431,11 +434,11 @@ class SyncService:
                                 total,
                                 order_date,
                                 folio,
-                                'invoice' if dte_data.get('type_code') == 33 else 'boleta',
+                                'invoice' if dte_data.get('type_document') == 33 else 'boleta',
                                 order_date,
                                 json.dumps({
                                     'relbase_id': dte_id,
-                                    'customer_rut': customer_rut,
+                                    'customer_id_relbase': customer_id_relbase,
                                     'channel_id_relbase': channel_id_relbase
                                 })
                             ))
@@ -448,7 +451,7 @@ class SyncService:
                             for product in products:
                                 product_code = product.get('code', '')
                                 product_name = product.get('name', '')
-                                quantity = int(product.get('quantity', 0))
+                                quantity = float(product.get('quantity', 0))  # Can be decimal
                                 price = float(product.get('price', 0))
                                 subtotal = quantity * price
 
