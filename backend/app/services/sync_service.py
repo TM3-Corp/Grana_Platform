@@ -341,10 +341,10 @@ class SyncService:
 
             logger.info(f"Syncing RelBase DTEs from {date_from} to {date_to}")
 
-            # Get channel ID for relbase
+            # Get fallback channel ID for orders without channel_id in RelBase
             cursor.execute("SELECT id FROM channels WHERE code = 'relbase'")
-            channel_result = cursor.fetchone()
-            channel_id = channel_result[0] if channel_result else None
+            fallback_channel_result = cursor.fetchone()
+            fallback_channel_id = fallback_channel_result[0] if fallback_channel_result else None
 
             # Fetch DTEs from RelBase for both Facturas (33) and Boletas (39)
             total_dtes = 0
@@ -415,20 +415,43 @@ class SyncService:
                             customer_id_relbase = dte_data.get('customer_id')
                             channel_id_relbase = dte_data.get('channel_id')
 
+                            # Map RelBase channel_id to internal channel via external_id
+                            channel_id = fallback_channel_id  # Default to "Relbase" channel
+                            if channel_id_relbase:
+                                cursor.execute("""
+                                    SELECT id FROM channels
+                                    WHERE external_id = %s AND source = 'relbase'
+                                """, (str(channel_id_relbase),))
+                                channel_result = cursor.fetchone()
+                                if channel_result:
+                                    channel_id = channel_result[0]
+
+                            # Map RelBase customer_id to internal customer via external_id
+                            customer_id = None
+                            if customer_id_relbase:
+                                cursor.execute("""
+                                    SELECT id FROM customers
+                                    WHERE external_id = %s AND source = 'relbase'
+                                """, (str(customer_id_relbase),))
+                                customer_result = cursor.fetchone()
+                                if customer_result:
+                                    customer_id = customer_result[0]
+
                             # Create order
                             cursor.execute("""
                                 INSERT INTO orders
-                                (external_id, order_number, source, channel_id,
+                                (external_id, order_number, source, channel_id, customer_id,
                                  subtotal, tax_amount, total, status, payment_status,
-                                 order_date, invoice_number, invoice_type, invoice_date,
+                                 invoice_status, order_date, invoice_number, invoice_type, invoice_date,
                                  customer_notes, created_at)
-                                VALUES (%s, %s, 'relbase', %s, %s, %s, %s, 'completed', 'paid',
-                                        %s, %s, %s, %s, %s, NOW())
+                                VALUES (%s, %s, 'relbase', %s, %s, %s, %s, %s, 'completed', 'paid',
+                                        'accepted', %s, %s, %s, %s, %s, NOW())
                                 RETURNING id
                             """, (
                                 str(dte_id),
                                 folio,
                                 channel_id,
+                                customer_id,
                                 net,
                                 tax,
                                 total,
