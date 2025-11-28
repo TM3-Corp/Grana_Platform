@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Any
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-from app.core.database import get_db_connection_dict
+from app.core.database import get_db_connection_dict_with_retry
 
 
 class MercadoLibreRepository:
@@ -39,7 +39,7 @@ class MercadoLibreRepository:
         Returns:
             Product dict if found, None otherwise
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -91,7 +91,7 @@ class MercadoLibreRepository:
         Returns:
             True if update successful
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -144,7 +144,7 @@ class MercadoLibreRepository:
         Returns:
             True if operation successful
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -188,7 +188,7 @@ class MercadoLibreRepository:
         Returns:
             Number of ML products
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -214,7 +214,7 @@ class MercadoLibreRepository:
         Returns:
             Number of ML orders
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -243,7 +243,7 @@ class MercadoLibreRepository:
         Returns:
             List of sync log dicts
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:

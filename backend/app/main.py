@@ -14,7 +14,10 @@ env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(env_path)
 
 # Import API routers
-from app.api import conversion, shopify, products, orders, mercadolibre, product_mapping, relbase, audit, inventory, sales_analytics, sales_analytics_realtime, admin, warehouses, chat
+from app.api import conversion, shopify, products, orders, mercadolibre, product_mapping, relbase, audit, inventory, sales_analytics, sales_analytics_realtime, admin, warehouses, chat, sync
+
+# Import centralized database connection with retry logic
+from app.core.database import get_db_connection_with_retry, CONNECTION_TIMEOUT
 
 # Import psycopg2 with error handling
 try:
@@ -46,13 +49,14 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 @contextmanager
 def get_db_connection():
-    """Context manager para conexiones a PostgreSQL"""
+    """Context manager para conexiones a PostgreSQL con retry logic"""
     if not PSYCOPG2_AVAILABLE:
         raise Exception(f"psycopg2 no está disponible: {PSYCOPG2_ERROR}")
 
     conn = None
     try:
-        conn = psycopg2.connect(DATABASE_URL)
+        # Use centralized connection with retry logic for resilience
+        conn = get_db_connection_with_retry()
         yield conn
     except Exception as e:
         print(f"⚠️ Error conectando a la base de datos: {e}")
@@ -116,6 +120,9 @@ app.include_router(warehouses.inventory_router)
 # Claude Chat for inventory queries
 app.include_router(chat.router)
 
+# Sync endpoints (for UptimeRobot scheduled sync)
+app.include_router(sync.router)
+
 @app.get("/")
 async def root():
     """Endpoint raíz - Verificación de estado de la API"""
@@ -128,11 +135,46 @@ async def root():
 
 @app.get("/health")
 async def health():
-    """Health check endpoint para monitoreo"""
+    """Health check endpoint para monitoreo - tests database connectivity"""
+    import time
+    start_time = time.time()
+
+    db_status = "unknown"
+    db_latency_ms = None
+    db_error = None
+
+    try:
+        # Test database connection with minimal retry (fast check)
+        conn = get_db_connection_with_retry(max_retries=1, retry_delay=0.5)
+        cursor = conn.cursor()
+
+        db_start = time.time()
+        cursor.execute("SELECT 1")
+        cursor.fetchone()
+        db_latency_ms = round((time.time() - db_start) * 1000, 2)
+
+        cursor.close()
+        conn.close()
+        db_status = "connected"
+    except Exception as e:
+        db_status = "disconnected"
+        db_error = str(e)
+
+    total_latency_ms = round((time.time() - start_time) * 1000, 2)
+
+    status = "healthy" if db_status == "connected" else "degraded"
+
     return {
-        "status": "healthy",
+        "status": status,
         "service": "grana-api",
-        "version": API_VERSION
+        "version": API_VERSION,
+        "database": {
+            "status": db_status,
+            "latency_ms": db_latency_ms,
+            "error": db_error,
+            "connection_timeout_s": CONNECTION_TIMEOUT
+        },
+        "total_latency_ms": total_latency_ms
     }
 
 @app.get("/api/v1/status")

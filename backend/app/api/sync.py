@@ -1,0 +1,269 @@
+"""
+Sync API - Scheduled data synchronization endpoints
+Designed to be called by UptimeRobot or similar services
+
+Endpoints:
+- GET  /api/v1/sync/status     - Get last sync status
+- POST /api/v1/sync/sales      - Sync orders from RelBase
+- POST /api/v1/sync/inventory  - Sync inventory from RelBase + ML
+- POST /api/v1/sync/all        - Run all syncs (for UptimeRobot)
+
+Author: Claude Code
+Date: 2025-11-28
+"""
+from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
+from pydantic import BaseModel
+from typing import Optional, List, Dict, Any
+from datetime import datetime, timedelta
+import logging
+import os
+
+from app.services.sync_service import SyncService
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/api/v1/sync", tags=["Sync"])
+
+# Initialize sync service
+sync_service = SyncService()
+
+
+# ============================================================================
+# Response Models
+# ============================================================================
+
+class SyncStatusResponse(BaseModel):
+    """Response model for sync status"""
+    last_sales_sync: Optional[datetime]
+    last_inventory_sync: Optional[datetime]
+    orders_count: int
+    last_order_date: Optional[datetime]
+    warehouses_count: int
+    products_with_stock: int
+
+
+class SalesSyncResponse(BaseModel):
+    """Response model for sales sync"""
+    success: bool
+    message: str
+    orders_created: int
+    orders_updated: int
+    order_items_created: int
+    errors: List[str]
+    date_range: Dict[str, str]
+    duration_seconds: float
+
+
+class InventorySyncResponse(BaseModel):
+    """Response model for inventory sync"""
+    success: bool
+    message: str
+    relbase_warehouses_synced: int
+    relbase_products_updated: int
+    mercadolibre_products_updated: int
+    errors: List[str]
+    duration_seconds: float
+
+
+class FullSyncResponse(BaseModel):
+    """Response model for full sync"""
+    success: bool
+    message: str
+    sales_sync: Optional[SalesSyncResponse]
+    inventory_sync: Optional[InventorySyncResponse]
+    total_duration_seconds: float
+    timestamp: datetime
+
+
+# ============================================================================
+# Endpoints
+# ============================================================================
+
+@router.get("/status", response_model=SyncStatusResponse)
+async def get_sync_status():
+    """
+    Get current sync status and statistics
+
+    Returns information about:
+    - Last sync timestamps
+    - Total orders in database
+    - Last order date
+    - Warehouse and stock counts
+    """
+    try:
+        status = await sync_service.get_sync_status()
+        return status
+    except Exception as e:
+        logger.error(f"Error getting sync status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/sales", response_model=SalesSyncResponse)
+async def sync_sales(
+    days_back: int = Query(default=7, ge=1, le=365, description="Days to look back for missing data"),
+    force_full: bool = Query(default=False, description="Force full sync instead of incremental")
+):
+    """
+    Sync sales orders from RelBase
+
+    Logic:
+    1. Get last order date in database
+    2. Fetch all DTEs from RelBase since that date
+    3. Create/update orders and order_items
+    4. Fill any gaps in data
+
+    Args:
+        days_back: How many days to look back (default 7)
+        force_full: If True, sync all data regardless of last date
+    """
+    try:
+        logger.info(f"Starting sales sync (days_back={days_back}, force_full={force_full})")
+        result = await sync_service.sync_sales_from_relbase(
+            days_back=days_back,
+            force_full=force_full
+        )
+        # Convert dataclass to Pydantic model
+        return SalesSyncResponse(
+            success=result.success,
+            message=result.message,
+            orders_created=result.orders_created,
+            orders_updated=result.orders_updated,
+            order_items_created=result.order_items_created,
+            errors=result.errors,
+            date_range=result.date_range,
+            duration_seconds=result.duration_seconds
+        )
+    except Exception as e:
+        logger.error(f"Error syncing sales: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/inventory", response_model=InventorySyncResponse)
+async def sync_inventory():
+    """
+    Sync inventory from RelBase and MercadoLibre
+
+    Logic:
+    1. Fetch warehouse stock from RelBase (all warehouses)
+    2. Fetch active listings from MercadoLibre
+    3. Update warehouse_stock table
+    """
+    try:
+        logger.info("Starting inventory sync")
+        result = await sync_service.sync_inventory()
+        # Convert dataclass to Pydantic model
+        return InventorySyncResponse(
+            success=result.success,
+            message=result.message,
+            relbase_warehouses_synced=result.relbase_warehouses_synced,
+            relbase_products_updated=result.relbase_products_updated,
+            mercadolibre_products_updated=result.mercadolibre_products_updated,
+            errors=result.errors,
+            duration_seconds=result.duration_seconds
+        )
+    except Exception as e:
+        logger.error(f"Error syncing inventory: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/all", response_model=FullSyncResponse)
+async def sync_all(
+    background_tasks: BackgroundTasks,
+    days_back: int = Query(default=3, ge=1, le=30, description="Days to look back for sales"),
+    run_in_background: bool = Query(default=False, description="Run sync in background")
+):
+    """
+    Run full sync (sales + inventory)
+
+    This is the endpoint for UptimeRobot to call.
+    Keeps the service warm AND syncs data.
+
+    Args:
+        days_back: How many days to look back for sales
+        run_in_background: If True, start sync and return immediately
+    """
+    start_time = datetime.now()
+
+    if run_in_background:
+        # Queue sync for background execution
+        background_tasks.add_task(sync_service.run_full_sync, days_back)
+        return FullSyncResponse(
+            success=True,
+            message="Sync started in background",
+            sales_sync=None,
+            inventory_sync=None,
+            total_duration_seconds=0,
+            timestamp=start_time
+        )
+
+    try:
+        logger.info(f"Starting full sync (days_back={days_back})")
+
+        # Run sales sync
+        sales_result = await sync_service.sync_sales_from_relbase(days_back=days_back)
+
+        # Run inventory sync
+        inventory_result = await sync_service.sync_inventory()
+
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
+
+        # Determine overall success
+        overall_success = sales_result.success and inventory_result.success
+
+        # Convert dataclass results to Pydantic models
+        sales_response = SalesSyncResponse(
+            success=sales_result.success,
+            message=sales_result.message,
+            orders_created=sales_result.orders_created,
+            orders_updated=sales_result.orders_updated,
+            order_items_created=sales_result.order_items_created,
+            errors=sales_result.errors,
+            date_range=sales_result.date_range,
+            duration_seconds=sales_result.duration_seconds
+        )
+
+        inventory_response = InventorySyncResponse(
+            success=inventory_result.success,
+            message=inventory_result.message,
+            relbase_warehouses_synced=inventory_result.relbase_warehouses_synced,
+            relbase_products_updated=inventory_result.relbase_products_updated,
+            mercadolibre_products_updated=inventory_result.mercadolibre_products_updated,
+            errors=inventory_result.errors,
+            duration_seconds=inventory_result.duration_seconds
+        )
+
+        return FullSyncResponse(
+            success=overall_success,
+            message="Full sync completed" if overall_success else "Sync completed with errors",
+            sales_sync=sales_response,
+            inventory_sync=inventory_response,
+            total_duration_seconds=duration,
+            timestamp=end_time
+        )
+
+    except Exception as e:
+        logger.error(f"Error in full sync: {e}")
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
+
+        return FullSyncResponse(
+            success=False,
+            message=f"Sync failed: {str(e)}",
+            sales_sync=None,
+            inventory_sync=None,
+            total_duration_seconds=duration,
+            timestamp=end_time
+        )
+
+
+@router.get("/health")
+async def sync_health():
+    """
+    Simple health check for the sync service
+    Returns quickly - useful for keep-alive pings
+    """
+    return {
+        "status": "healthy",
+        "service": "sync",
+        "timestamp": datetime.now().isoformat()
+    }

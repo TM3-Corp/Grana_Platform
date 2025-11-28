@@ -8,7 +8,7 @@ Date: 2025-10-17
 """
 from typing import List, Optional, Tuple, Dict
 from app.domain.product import Product
-from app.core.database import get_db_connection_dict
+from app.core.database import get_db_connection_dict_with_retry
 
 
 class ProductRepository:
@@ -62,7 +62,7 @@ class ProductRepository:
         Returns:
             Product or None if not found
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -96,7 +96,7 @@ class ProductRepository:
         Returns:
             Product or None if not found
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -143,7 +143,7 @@ class ProductRepository:
         Returns:
             Tuple of (list of products, total count)
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -210,7 +210,7 @@ class ProductRepository:
         Returns:
             List of products
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -242,7 +242,7 @@ class ProductRepository:
         Returns:
             List of products with low stock
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -293,7 +293,7 @@ class ProductRepository:
         Returns:
             Count of matching products
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -333,7 +333,7 @@ class ProductRepository:
         Returns:
             Dict with product stats (total, by_source, by_category, stock_levels)
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -412,7 +412,7 @@ class ProductRepository:
         Returns:
             List of family dictionaries with nested structure
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:

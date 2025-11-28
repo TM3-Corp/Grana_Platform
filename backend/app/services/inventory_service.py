@@ -10,7 +10,7 @@ import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
-from app.core.database import get_db_connection_dict
+from app.core.database import get_db_connection_dict_with_retry
 
 
 class InventoryService:
@@ -19,7 +19,7 @@ class InventoryService:
     @staticmethod
     def get_product_by_sku(sku: str) -> Dict:
         """Get product by SKU from database"""
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -37,7 +37,7 @@ class InventoryService:
     @staticmethod
     def update_product_stock(product_id: int, new_stock: int, old_stock: int, reason: str):
         """Update product stock and record movement"""
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -76,7 +76,7 @@ class InventoryService:
     @staticmethod
     def get_all_products_with_stock() -> List[Dict]:
         """Get all products with their current stock"""
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -97,7 +97,7 @@ class InventoryService:
     @staticmethod
     def get_stock_summary() -> Dict:
         """Get summary of inventory status"""
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:

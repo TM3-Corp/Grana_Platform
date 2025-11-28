@@ -7,7 +7,7 @@ Author: TM3
 Date: 2025-10-17
 """
 from typing import List, Optional, Dict, Any
-from app.core.database import get_db_connection_dict
+from app.core.database import get_db_connection_dict_with_retry
 
 
 class ProductMappingRepository:
@@ -35,7 +35,7 @@ class ProductMappingRepository:
         Returns:
             List of variant mappings with product details
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -77,7 +77,7 @@ class ProductMappingRepository:
         Returns:
             Variant mapping or None if not found
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -119,7 +119,7 @@ class ProductMappingRepository:
         Returns:
             List of consolidated inventory records
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -178,7 +178,7 @@ class ProductMappingRepository:
         Returns:
             List of product family records
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -251,7 +251,7 @@ class ProductMappingRepository:
         Returns:
             Result dict with success status and variant_id
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -310,7 +310,7 @@ class ProductMappingRepository:
         Returns:
             Result dict with success status
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -353,7 +353,7 @@ class ProductMappingRepository:
         Returns:
             List of channel equivalent records
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -401,7 +401,7 @@ class ProductMappingRepository:
         Returns:
             Channel equivalent or None if not found
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -467,7 +467,7 @@ class ProductMappingRepository:
         Returns:
             Result dict with success status and equivalent_id
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -526,7 +526,7 @@ class ProductMappingRepository:
         Returns:
             Result dict with success status
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -578,7 +578,7 @@ class ProductMappingRepository:
         Returns:
             List of potential variant products
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:
@@ -623,7 +623,7 @@ class ProductMappingRepository:
         Returns:
             List of potential equivalent products
         """
-        conn = get_db_connection_dict()
+        conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         try:

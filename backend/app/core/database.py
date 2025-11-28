@@ -86,7 +86,7 @@ def get_db_connection():
     if not database_url:
         raise Exception("DATABASE_URL not configured")
 
-    return psycopg2.connect(database_url)
+    return psycopg2.connect(database_url, connect_timeout=CONNECTION_TIMEOUT)
 
 
 def get_db_connection_dict():
@@ -113,7 +113,7 @@ def get_db_connection_dict():
     if not database_url:
         raise Exception("DATABASE_URL not configured")
 
-    return psycopg2.connect(database_url, cursor_factory=RealDictCursor)
+    return psycopg2.connect(database_url, cursor_factory=RealDictCursor, connect_timeout=CONNECTION_TIMEOUT)
 
 
 # ============================================================================
@@ -142,8 +142,12 @@ def get_supabase():
 
 import time
 import logging
+import traceback
 
 logger = logging.getLogger(__name__)
+
+# Connection timeout in seconds - prevents hanging on Supabase cold starts
+CONNECTION_TIMEOUT = 10
 
 
 def get_db_connection_with_retry(max_retries=3, retry_delay=1.0):
@@ -180,10 +184,14 @@ def get_db_connection_with_retry(max_retries=3, retry_delay=1.0):
 
     last_error = None
 
+    # Log caller for debugging
+    caller = traceback.extract_stack()[-2]
+    caller_info = f"{caller.filename.split('/')[-1]}:{caller.lineno}"
+
     for attempt in range(1, max_retries + 1):
         try:
-            logger.debug(f"Database connection attempt {attempt}/{max_retries}")
-            conn = psycopg2.connect(database_url)
+            logger.debug(f"Database connection attempt {attempt}/{max_retries} from {caller_info}")
+            conn = psycopg2.connect(database_url, connect_timeout=CONNECTION_TIMEOUT)
 
             # Test connection with a simple query
             cursor = conn.cursor()
@@ -250,10 +258,14 @@ def get_db_connection_dict_with_retry(max_retries=3, retry_delay=1.0):
 
     last_error = None
 
+    # Log caller for debugging
+    caller = traceback.extract_stack()[-2]
+    caller_info = f"{caller.filename.split('/')[-1]}:{caller.lineno}"
+
     for attempt in range(1, max_retries + 1):
         try:
-            logger.debug(f"Database connection (dict) attempt {attempt}/{max_retries}")
-            conn = psycopg2.connect(database_url, cursor_factory=RealDictCursor)
+            logger.debug(f"Database connection (dict) attempt {attempt}/{max_retries} from {caller_info}")
+            conn = psycopg2.connect(database_url, cursor_factory=RealDictCursor, connect_timeout=CONNECTION_TIMEOUT)
 
             # Test connection with a simple query
             cursor = conn.cursor()

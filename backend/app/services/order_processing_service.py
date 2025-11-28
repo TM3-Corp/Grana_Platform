@@ -13,6 +13,7 @@ from psycopg2.extras import RealDictCursor
 from decimal import Decimal
 
 from app.services.conversion_service import ConversionService
+from app.core.database import get_db_connection_with_retry
 
 
 class OrderProcessingService:
@@ -32,8 +33,8 @@ class OrderProcessingService:
         self.conversion_service = ConversionService(db_connection_string)
 
     def get_db_connection(self):
-        """Get database connection"""
-        return psycopg2.connect(self.db_connection_string)
+        """Get database connection with retry logic for resilience"""
+        return get_db_connection_with_retry()
 
     def find_or_create_customer(self, customer_data: Dict, conn=None) -> int:
         """
