@@ -230,6 +230,30 @@ class SyncService:
             logger.error(f"Error fetching lots for product {product_id}: {e}")
             return []
 
+    def _fetch_relbase_customer(self, customer_id: int) -> Optional[Dict]:
+        """
+        Fetch customer details from RelBase API
+
+        Args:
+            customer_id: RelBase customer ID
+
+        Returns:
+            Customer data dict or None if not found
+        """
+        url = f"{self.relbase_base_url}/api/v1/clientes/{customer_id}"
+        headers = self._get_relbase_headers()
+
+        try:
+            response = requests.get(url, headers=headers, timeout=30)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            if hasattr(e, 'response') and getattr(e.response, 'status_code', None) == 404:
+                logger.warning(f"Customer {customer_id} not found in RelBase")
+                return None
+            logger.error(f"Error fetching customer {customer_id}: {e}")
+            return None
+
     # =========================================================================
     # MercadoLibre API Methods
     # =========================================================================
@@ -430,6 +454,7 @@ class SyncService:
                                     channel_id = channel_result[0]
 
                             # Map RelBase customer_id to internal customer via external_id
+                            # If not found, fetch from API and create
                             customer_id = None
                             if customer_id_relbase:
                                 cursor.execute("""
@@ -439,6 +464,29 @@ class SyncService:
                                 customer_result = cursor.fetchone()
                                 if customer_result:
                                     customer_id = customer_result[0]
+                                else:
+                                    # Customer not found - fetch from RelBase API and create
+                                    try:
+                                        customer_response = self._fetch_relbase_customer(customer_id_relbase)
+                                        if customer_response:
+                                            cust_data = customer_response.get('data', {})
+                                            cursor.execute("""
+                                                INSERT INTO customers
+                                                (external_id, source, name, rut, email, phone, address, created_at)
+                                                VALUES (%s, 'relbase', %s, %s, %s, %s, %s, NOW())
+                                                RETURNING id
+                                            """, (
+                                                str(customer_id_relbase),
+                                                cust_data.get('name', f'Customer {customer_id_relbase}'),
+                                                cust_data.get('rut', ''),
+                                                cust_data.get('email', ''),
+                                                cust_data.get('phone', ''),
+                                                cust_data.get('address', '')
+                                            ))
+                                            customer_id = cursor.fetchone()[0]
+                                            logger.info(f"Created new customer: {cust_data.get('name')} (ID: {customer_id})")
+                                    except Exception as e:
+                                        logger.warning(f"Could not create customer {customer_id_relbase}: {e}")
 
                             # Create order
                             cursor.execute("""
