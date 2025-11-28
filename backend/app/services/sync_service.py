@@ -578,6 +578,17 @@ class SyncService:
             # Commit changes
             conn.commit()
 
+            # Refresh materialized view for sales analytics (if orders were created)
+            if orders_created > 0:
+                try:
+                    logger.info("Refreshing sales_facts_mv materialized view...")
+                    cursor.execute("REFRESH MATERIALIZED VIEW sales_facts_mv")
+                    conn.commit()
+                    logger.info("Materialized view refreshed successfully")
+                except Exception as mv_error:
+                    logger.warning(f"Could not refresh materialized view: {mv_error}")
+                    # Don't fail the whole sync if MV refresh fails
+
             # Log sync
             cursor.execute("""
                 INSERT INTO sync_logs
