@@ -1,17 +1,23 @@
 """
 Sync API - Scheduled data synchronization endpoints
-Designed to be called by UptimeRobot or similar services
+Designed to be called by cron-job.org or similar services
 
 Endpoints:
-- GET  /api/v1/sync/status     - Get last sync status
-- POST /api/v1/sync/sales      - Sync orders from RelBase
-- POST /api/v1/sync/inventory  - Sync inventory from RelBase + ML
-- POST /api/v1/sync/all        - Run all syncs (for UptimeRobot)
+- GET  /api/v1/sync/status     - Get last sync status (public)
+- GET  /api/v1/sync/health     - Health check (public)
+- POST /api/v1/sync/sales      - Sync orders from RelBase (requires API key)
+- POST /api/v1/sync/inventory  - Sync inventory from RelBase + ML (requires API key)
+- POST /api/v1/sync/all        - Run all syncs (requires API key)
+
+Security:
+- POST endpoints require X-Sync-Key header with valid SYNC_API_KEY
+- GET endpoints are public (read-only, no sensitive data)
 
 Author: Claude Code
 Date: 2025-11-28
+Updated: 2025-12-01 - Added API key authentication
 """
-from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Query, BackgroundTasks, Header, Depends
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
@@ -25,6 +31,40 @@ router = APIRouter(prefix="/api/v1/sync", tags=["Sync"])
 
 # Initialize sync service
 sync_service = SyncService()
+
+# API Key for sync endpoints (set in environment variables)
+SYNC_API_KEY = os.getenv("SYNC_API_KEY")
+
+
+# ============================================================================
+# Security - API Key Verification
+# ============================================================================
+
+async def verify_sync_key(x_sync_key: str = Header(None, alias="X-Sync-Key")):
+    """
+    Verify the sync API key from X-Sync-Key header.
+
+    If SYNC_API_KEY is not configured, allows all requests (backward compatibility).
+    If configured, requires matching key.
+    """
+    if not SYNC_API_KEY:
+        # No key configured - log warning but allow (for development/backward compatibility)
+        logger.warning("SYNC_API_KEY not configured - sync endpoints are unprotected!")
+        return
+
+    if not x_sync_key:
+        logger.warning("Sync request without X-Sync-Key header")
+        raise HTTPException(
+            status_code=401,
+            detail="Missing X-Sync-Key header. Authentication required."
+        )
+
+    if x_sync_key != SYNC_API_KEY:
+        logger.warning(f"Invalid sync key attempt")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid API key"
+        )
 
 
 # ============================================================================
@@ -97,7 +137,7 @@ async def get_sync_status():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/sales", response_model=SalesSyncResponse)
+@router.post("/sales", response_model=SalesSyncResponse, dependencies=[Depends(verify_sync_key)])
 async def sync_sales(
     days_back: int = Query(default=7, ge=1, le=365, description="Days to look back for missing data"),
     force_full: bool = Query(default=False, description="Force full sync instead of incremental")
@@ -137,7 +177,7 @@ async def sync_sales(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/inventory", response_model=InventorySyncResponse)
+@router.post("/inventory", response_model=InventorySyncResponse, dependencies=[Depends(verify_sync_key)])
 async def sync_inventory():
     """
     Sync inventory from RelBase and MercadoLibre
@@ -165,7 +205,7 @@ async def sync_inventory():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/all", response_model=FullSyncResponse)
+@router.post("/all", response_model=FullSyncResponse, dependencies=[Depends(verify_sync_key)])
 async def sync_all(
     background_tasks: BackgroundTasks,
     days_back: int = Query(default=3, ge=1, le=30, description="Days to look back for sales"),
