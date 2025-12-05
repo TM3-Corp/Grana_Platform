@@ -315,7 +315,9 @@ class SyncService:
     async def sync_sales_from_relbase(
         self,
         days_back: int = 7,
-        force_full: bool = False
+        force_full: bool = False,
+        date_from_override: Optional[str] = None,
+        date_to_override: Optional[str] = None
     ) -> SalesSyncResult:
         """
         Sync sales orders from RelBase
@@ -329,6 +331,8 @@ class SyncService:
         Args:
             days_back: How many days to look back for gaps
             force_full: If True, sync all data regardless of last date
+            date_from_override: Override start date (YYYY-MM-DD format)
+            date_to_override: Override end date (YYYY-MM-DD format)
 
         Returns:
             SalesSyncResult with statistics
@@ -344,9 +348,15 @@ class SyncService:
 
         try:
             # Determine date range
-            if force_full:
+            if date_from_override and date_to_override:
+                # Use explicit date range override
+                date_from = date_from_override
+                date_to = date_to_override
+                logger.info(f"Using explicit date range override: {date_from} to {date_to}")
+            elif force_full:
                 # Sync from beginning of year
                 date_from = datetime(datetime.now().year, 1, 1).strftime('%Y-%m-%d')
+                date_to = datetime.now().strftime('%Y-%m-%d')
             else:
                 # Get last order date or use days_back
                 cursor.execute("""
@@ -361,7 +371,7 @@ class SyncService:
                     # No orders yet, sync last 30 days
                     date_from = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
 
-            date_to = datetime.now().strftime('%Y-%m-%d')
+                date_to = datetime.now().strftime('%Y-%m-%d')
 
             logger.info(f"Syncing RelBase DTEs from {date_from} to {date_to}")
 
@@ -509,7 +519,7 @@ class SyncService:
                                 sii_status,  # Use SII status from RelBase API
                                 order_date,
                                 folio,
-                                'invoice' if dte_data.get('type_document') == 33 else 'boleta',
+                                'factura' if dte_data.get('type_document') == 33 else 'boleta',
                                 order_date,
                                 json.dumps({
                                     'relbase_id': dte_id,
@@ -522,6 +532,11 @@ class SyncService:
                             orders_created += 1
 
                             # Create order items
+                            # NOTE: We store the raw product_code from RelBase.
+                            # SKU mapping to official catalog is done at display time by
+                            # audit.py's map_sku_with_quantity() function using ProductCatalogService.
+                            # This approach uses 13 smart rules (exact match, ANU- prefix, _WEB suffix, etc.)
+                            # instead of the legacy relbase_product_mappings table.
                             products = dte_data.get('products', [])
                             for product in products:
                                 product_code = product.get('code', '')
@@ -530,21 +545,6 @@ class SyncService:
                                 price = float(product.get('price', 0))
                                 subtotal = quantity * price
 
-                                # Try to map to official product
-                                cursor.execute("""
-                                    SELECT official_sku FROM relbase_product_mappings
-                                    WHERE relbase_code = %s
-                                """, (product_code,))
-                                mapping = cursor.fetchone()
-                                official_sku = mapping[0] if mapping else None
-
-                                # Get product_id if mapped
-                                product_id = None
-                                if official_sku:
-                                    cursor.execute("SELECT id FROM products WHERE sku = %s", (official_sku,))
-                                    product_result = cursor.fetchone()
-                                    product_id = product_result[0] if product_result else None
-
                                 cursor.execute("""
                                     INSERT INTO order_items
                                     (order_id, product_id, product_sku, product_name,
@@ -552,8 +552,8 @@ class SyncService:
                                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
                                 """, (
                                     order_id,
-                                    product_id,
-                                    official_sku or product_code,
+                                    None,  # product_id not used - mapping done at display time
+                                    product_code,  # Store raw RelBase code
                                     product_name,
                                     quantity,
                                     price,

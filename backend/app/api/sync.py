@@ -140,7 +140,9 @@ async def get_sync_status():
 @router.post("/sales", response_model=SalesSyncResponse, dependencies=[Depends(verify_sync_key)])
 async def sync_sales(
     days_back: int = Query(default=7, ge=1, le=365, description="Days to look back for missing data"),
-    force_full: bool = Query(default=False, description="Force full sync instead of incremental")
+    force_full: bool = Query(default=False, description="Force full sync instead of incremental"),
+    date_from: Optional[str] = Query(default=None, description="Override start date (YYYY-MM-DD format)"),
+    date_to: Optional[str] = Query(default=None, description="Override end date (YYYY-MM-DD format)")
 ):
     """
     Sync sales orders from RelBase
@@ -154,12 +156,16 @@ async def sync_sales(
     Args:
         days_back: How many days to look back (default 7)
         force_full: If True, sync all data regardless of last date
+        date_from: Override start date (YYYY-MM-DD) for manual backfills
+        date_to: Override end date (YYYY-MM-DD) for manual backfills
     """
     try:
-        logger.info(f"Starting sales sync (days_back={days_back}, force_full={force_full})")
+        logger.info(f"Starting sales sync (days_back={days_back}, force_full={force_full}, date_from={date_from}, date_to={date_to})")
         result = await sync_service.sync_sales_from_relbase(
             days_back=days_back,
-            force_full=force_full
+            force_full=force_full,
+            date_from_override=date_from,
+            date_to_override=date_to
         )
         # Convert dataclass to Pydantic model
         return SalesSyncResponse(
