@@ -171,10 +171,12 @@ class SyncService:
         """
         url = f"{self.relbase_base_url}/api/v1/dtes"
         headers = self._get_relbase_headers()
+        # IMPORTANT: RelBase API uses 'start_date' and 'end_date' parameters
+        # NOT 'date_from' and 'date_to' (which are silently ignored!)
         params = {
             'type_document': doc_type,
-            'date_from': date_from,
-            'date_to': date_to,
+            'start_date': date_from,  # Correct param name for RelBase API
+            'end_date': date_to,      # Correct param name for RelBase API
             'page': page,
             'per_page': 100
         }
@@ -568,7 +570,8 @@ class SyncService:
                             continue
 
                     # Check for more pages
-                    pagination = dte_response.get('data', {}).get('pagination', {})
+                    # NOTE: RelBase API returns pagination info in 'meta', not 'data.pagination'
+                    pagination = dte_response.get('meta', {})
                     if page >= pagination.get('total_pages', 1):
                         break
 
