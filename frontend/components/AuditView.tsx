@@ -2,6 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
+import { StatCardsGridSkeleton, TableSkeleton, FiltersSkeleton } from '@/components/ui/Skeleton';
+import MultiSelect from '@/components/ui/MultiSelect';
+import { cn, formatCurrency, formatNumber, toTitleCase } from '@/lib/utils';
 
 interface AuditData {
   order_id: number;
@@ -26,6 +29,8 @@ interface AuditData {
   quantity: number;
   unidades?: number;
   conversion_factor?: number;
+  peso_display_total?: number;  // Weight per display/unit (kg)
+  peso_total?: number;          // Total weight for this order item (kg)
   unit_price: number;
   item_subtotal: number;
   category: string;  // Backend still uses 'category', maps to Familia (BARRAS, CRACKERS, etc)
@@ -63,9 +68,10 @@ interface Filters {
 }
 
 interface FilteredTotals {
-  total_pedidos: number;
-  total_unidades: number;
-  total_revenue: number;
+  total_pedidos?: number;
+  total_unidades?: number;
+  total_peso?: number;
+  total_revenue?: number;
 }
 
 export default function AuditView() {
@@ -222,7 +228,13 @@ export default function AuditView() {
         'category': 'category',
         'channel_name': 'channel_name',
         'order_date': 'order_date',
-        'order_month': 'order_month'  // ✅ Group by year-month
+        'order_month': 'order_month',  // ✅ Group by year-month
+        // Additional OLAP-supported group fields
+        'sku': 'sku',  // ✅ SKU Original - SQL aggregation
+        'order_external_id': 'order_external_id',  // ✅ Pedido - SQL aggregation
+        'order_source': 'order_source',  // ✅ Fuente - SQL aggregation
+        'family': 'family',  // ✅ Producto - SQL aggregation
+        'format': 'format'  // ✅ Formato - SQL aggregation
       };
 
       // Only add group_by param if backend supports this groupBy value
@@ -538,14 +550,17 @@ export default function AuditView() {
   const totalPages = Math.ceil(totalCount / pageSize);
 
   // Use filtered totals from API (all filtered data) instead of current page totals
+  // Add defensive defaults (|| 0) in case API doesn't return all fields
   const overallTotals = filteredTotals ? {
-    totalPedidos: filteredTotals.total_pedidos,
-    totalUnidades: filteredTotals.total_unidades,
-    totalRevenue: filteredTotals.total_revenue,
+    totalPedidos: filteredTotals.total_pedidos || 0,
+    totalUnidades: filteredTotals.total_unidades || 0,
+    totalPeso: filteredTotals.total_peso || 0,
+    totalRevenue: filteredTotals.total_revenue || 0,
   } : {
     // Fallback to page totals if API summary not available yet
     totalPedidos: new Set(data.map(item => item.order_external_id)).size,
     totalUnidades: data.reduce((sum, item) => sum + (item.unidades || 0), 0),
+    totalPeso: data.reduce((sum, item) => sum + (item.peso_total || 0), 0),
     totalRevenue: data.reduce((sum, item) => sum + (item.item_subtotal || 0), 0),
   };
 
@@ -592,11 +607,33 @@ export default function AuditView() {
         </div>
       )}
 
-      {/* Summary Cards */}
-      {!loading && data.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+      {/* Summary Cards - Always visible, with loading skeleton */}
+      {loading ? (
+        <StatCardsGridSkeleton count={4} />
+      ) : data.length === 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+          {[
+            { label: 'Total Pedidos', icon: '📦', gradient: 'from-blue-500 to-blue-600' },
+            { label: 'Total Unidades', icon: '📊', gradient: 'from-green-500 to-green-600' },
+            { label: 'Peso Total', icon: '⚖️', gradient: 'from-orange-500 to-orange-600' },
+            { label: 'Total Ingresos', icon: '💰', gradient: 'from-purple-500 to-purple-600' },
+          ].map((card, i) => (
+            <div key={i} className={cn('bg-gradient-to-br rounded-xl shadow-lg p-6 text-white opacity-60', card.gradient)}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-white/70 text-sm font-medium uppercase tracking-wide">{card.label}</p>
+                  <p className="text-4xl font-bold mt-2">--</p>
+                  <p className="text-white/50 text-xs mt-1">Sin datos</p>
+                </div>
+                <div className="text-5xl opacity-20">{card.icon}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
           {/* Total Pedidos */}
-          <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 text-white">
+          <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg p-6 text-white transform hover:scale-[1.02] transition-all duration-200">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-blue-100 text-sm font-medium uppercase tracking-wide">Total Pedidos</p>
@@ -612,7 +649,7 @@ export default function AuditView() {
           </div>
 
           {/* Total Unidades */}
-          <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-lg shadow-lg p-6 text-white">
+          <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-lg p-6 text-white transform hover:scale-[1.02] transition-all duration-200">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-green-100 text-sm font-medium uppercase tracking-wide">Total Unidades</p>
@@ -627,8 +664,24 @@ export default function AuditView() {
             </div>
           </div>
 
+          {/* Total Peso */}
+          <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl shadow-lg p-6 text-white transform hover:scale-[1.02] transition-all duration-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-orange-100 text-sm font-medium uppercase tracking-wide">Peso Total</p>
+                <p className="text-4xl font-bold mt-2">{overallTotals.totalPeso.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg</p>
+                <p className="text-orange-100 text-xs mt-1">
+                  {filteredTotals ? 'Todas las páginas' : 'En esta página'}
+                </p>
+              </div>
+              <div className="text-5xl opacity-20">
+                ⚖️
+              </div>
+            </div>
+          </div>
+
           {/* Total Revenue */}
-          <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-lg p-6 text-white">
+          <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl shadow-lg p-6 text-white transform hover:scale-[1.02] transition-all duration-200">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-purple-100 text-sm font-medium uppercase tracking-wide">Total Ingresos</p>
@@ -665,13 +718,26 @@ export default function AuditView() {
       )}
 
       {/* Filters */}
-      <div className="bg-white rounded-lg shadow p-6 mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Filtros</h2>
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-gray-100 rounded-lg">
+              <svg className="w-5 h-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Filtros</h2>
+              <p className="text-xs text-gray-500">Refina tu búsqueda para obtener resultados específicos</p>
+            </div>
+          </div>
           <button
             onClick={clearFilters}
-            className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
           >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
             Limpiar filtros
           </button>
         </div>
@@ -777,93 +843,63 @@ export default function AuditView() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-          {/* Channel Filter */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Canal <span className="text-xs text-gray-500">(Ctrl/Cmd + click)</span>
-              </label>
-              {selectedChannel.length > 0 && (
-                <button
-                  onClick={() => { setSelectedChannel([]); setCurrentPage(1); }}
-                  className="text-xs text-blue-600 hover:text-blue-800 underline"
-                >
-                  Todos
-                </button>
-              )}
-            </div>
-            <select
-              multiple
-              value={selectedChannel}
-              onChange={(e) => {
-                const options = Array.from(e.target.selectedOptions, option => option.value);
-                setSelectedChannel(options);
-                setCurrentPage(1);
-              }}
-              size={5}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {filters.channels.map((channel) => (
-                <option key={channel} value={channel}>{channel}</option>
-              ))}
-            </select>
-            {selectedChannel.length > 0 && (
-              <div className="mt-1 text-xs text-blue-600">
-                {selectedChannel.length} seleccionado{selectedChannel.length > 1 ? 's' : ''}
-              </div>
-            )}
-          </div>
+          {/* Channel Filter - Modern MultiSelect */}
+          <MultiSelect
+            label="Canal"
+            options={filters.channels}
+            selected={selectedChannel}
+            onChange={(values) => { setSelectedChannel(values); setCurrentPage(1); }}
+            placeholder="Seleccionar canales..."
+            searchable={true}
+            maxHeight="200px"
+          />
 
-          {/* Customer Filter */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Cliente <span className="text-xs text-gray-500">(Ctrl/Cmd + click)</span>
-              </label>
-              {selectedCustomer.length > 0 && (
-                <button
-                  onClick={() => { setSelectedCustomer([]); setCurrentPage(1); }}
-                  className="text-xs text-blue-600 hover:text-blue-800 underline"
-                >
-                  Todos
-                </button>
-              )}
-            </div>
-            <select
-              multiple
-              value={selectedCustomer}
-              onChange={(e) => {
-                const options = Array.from(e.target.selectedOptions, option => option.value);
-                setSelectedCustomer(options);
-                setCurrentPage(1);
-              }}
-              size={5}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {filters.customers.map((customer) => (
-                <option key={customer} value={customer}>{customer}</option>
-              ))}
-            </select>
-            {selectedCustomer.length > 0 && (
-              <div className="mt-1 text-xs text-blue-600">
-                {selectedCustomer.length} seleccionado{selectedCustomer.length > 1 ? 's' : ''}
-              </div>
-            )}
-          </div>
+          {/* Customer Filter - Modern MultiSelect */}
+          <MultiSelect
+            label="Cliente"
+            options={filters.customers}
+            selected={selectedCustomer}
+            onChange={(values) => { setSelectedCustomer(values); setCurrentPage(1); }}
+            placeholder="Seleccionar clientes..."
+            searchable={true}
+            maxHeight="250px"
+          />
 
           {/* Multi-field Search */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Búsqueda Global</label>
-            <input
-              type="text"
-              value={skuSearchInput}
-              onChange={(e) => setSkuSearchInput(e.target.value)}
-              placeholder="Cliente, Producto, Pedido, Canal, SKU..."
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Búsqueda Global</label>
+            <div className="relative">
+              <svg
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text"
+                value={skuSearchInput}
+                onChange={(e) => setSkuSearchInput(e.target.value)}
+                placeholder="Cliente, Producto, Pedido, Canal, SKU..."
+                className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+              />
+              {skuSearchInput && (
+                <button
+                  type="button"
+                  onClick={() => setSkuSearchInput('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
             {skuSearchInput && (
-              <div className="mt-1 text-xs text-gray-500">
-                Buscando: "{skuSearchInput}" en Cliente, Producto, Pedido, Canal, SKU
+              <div className="mt-1.5 text-xs text-gray-500 flex items-center gap-1">
+                <span className="inline-block w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
+                Buscando: "{skuSearchInput}"
               </div>
             )}
           </div>
@@ -1169,19 +1205,55 @@ export default function AuditView() {
       </div>
 
       {/* Data Table */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
           {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="text-gray-600">Cargando datos...</div>
+            <div className="p-6">
+              <div className="flex items-center justify-center gap-3 py-8">
+                <div className="relative">
+                  <div className="w-10 h-10 border-4 border-gray-200 rounded-full"></div>
+                  <div className="w-10 h-10 border-4 border-green-500 rounded-full animate-spin border-t-transparent absolute top-0 left-0"></div>
+                </div>
+                <div className="text-gray-600">
+                  <p className="font-medium">Cargando datos...</p>
+                  <p className="text-xs text-gray-400">Esto puede tomar unos segundos</p>
+                </div>
+              </div>
+              <TableSkeleton rows={5} columns={8} />
             </div>
           ) : error ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="text-red-600">Error: {error}</div>
+            <div className="flex flex-col items-center justify-center py-16 px-4">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                <svg className="w-8 h-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <p className="text-red-600 font-medium text-lg">Error al cargar datos</p>
+              <p className="text-gray-500 text-sm mt-1">{error}</p>
+              <button
+                onClick={() => window.location.reload()}
+                className="mt-4 px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors text-sm font-medium"
+              >
+                Reintentar
+              </button>
             </div>
           ) : data.length === 0 ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="text-gray-600">No se encontraron datos con los filtros seleccionados</div>
+            <div className="flex flex-col items-center justify-center py-16 px-4">
+              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <p className="text-gray-700 font-medium text-lg">Sin resultados</p>
+              <p className="text-gray-500 text-sm mt-1 text-center max-w-md">
+                No se encontraron datos con los filtros seleccionados. Intenta ajustar tus criterios de búsqueda.
+              </p>
+              <button
+                onClick={clearFilters}
+                className="mt-4 px-4 py-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-colors text-sm font-medium"
+              >
+                Limpiar filtros
+              </button>
             </div>
           ) : (
             <>
@@ -1269,7 +1341,7 @@ export default function AuditView() {
                                   </span>
                                 )}
                               </div>
-                              <table className="min-w-full divide-y divide-gray-200">
+                              <table className="min-w-full divide-y divide-gray-200 text-xs">
                                 <thead className="bg-gray-50">
                                   <tr>
                                     {[
@@ -1277,18 +1349,19 @@ export default function AuditView() {
                                       { label: 'Fecha', field: 'order_date' },
                                       { label: 'Cliente', field: 'customer_name' },
                                       { label: 'Canal', field: 'channel_name' },
-                                      { label: 'SKU Original', field: 'sku' },
-                                      { label: 'SKU Primario', field: 'sku_primario' },
+                                      { label: 'SKU', field: 'sku' },
+                                      { label: 'Primario', field: 'sku_primario' },
                                       { label: 'Familia', field: 'category' },
                                       { label: 'Producto', field: 'product_name' },
-                                      { label: 'Cantidad', field: 'quantity' },
-                                      { label: 'Unidades', field: 'unidades' },
+                                      { label: 'Cant.', field: 'quantity' },
+                                      { label: 'Uds.', field: 'unidades' },
+                                      { label: 'Peso', field: 'peso_total' },
                                       { label: 'Precio', field: 'unit_price' },
                                       { label: 'Total', field: 'item_subtotal' },
                                     ].map(({ label, field }) => (
                                       <th
                                         key={field}
-                                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                                        className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-tight"
                                       >
                                         {label}
                                       </th>
@@ -1298,67 +1371,61 @@ export default function AuditView() {
                                 <tbody className="bg-white divide-y divide-gray-200">
                                   {expandedGroupDetails[groupKey].map((item, idx) => (
                                     <tr key={`${item.item_id}-${idx}`} className="hover:bg-gray-50">
-                                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                                        {item.order_external_id}
-                                        <div className="text-xs text-gray-500">{item.order_source}</div>
+                                      <td className="px-2 py-2 text-xs text-gray-900">
+                                        <div className="font-medium">{item.order_external_id}</div>
+                                        <div className="text-gray-500">{item.order_source}</div>
                                       </td>
-                                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
+                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600">
                                         {new Date(item.order_date).toLocaleDateString('es-CL')}
                                       </td>
-                                      <td className="px-4 py-3 text-sm">
-                                        <div className={item.customer_null ? 'text-red-600 font-medium' : 'text-gray-900'}>
-                                          {item.customer_name}
+                                      <td className="px-2 py-2 text-xs max-w-24">
+                                        <div className={`break-words leading-tight ${item.customer_null ? 'text-red-600 font-medium' : 'text-gray-900'}`}>
+                                          {toTitleCase(item.customer_name)}
                                         </div>
-                                        <div className="text-xs text-gray-500">{item.customer_rut}</div>
+                                        <div className="text-gray-500 truncate">{item.customer_rut}</div>
                                       </td>
-                                      <td className="px-4 py-3 text-sm">
-                                        <div className={item.channel_null ? 'text-red-600 font-medium' : 'text-gray-900'}>
-                                          {item.channel_name}
+                                      <td className="px-2 py-2 text-xs max-w-20">
+                                        <div className={`break-words ${item.channel_null ? 'text-red-600 font-medium' : 'text-gray-900'}`}>
+                                          {toTitleCase(item.channel_name)}
                                         </div>
-                                        <div className="text-xs text-gray-500">{item.channel_source}</div>
                                       </td>
-                                      <td className="px-4 py-3 text-sm max-w-32">
-                                        <div className={`break-words ${item.sku_null ? 'text-red-600 font-medium' : 'text-gray-900'}`}>
+                                      <td className="px-2 py-2 text-xs max-w-24">
+                                        <div className={`break-all font-mono ${item.sku_null ? 'text-red-600 font-medium' : 'text-gray-900'}`}>
                                           {item.sku || 'SIN SKU'}
                                         </div>
                                       </td>
-                                      <td className="px-4 py-3 text-sm">
-                                        <div className="text-blue-600 font-mono text-xs break-words">
+                                      <td className="px-2 py-2 text-xs max-w-24">
+                                        <div className="text-blue-600 font-mono break-all">
                                           {item.sku_primario || '-'}
                                         </div>
-                                        {item.sku_primario_name && (
-                                          <div className="text-gray-700 text-xs mt-1 font-normal">
-                                            {item.sku_primario_name}
-                                          </div>
-                                        )}
                                       </td>
-                                      <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                      <td className="px-2 py-2 text-xs">
                                         <span className="font-medium text-gray-900">
                                           {item.category || '-'}
                                         </span>
                                       </td>
-                                      <td className="px-4 py-3 text-sm text-gray-900 max-w-48">
-                                        <div className="break-words">
-                                          {item.product_name ? item.product_name.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : '-'}
+                                      <td className="px-2 py-2 text-xs text-gray-900 max-w-32">
+                                        <div className="break-words leading-tight">
+                                          {toTitleCase(item.product_name) || '-'}
                                         </div>
                                       </td>
-                                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-900 text-right">
                                         {item.quantity}
                                       </td>
-                                      <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-right">
                                         <span className="font-semibold text-green-600">
                                           {item.unidades ? item.unidades.toLocaleString('es-CL') : '-'}
                                         </span>
-                                        {item.conversion_factor && item.conversion_factor > 1 && (
-                                          <div className="text-xs text-gray-500">
-                                            (×{item.conversion_factor})
-                                          </div>
-                                        )}
                                       </td>
-                                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-right">
+                                        <span className="font-semibold text-purple-600">
+                                          {item.peso_total ? item.peso_total.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
+                                        </span>
+                                      </td>
+                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-900 text-right">
                                         ${item.unit_price ? item.unit_price.toLocaleString('es-CL') : '0'}
                                       </td>
-                                      <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-right">
                                         <span className="font-semibold text-blue-600">
                                           ${item.item_subtotal ? item.item_subtotal.toLocaleString('es-CL') : '0'}
                                         </span>
@@ -1378,7 +1445,7 @@ export default function AuditView() {
 
                       {/* DETAIL MODE: Show regular table */}
                       {!isAggregatedMode && (
-                  <table className="min-w-full divide-y divide-gray-200">
+                  <table className="min-w-full divide-y divide-gray-200 text-xs">
                     <thead className="bg-gray-50">
                       <tr>
                         {/* Sortable Column Helper */}
@@ -1387,23 +1454,24 @@ export default function AuditView() {
                           { label: 'Fecha', field: 'order_date' },
                           { label: 'Cliente', field: 'customer_name' },
                           { label: 'Canal', field: 'channel_name' },
-                          { label: 'SKU Original', field: 'sku' },
-                          { label: 'SKU Primario', field: 'sku_primario' },
+                          { label: 'SKU', field: 'sku' },
+                          { label: 'Primario', field: 'sku_primario' },
                           { label: 'Familia', field: 'category' },
                           { label: 'Producto', field: 'product_name' },
-                          { label: 'Cantidad', field: 'quantity' },
-                          { label: 'Unidades', field: 'unidades' },
+                          { label: 'Cant.', field: 'quantity' },
+                          { label: 'Uds.', field: 'unidades' },
+                          { label: 'Peso', field: 'peso_total' },
                           { label: 'Precio', field: 'unit_price' },
                           { label: 'Total', field: 'item_subtotal' },
                         ].map(({ label, field }) => (
                           <th
                             key={field}
                             onClick={() => handleSort(field)}
-                            className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                            className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-tight cursor-pointer hover:bg-gray-100 select-none"
                           >
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1">
                               {label}
-                              <span className="text-gray-400">
+                              <span className="text-gray-400 text-xs">
                                 {sortColumn === field ? (
                                   sortDirection === 'asc' ? '▲' : '▼'
                                 ) : (
@@ -1418,67 +1486,61 @@ export default function AuditView() {
                     <tbody className="bg-white divide-y divide-gray-200">
                       {groupItems.map((item, idx) => (
                         <tr key={`${item.item_id}-${idx}`} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                            {item.order_external_id}
-                            <div className="text-xs text-gray-500">{item.order_source}</div>
+                          <td className="px-2 py-2 text-xs text-gray-900">
+                            <div className="font-medium">{item.order_external_id}</div>
+                            <div className="text-gray-500">{item.order_source}</div>
                           </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
+                          <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600">
                             {new Date(item.order_date).toLocaleDateString('es-CL')}
                           </td>
-                          <td className="px-4 py-3 text-sm">
-                            <div className={item.customer_null ? 'text-red-600 font-medium' : 'text-gray-900'}>
-                              {item.customer_name}
+                          <td className="px-2 py-2 text-xs max-w-24">
+                            <div className={`break-words leading-tight ${item.customer_null ? 'text-red-600 font-medium' : 'text-gray-900'}`}>
+                              {toTitleCase(item.customer_name)}
                             </div>
-                            <div className="text-xs text-gray-500">{item.customer_rut}</div>
+                            <div className="text-gray-500 truncate">{item.customer_rut}</div>
                           </td>
-                          <td className="px-4 py-3 text-sm">
-                            <div className={item.channel_null ? 'text-red-600 font-medium' : 'text-gray-900'}>
-                              {item.channel_name}
+                          <td className="px-2 py-2 text-xs max-w-20">
+                            <div className={`break-words ${item.channel_null ? 'text-red-600 font-medium' : 'text-gray-900'}`}>
+                              {toTitleCase(item.channel_name)}
                             </div>
-                            <div className="text-xs text-gray-500">{item.channel_source}</div>
                           </td>
-                          <td className="px-4 py-3 text-sm max-w-32">
-                            <div className={`break-words ${item.sku_null ? 'text-red-600 font-medium' : 'text-gray-900'}`}>
+                          <td className="px-2 py-2 text-xs max-w-24">
+                            <div className={`break-all font-mono ${item.sku_null ? 'text-red-600 font-medium' : 'text-gray-900'}`}>
                               {item.sku || 'SIN SKU'}
                             </div>
                           </td>
-                          <td className="px-4 py-3 text-sm">
-                            <div className="text-blue-600 font-mono text-xs break-words">
+                          <td className="px-2 py-2 text-xs max-w-24">
+                            <div className="text-blue-600 font-mono break-all">
                               {item.sku_primario || '-'}
                             </div>
-                            {item.sku_primario_name && (
-                              <div className="text-gray-700 text-xs mt-1 font-normal">
-                                {item.sku_primario_name}
-                              </div>
-                            )}
                           </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm">
+                          <td className="px-2 py-2 text-xs">
                             <span className="font-medium text-gray-900">
                               {item.category || '-'}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-sm text-gray-900 max-w-48">
-                            <div className="break-words">
-                              {item.product_name ? item.product_name.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : '-'}
+                          <td className="px-2 py-2 text-xs text-gray-900 max-w-32">
+                            <div className="break-words leading-tight">
+                              {toTitleCase(item.product_name) || '-'}
                             </div>
                           </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                          <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-900 text-right">
                             {item.quantity}
                           </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm">
+                          <td className="px-2 py-2 whitespace-nowrap text-xs text-right">
                             <span className="font-semibold text-green-600">
                               {item.unidades ? item.unidades.toLocaleString('es-CL') : '-'}
                             </span>
-                            {item.conversion_factor && item.conversion_factor > 1 && (
-                              <div className="text-xs text-gray-500">
-                                (×{item.conversion_factor})
-                              </div>
-                            )}
                           </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                          <td className="px-2 py-2 whitespace-nowrap text-xs text-right">
+                            <span className="font-semibold text-purple-600">
+                              {item.peso_total ? item.peso_total.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
+                            </span>
+                          </td>
+                          <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-900 text-right">
                             ${item.unit_price ? item.unit_price.toLocaleString('es-CL') : '0'}
                           </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm">
+                          <td className="px-2 py-2 whitespace-nowrap text-xs text-right">
                             <span className="font-semibold text-blue-600">
                               ${item.item_subtotal ? item.item_subtotal.toLocaleString('es-CL') : '0'}
                             </span>

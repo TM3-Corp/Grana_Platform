@@ -213,6 +213,7 @@ async def get_inventory_general(
 
         # Dynamic query with JSON aggregation for warehouses
         # Two-step aggregation to avoid nested aggregate functions
+        # Now includes sku_value from product_catalog for valuation
         query = f"""
             WITH warehouse_stock_per_product_warehouse AS (
                 -- Step 1: Sum quantities per product-warehouse combination
@@ -248,9 +249,14 @@ async def get_inventory_general(
                 COALESCE(wsa.warehouse_stocks, '{{}}'::json) as warehouses,
                 COALESCE(wsa.stock_total, 0) as stock_total,
                 COALESCE(wsa.lot_count, 0) as lot_count,
-                wsa.last_updated
+                wsa.last_updated,
+                COALESCE(pc.sku_value, 0) as sku_value,
+                COALESCE(wsa.stock_total, 0) * COALESCE(pc.sku_value, 0) as valor,
+                COALESCE(p.min_stock, 0) as min_stock,
+                COALESCE(p.recommended_min_stock, 0) as recommended_min_stock
             FROM products p
             LEFT JOIN warehouse_stock_agg wsa ON wsa.product_id = p.id
+            LEFT JOIN product_catalog pc ON pc.sku = p.sku AND pc.is_active = true
             WHERE {product_where_clause}
               {f"AND wsa.stock_total > 0" if only_with_stock else ""}
             ORDER BY p.category, p.name
@@ -259,17 +265,19 @@ async def get_inventory_general(
         cursor.execute(query, params)
         products = cursor.fetchall()
 
-        # Get summary stats
+        # Get summary stats including total valuation
         cursor.execute("""
             SELECT
                 COUNT(DISTINCT p.id) as total_products,
                 COALESCE(SUM(ws.quantity), 0) as total_stock,
                 COUNT(DISTINCT CASE WHEN ws.quantity > 0 THEN p.id END) as products_with_stock,
                 COUNT(DISTINCT CASE WHEN ws.quantity IS NULL OR ws.quantity = 0 THEN p.id END) as products_without_stock,
-                COUNT(DISTINCT w.id) as active_warehouses
+                COUNT(DISTINCT w.id) as active_warehouses,
+                COALESCE(SUM(ws.quantity * COALESCE(pc.sku_value, 0)), 0) as total_valor
             FROM products p
             LEFT JOIN warehouse_stock ws ON ws.product_id = p.id
             LEFT JOIN warehouses w ON w.id = ws.warehouse_id AND w.is_active = true AND w.source = 'relbase'
+            LEFT JOIN product_catalog pc ON pc.sku = p.sku AND pc.is_active = true
             WHERE p.is_active = true
         """)
 
@@ -404,6 +412,7 @@ async def get_warehouse_inventory(
         where_clause = " AND ".join(where_conditions)
 
         # Get inventory for this warehouse with lot details from view
+        # Now includes sku_value from product_catalog for valuation
         cursor.execute(f"""
             WITH warehouse_total AS (
                 SELECT SUM(quantity) as total
@@ -437,25 +446,32 @@ async def get_warehouse_inventory(
                     WHEN (SELECT SUM(quantity) FROM warehouse_stock_by_lot WHERE sku = v.sku) > 0
                     THEN ROUND((SUM(v.quantity)::numeric / (SELECT SUM(quantity) FROM warehouse_stock_by_lot WHERE sku = v.sku)) * 100, 1)
                     ELSE 0
-                END as percentage_of_product
+                END as percentage_of_product,
+                -- Valuation fields
+                COALESCE(pc.sku_value, 0) as sku_value,
+                SUM(v.quantity) * COALESCE(pc.sku_value, 0) as valor
             FROM warehouse_stock_by_lot v
+            LEFT JOIN product_catalog pc ON pc.sku = v.sku AND pc.is_active = true
             WHERE v.warehouse_code = %s
               AND {where_clause}
-            GROUP BY v.sku, v.product_name, v.category
+            GROUP BY v.sku, v.product_name, v.category, pc.sku_value
             ORDER BY v.category, v.product_name
         """, params)
 
         products = cursor.fetchall()
 
-        # Get summary
+        # Get summary including total valuation
         cursor.execute("""
             SELECT
                 COUNT(DISTINCT ws.product_id) as total_products,
                 COALESCE(SUM(ws.quantity), 0) as total_stock,
                 COUNT(ws.id) as total_lots,
-                MAX(ws.last_updated) as last_updated
+                MAX(ws.last_updated) as last_updated,
+                COALESCE(SUM(ws.quantity * COALESCE(pc.sku_value, 0)), 0) as total_valor
             FROM warehouse_stock ws
             JOIN warehouses w ON w.id = ws.warehouse_id
+            JOIN products p ON p.id = ws.product_id
+            LEFT JOIN product_catalog pc ON pc.sku = p.sku AND pc.is_active = true
             WHERE w.code = %s
               AND w.source = 'relbase'
         """, (warehouse_code,))

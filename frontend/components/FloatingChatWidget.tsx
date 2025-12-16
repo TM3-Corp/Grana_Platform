@@ -197,9 +197,21 @@ export default function FloatingChatWidget() {
 // EMBEDDED VERSION OF CHAT PANEL (without header, for widget use)
 // ============================================================================
 
-import { useState as useStateEmbed, useRef, useEffect as useEffectEmbed } from 'react';
+import { useState as useStateEmbed, useRef, useEffect as useEffectEmbed, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import dynamic from 'next/dynamic';
+
+// Dynamically import ChatChart to avoid SSR issues with Recharts
+const ChatChart = dynamic(() => import('./ChatChart'), { ssr: false });
+import { parseChartDataFromMessage, removeChartDataFromMessage } from './ChatChart';
+
+interface ChartDataType {
+  chart_type?: string;
+  data?: { labels: string[]; datasets: unknown[] };
+  historical_data?: unknown;
+  forecast?: unknown;
+}
 
 interface ChatMessage {
   id: string;
@@ -207,6 +219,7 @@ interface ChatMessage {
   content: string;
   timestamp: Date;
   toolsUsed?: string[];
+  chartData?: ChartDataType[];
   usage?: {
     input_tokens: number;
     output_tokens: number;
@@ -236,6 +249,8 @@ const QUICK_ACTIONS = [
   { label: 'Por Vencer', query: 'Que productos estan por vencer?' },
   { label: 'Stock Critico', query: 'Que productos tienen stock critico?' },
   { label: 'Top Ventas', query: 'Top 10 productos mas vendidos este mes' },
+  { label: '📊 Gráfico', query: 'Muestrame un grafico de barras de ventas por canal en 2025' },
+  { label: '📈 Proyección', query: 'Dame la proyeccion de ventas para 2026 basado en 2025' },
 ];
 
 function InventoryChatPanelEmbedded() {
@@ -288,12 +303,20 @@ function InventoryChatPanelEmbedded() {
       const data: ChatResponse = await response.json();
 
       if (data.success) {
+        // Parse chart data from response
+        const chartData = parseChartDataFromMessage(data.response);
+        // Remove chart JSON from display content for cleaner view
+        const cleanContent = chartData.length > 0
+          ? removeChartDataFromMessage(data.response)
+          : data.response;
+
         const assistantMessage: ChatMessage = {
           id: `assistant-${Date.now()}`,
           role: 'assistant',
-          content: data.response,
+          content: cleanContent,
           timestamp: new Date(),
           toolsUsed: data.tools_used,
+          chartData: chartData.length > 0 ? chartData as ChartDataType[] : undefined,
           usage: data.usage,
         };
         setMessages((prev) => [...prev, assistantMessage]);
@@ -379,7 +402,7 @@ function InventoryChatPanelEmbedded() {
                     </li>
                     <li className="flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
-                      <span><strong>Proyecciones:</strong> Dias de stock disponible</span>
+                      <span><strong>📊 Gráficos:</strong> Visualizaciones de ventas y proyecciones</span>
                     </li>
                   </ul>
                 </div>
@@ -422,36 +445,53 @@ function InventoryChatPanelEmbedded() {
               {message.role === 'user' ? (
                 <div className="text-sm whitespace-pre-wrap">{message.content}</div>
               ) : (
-                <div className="text-sm prose prose-sm max-w-none prose-table:text-xs">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      table: ({ children }) => (
-                        <div className="overflow-x-auto my-2">
-                          <table className="min-w-full border-collapse border border-gray-300 text-xs">
-                            {children}
-                          </table>
-                        </div>
-                      ),
-                      thead: ({ children }) => <thead className="bg-gray-200">{children}</thead>,
-                      th: ({ children }) => (
-                        <th className="border border-gray-300 px-2 py-1 text-left font-semibold text-gray-700">{children}</th>
-                      ),
-                      td: ({ children }) => (
-                        <td className="border border-gray-300 px-2 py-1 text-gray-600">{children}</td>
-                      ),
-                      p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                      strong: ({ children }) => <strong className="font-semibold text-gray-900">{children}</strong>,
-                      ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-0.5">{children}</ul>,
-                      ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-0.5">{children}</ol>,
-                      li: ({ children }) => <li className="text-gray-700">{children}</li>,
-                      code: ({ children }) => (
-                        <code className="bg-gray-200 px-1 py-0.5 rounded text-xs font-mono">{children}</code>
-                      ),
-                    }}
-                  >
-                    {message.content}
-                  </ReactMarkdown>
+                <div className="text-sm">
+                  {/* Render charts first if present */}
+                  {message.chartData && message.chartData.length > 0 && (
+                    <div className="mb-3 space-y-3">
+                      {message.chartData.map((chart, idx) => (
+                        <ChatChart
+                          key={`chart-${message.id}-${idx}`}
+                          data={chart as Parameters<typeof ChatChart>[0]['data']}
+                          compact={true}
+                        />
+                      ))}
+                    </div>
+                  )}
+                  {/* Render text content */}
+                  {message.content && (
+                    <div className="prose prose-sm max-w-none prose-table:text-xs">
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          table: ({ children }) => (
+                            <div className="overflow-x-auto my-2">
+                              <table className="min-w-full border-collapse border border-gray-300 text-xs">
+                                {children}
+                              </table>
+                            </div>
+                          ),
+                          thead: ({ children }) => <thead className="bg-gray-200">{children}</thead>,
+                          th: ({ children }) => (
+                            <th className="border border-gray-300 px-2 py-1 text-left font-semibold text-gray-700">{children}</th>
+                          ),
+                          td: ({ children }) => (
+                            <td className="border border-gray-300 px-2 py-1 text-gray-600">{children}</td>
+                          ),
+                          p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                          strong: ({ children }) => <strong className="font-semibold text-gray-900">{children}</strong>,
+                          ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-0.5">{children}</ul>,
+                          ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-0.5">{children}</ol>,
+                          li: ({ children }) => <li className="text-gray-700">{children}</li>,
+                          code: ({ children }) => (
+                            <code className="bg-gray-200 px-1 py-0.5 rounded text-xs font-mono">{children}</code>
+                          ),
+                        }}
+                      >
+                        {message.content}
+                      </ReactMarkdown>
+                    </div>
+                  )}
                 </div>
               )}
 

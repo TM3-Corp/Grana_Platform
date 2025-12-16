@@ -14,7 +14,7 @@ env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(env_path)
 
 # Import API routers
-from app.api import conversion, shopify, products, orders, mercadolibre, product_mapping, relbase, audit, inventory, sales_analytics, sales_analytics_realtime, admin, warehouses, chat, sync
+from app.api import conversion, shopify, products, orders, mercadolibre, product_mapping, relbase, audit, inventory, sales_analytics, sales_analytics_realtime, admin, warehouses, chat, sync, sku_mappings, analytics
 
 # Import centralized database connection with retry logic
 from app.core.database import get_db_connection_with_retry, CONNECTION_TIMEOUT
@@ -122,6 +122,12 @@ app.include_router(chat.router)
 
 # Sync endpoints (for UptimeRobot scheduled sync)
 app.include_router(sync.router)
+
+# SKU Mappings API (database-driven SKU transformation rules)
+app.include_router(sku_mappings.router, prefix="/api/v1/sku-mappings", tags=["SKU Mappings"])
+
+# Analytics API (quarterly breakdown for dashboard)
+app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["Analytics"])
 
 @app.get("/")
 async def root():

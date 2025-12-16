@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { toTitleCase } from '@/lib/utils';
 
 // Types
 interface LotInfo {
@@ -20,6 +21,8 @@ interface WarehouseProduct {
   lots: LotInfo[];
   percentage_of_warehouse?: number;
   percentage_of_product?: number;
+  sku_value?: number;  // Unit cost from product_catalog
+  valor?: number;      // Total value (stock × sku_value)
 }
 
 interface ExpandableProductTableProps {
@@ -27,7 +30,7 @@ interface ExpandableProductTableProps {
   loading?: boolean;
 }
 
-type SortField = 'sku' | 'name' | 'category' | 'stock' | 'lot_count' | 'next_expiration';
+type SortField = 'sku' | 'name' | 'category' | 'stock' | 'valor' | 'lot_count' | 'next_expiration';
 type SortDirection = 'asc' | 'desc';
 
 // Helper function to get expiration status badge
@@ -116,9 +119,9 @@ const ExpandableProductRow = ({ product, index }: { product: WarehouseProduct; i
 
         {/* Product Name */}
         <td className="px-4 py-3">
-          <div className="text-sm font-medium text-gray-900">{product.name}</div>
+          <div className="text-sm font-medium text-gray-900">{toTitleCase(product.name)}</div>
           {product.category && (
-            <div className="text-xs text-gray-500 mt-0.5">{product.category}</div>
+            <div className="text-xs text-gray-500 mt-0.5">{toTitleCase(product.category)}</div>
           )}
         </td>
 
@@ -134,6 +137,17 @@ const ExpandableProductRow = ({ product, index }: { product: WarehouseProduct; i
               <span className="font-medium">Producto:</span> {product.percentage_of_product}%
             </div>
           ) : null}
+        </td>
+
+        {/* Valor */}
+        <td className="px-4 py-3 text-center">
+          {product.valor && Number(product.valor) > 0 ? (
+            <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-100 text-emerald-800">
+              ${Math.round(Number(product.valor)).toLocaleString('es-CL')}
+            </span>
+          ) : (
+            <span className="text-gray-400">-</span>
+          )}
         </td>
 
         {/* Lot Count */}
@@ -166,7 +180,7 @@ const ExpandableProductRow = ({ product, index }: { product: WarehouseProduct; i
       {/* Expanded Details */}
       {isExpanded && (
         <tr className={bgColor}>
-          <td colSpan={7} className="px-4 py-4">
+          <td colSpan={8} className="px-4 py-4">
             <div className="ml-8 bg-gray-50 border border-gray-200 rounded-lg p-4">
               <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
                 <span>📦</span>
@@ -312,6 +326,9 @@ export default function ExpandableProductTable({
       if (sortField === 'lot_count') {
         aVal = a.lots.length;
         bVal = b.lots.length;
+      } else if (sortField === 'valor') {
+        aVal = a.valor || 0;
+        bVal = b.valor || 0;
       } else if (sortField === 'next_expiration') {
         const aLot = a.lots.find(l => l.days_to_expiration !== null);
         const bLot = b.lots.find(l => l.days_to_expiration !== null);
@@ -420,6 +437,16 @@ export default function ExpandableProductTable({
                 <div className="flex items-center justify-center gap-2">
                   <span>Stock</span>
                   <SortIndicator field="stock" />
+                </div>
+              </th>
+
+              <th
+                className="px-4 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-200 transition-colors group"
+                onClick={() => handleSort('valor')}
+              >
+                <div className="flex items-center justify-center gap-2">
+                  <span>Valor</span>
+                  <SortIndicator field="valor" />
                 </div>
               </th>
 

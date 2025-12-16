@@ -167,14 +167,25 @@ def calculate_units(sku: str, quantity: int, conversion_map: dict = None) -> int
 
 def map_sku_with_quantity(sku, product_name, product_map, catalog_skus, catalog_master_skus, source=None):
     """
-    Conservative mapping strategy with Pack quantity extraction
+    Map raw SKU to catalog SKU using database-driven rules and programmatic fallbacks.
+
+    Priority:
+    1. Direct catalog match (exact SKU exists)
+    2. Database mappings (sku_mappings table)
+    3. Programmatic fallbacks for complex transformations
+
     Returns: (official_sku, match_type, pack_quantity, product_info, confidence)
     """
     import re
+    from app.services.sku_mapping_service import get_sku_mapping_service
 
     sku = (sku or '').strip()
     product_name = product_name or ''
     source = (source or '').strip()
+
+    # =========================================================================
+    # STEP 1: Direct catalog match (highest confidence)
+    # =========================================================================
 
     # Rule 1: Exact match in normal SKU
     if sku in catalog_skus:
@@ -184,25 +195,46 @@ def map_sku_with_quantity(sku, product_name, product_map, catalog_skus, catalog_
     if sku in catalog_master_skus:
         return sku, 'caja_master', 1, product_map[sku], 100
 
-    # Rule 3: ANU- prefix removal (with chained _WEB suffix handling)
-    if sku.startswith('ANU-'):
-        clean_sku = sku[4:]
+    # =========================================================================
+    # STEP 2: Database-driven mappings (from sku_mappings table)
+    # =========================================================================
+    # This replaces hardcoded rules for: ANU- prefix, _WEB suffix, ML IDs,
+    # Lokal crackers, CRSM bandeja, Keeper Pioneros, etc.
 
-        # Try direct match first
-        if clean_sku in catalog_skus:
-            return clean_sku, 'anu_prefix_removed', 1, product_map[clean_sku], 95
-        if clean_sku in catalog_master_skus:
-            return clean_sku, 'anu_prefix_removed+caja_master', 1, product_map[clean_sku], 95
+    try:
+        mapping_service = get_sku_mapping_service()
+        mapping_result = mapping_service.map_sku(sku, source or None)
 
-        # Try removing _WEB suffix from cleaned SKU (chained transformation)
-        if clean_sku.endswith('_WEB'):
-            clean_sku_no_web = clean_sku[:-4]
-            if clean_sku_no_web in catalog_skus:
-                return clean_sku_no_web, 'anu_prefix_removed+web_suffix', 1, product_map[clean_sku_no_web], 93
-            if clean_sku_no_web in catalog_master_skus:
-                return clean_sku_no_web, 'anu_prefix_removed+web_suffix+caja_master', 1, product_map[clean_sku_no_web], 93
+        if mapping_result and mapping_result.target_sku:
+            target_sku = mapping_result.target_sku
+            # Verify target exists in product_map
+            if target_sku in product_map:
+                return (
+                    target_sku,
+                    f'db_{mapping_result.match_type}',
+                    mapping_result.quantity_multiplier,
+                    product_map[target_sku],
+                    mapping_result.confidence
+                )
+            elif target_sku in catalog_master_skus and target_sku in product_map:
+                return (
+                    target_sku,
+                    f'db_{mapping_result.match_type}+caja_master',
+                    mapping_result.quantity_multiplier,
+                    product_map[target_sku],
+                    mapping_result.confidence
+                )
+    except Exception as e:
+        # Log but don't fail - fall back to programmatic rules
+        print(f"Warning: SKU mapping service error for '{sku}': {e}")
 
-    # Rule 4: PACK prefix removal with quantity extraction
+    # =========================================================================
+    # STEP 3: Programmatic fallbacks for complex transformations
+    # These rules require logic that can't easily be expressed in database
+    # =========================================================================
+
+    # PACK prefix removal with quantity extraction from product_name
+    # (Kept programmatic because it extracts quantity from product_name)
     if sku.startswith('PACK'):
         clean_sku = sku[4:]
 
@@ -213,28 +245,21 @@ def map_sku_with_quantity(sku, product_name, product_map, catalog_skus, catalog_
             pack_quantity = int(pack_match.group(1))
 
         if clean_sku in catalog_skus:
-            return clean_sku, f'pack_prefix_removed', pack_quantity, product_map[clean_sku], 90
+            return clean_sku, 'pack_prefix_removed', pack_quantity, product_map[clean_sku], 90
         if clean_sku in catalog_master_skus:
-            return clean_sku, f'pack_prefix_removed+caja_master', pack_quantity, product_map[clean_sku], 90
+            return clean_sku, 'pack_prefix_removed+caja_master', pack_quantity, product_map[clean_sku], 90
 
-    # Rule 5: "_WEB" suffix removal (96-100% confidence from analysis)
-    if sku.endswith('_WEB'):
-        clean_sku = sku[:-4]  # Remove "_WEB"
-        if clean_sku in catalog_skus:
-            return clean_sku, 'web_suffix_removed', 1, product_map[clean_sku], 96
-        if clean_sku in catalog_master_skus:
-            return clean_sku, 'web_suffix_removed+caja_master', 1, product_map[clean_sku], 96
-
-    # Rule 6: Trailing "20" → "10" pattern (90% confidence)
+    # Trailing "20" → "10" pattern (90% confidence)
+    # (Kept programmatic - regex-like transformation)
     if sku.endswith('20') and not sku.endswith('010') and not sku.endswith('020'):
-        clean_sku = sku[:-2] + '10'  # Replace last "20" with "10"
+        clean_sku = sku[:-2] + '10'
         if clean_sku in catalog_skus:
             return clean_sku, 'trailing_20_to_10', 1, product_map[clean_sku], 90
         if clean_sku in catalog_master_skus:
             return clean_sku, 'trailing_20_to_10+caja_master', 1, product_map[clean_sku], 90
 
-    # Rule 7: Extra digits pattern (e.g., BABE_C028220 → BABE_C02810)
-    # Pattern: ends with extra "0" like "28220" → "2810"
+    # Extra digits pattern (e.g., BABE_C028220 → BABE_C02810)
+    # (Kept programmatic - complex regex transformation)
     extra_digit_match = re.match(r'^(.+)([0-9]{3})([0-9]{2})0$', sku)
     if extra_digit_match:
         clean_sku = extra_digit_match.group(1) + extra_digit_match.group(2) + '10'
@@ -243,7 +268,8 @@ def map_sku_with_quantity(sku, product_name, product_map, catalog_skus, catalog_
         if clean_sku in catalog_master_skus:
             return clean_sku, 'extra_digits_removed+caja_master', 1, product_map[clean_sku], 90
 
-    # Rule 8: Cracker "1UES" variants (e.g., CRAA1UES → CRAA_U13510)
+    # Cracker "1UES" variants (e.g., CRAA1UES → CRAA_U13510)
+    # (Kept programmatic - generates target SKU dynamically)
     cracker_match = re.match(r'^CR([A-Z]{2})1UES$', sku)
     if cracker_match:
         base_code = cracker_match.group(1)
@@ -253,37 +279,11 @@ def map_sku_with_quantity(sku, product_name, product_map, catalog_skus, catalog_
         if suggested_sku in catalog_master_skus:
             return suggested_sku, 'cracker_1ues_variant+caja_master', 1, product_map[suggested_sku], 90
 
-    # Rule 8b: Lokal-specific cracker abbreviations (e.g., CRSA1UES → CRSM_U13510)
-    # Lokal uses different abbreviations: SA=Sal de Mar (SM), PI=Pimienta (PM)
-    lokal_cracker_mappings = {
-        'CRSA1UES': 'CRSM_U13510',  # SA (Sal) → SM (Sal de Mar)
-        'CRPI1UES': 'CRPM_U13510',  # PI (Pimienta) → PM (Pimienta)
-    }
-    if sku in lokal_cracker_mappings:
-        target_sku = lokal_cracker_mappings[sku]
-        if target_sku in catalog_skus:
-            return target_sku, 'lokal_cracker_variant', 1, product_map[target_sku], 95
-        if target_sku in catalog_master_skus:
-            return target_sku, 'lokal_cracker_variant+caja_master', 1, product_map[target_sku], 95
+    # NOTE: Rules 8b (Lokal crackers), 9 (CRSM_U1000), 10 (KEEPER_PIONEROS),
+    # and 13 (MercadoLibre IDs) are now handled by database mappings in STEP 2
 
-    # Rule 9: Special case CRSM_U1000 → CRSM_U1000H (95% confidence)
-    if sku == 'CRSM_U1000':
-        target_sku = 'CRSM_U1000H'
-        if target_sku in catalog_skus:
-            return target_sku, 'special_crsm_bandeja', 1, product_map[target_sku], 95
-        if target_sku in catalog_master_skus:
-            return target_sku, 'special_crsm_bandeja+caja_master', 1, product_map[target_sku], 95
-
-    # Rule 10: KEEPER_PIONEROS → KPMC_U30010 (95% confidence)
-    if sku == 'KEEPER_PIONEROS':
-        target_sku = 'KPMC_U30010'
-        if target_sku in catalog_skus:
-            return target_sku, 'keeper_pioneros_mapped', 1, product_map[target_sku], 95
-        if target_sku in catalog_master_skus:
-            return target_sku, 'keeper_pioneros_mapped+caja_master', 1, product_map[target_sku], 95
-
-    # Rule 11: Language variant suffix (_C02010 → _C02020 for English variants)
-    # Pattern: Some products have Spanish suffix *_C02010 but catalog has English *_C02020
+    # Language variant suffix (_C02010 → _C02020 for English variants)
+    # (Kept programmatic - needs substring replacement)
     if '_C02010' in sku:
         variant_sku = sku.replace('_C02010', '_C02020')
         if variant_sku in catalog_skus:
@@ -291,47 +291,16 @@ def map_sku_with_quantity(sku, product_name, product_map, catalog_skus, catalog_
         if variant_sku in catalog_master_skus:
             return variant_sku, 'language_variant_c02010_to_c02020+caja_master', 1, product_map[variant_sku], 90
 
-    # Rule 12: General substring matching (85% confidence)
-    # If a catalog SKU appears as a substring in the original SKU, it's likely a match
-    # Example: ANU-GRAL_C02020 contains GRAL_C02020 from catalog
-    # This catches prefixes/suffixes we haven't explicitly handled
-    for catalog_sku in sorted(catalog_skus, key=len, reverse=True):  # Check longest SKUs first to avoid partial matches
-        if len(catalog_sku) >= 8 and catalog_sku in sku:  # Require minimum length to avoid false positives
+    # General substring matching (85% confidence)
+    # Catches any catalog SKU that appears as substring in the raw SKU
+    # (Kept programmatic - dynamic search through all catalog SKUs)
+    for catalog_sku in sorted(catalog_skus, key=len, reverse=True):
+        if len(catalog_sku) >= 8 and catalog_sku in sku:
             return catalog_sku, 'substring_match_unitary', 1, product_map[catalog_sku], 85
 
     for catalog_master_sku in sorted(catalog_master_skus, key=len, reverse=True):
         if len(catalog_master_sku) >= 8 and catalog_master_sku in sku:
             return catalog_master_sku, 'substring_match_master', 1, product_map[catalog_master_sku], 85
-
-    # Rule 13: MercadoLibre product name matching (85% confidence)
-    # Maps MLC publication IDs to Grana SKUs based on smart keyword analysis
-    # Generated using product name similarity algorithm + manual verification
-    mercadolibre_mappings = {
-        'MLC1630337051': 'BABE_U20010',   # 80% - Barra Cereal Grana Sour Berries 5 Un
-        'MLC1630349929': 'BACM_U04010',   # 90% - Barra Low Carb Grana Vegana De Cacao Y Maní
-        'MLC1630349931': 'GRCA_U26010',   # 100% - Granola Keto Cacao 260g (marketed as Keto but is Low Carb)
-        'MLC1630369169': 'CRPM_U13510',   # 95% - Galletas Crackers Grana Keto Sabor Pimienta 135g
-        'MLC1630416135': 'BAMC_U04010',   # 70% - Barritas Grana Manzana Canela Display 5 Uds Vegana
-        'MLC1644022833': 'GRCA_U26010',   # 90% - Granola Grana Low Carb Cacao Y Semillas
-        'MLC2929973548': 'BAKC_U04010',   # 70% - Barras Keto Chocolate Nuez Grana 35g x16
-        'MLC2930070644': 'GRCA_U26020',   # 75% - Granola Grana Cacao 260g
-        'MLC2930199094': 'BAKC_U04010',   # 90% - Barritas Grana Keto Nuez Display 5 Uds
-        'MLC2930200766': 'CRAA_U13510',   # 95% - Galletas Crackers Grana Keto Ajo Albahaca
-        'MLC2930215860': 'CRSM_U13510',   # 95% - Galletas Crackers Grana Keto Sal De Mar
-        'MLC2930238714': 'CRRO_U13510',   # 95% - Galletas Crackers Grana Keto Romero 135g
-        'MLC2930251054': 'KSMC_U03010',   # 100% - Keeper Maní 30g X1 (individual units)
-        'MLC2933751572': 'CRRO_U13510',   # 95% - Galletas Crackers Grana Keto Romero 135g
-        'MLC2978631042': 'BACM_U04010',   # 90% - Barritas Grana Low Carb Cacao Maní Disp 5 Uds
-        'MLC2978641268': 'GRBE_U26010',   # 90% - Granola Grana Low Carb Berries Y Semillas
-        'MLC3016921654': 'KSMC_U03010',   # 100% - Keeper Maní 30g X1 (duplicate listing)
-    }
-
-    if source == 'mercadolibre' and sku in mercadolibre_mappings:
-        target_sku = mercadolibre_mappings[sku]
-        if target_sku in catalog_skus:
-            return target_sku, 'ml_product_name_match', 1, product_map[target_sku], 85
-        if target_sku in catalog_master_skus:
-            return target_sku, 'ml_product_name_match+caja_master', 1, product_map[target_sku], 85
 
     # No match found
     return None, 'no_match', 1, None, 0
@@ -643,7 +612,13 @@ async def get_audit_data(
                     'category': 'p.category',
                     'channel_name': "COALESCE(ch.name, 'SIN CANAL')",
                     'order_date': 'o.order_date::date',
-                    'order_month': "TO_CHAR(o.order_date, 'YYYY-MM')"  # Group by year-month
+                    'order_month': "TO_CHAR(o.order_date, 'YYYY-MM')",  # Group by year-month
+                    # Additional group fields for OLAP support
+                    'sku': "COALESCE(oi.product_sku, 'SIN SKU')",  # SKU Original
+                    'order_external_id': 'o.external_id',  # Pedido
+                    'order_source': 'o.source',  # Fuente
+                    'family': "COALESCE(p.subfamily, 'SIN FAMILIA')",  # Producto
+                    'format': "COALESCE(p.format, 'SIN FORMATO')"  # Formato
                 }
 
                 if group_by and group_by in group_field_map:
@@ -1131,9 +1106,15 @@ async def get_audit_data(
                         # Calculate total units
                         unidades = calculate_units(official_sku, quantity, conversion_map)
 
+                        # Calculate peso (weight) - Phase 4
+                        peso_display_total = service.get_peso_display_total(official_sku)
+                        peso_total = service.calculate_peso_total(official_sku, quantity)
+
                         row_dict['sku_primario'] = sku_primario
                         row_dict['sku_primario_name'] = sku_primario_name
                         row_dict['unidades'] = unidades
+                        row_dict['peso_display_total'] = peso_display_total
+                        row_dict['peso_total'] = peso_total
                         row_dict['pack_quantity'] = pack_qty
                         row_dict['match_type'] = match_type
                         row_dict['confidence'] = confidence
@@ -1145,13 +1126,14 @@ async def get_audit_data(
                         # Also include conversion factor for reference
                         # Phase 3: Get from ProductCatalogService
                         # This properly handles both normal SKUs and master box SKUs
-                        service = get_product_catalog_service()
                         row_dict['conversion_factor'] = service.get_conversion_factor(official_sku)
                     else:
                         # Not mapped
                         row_dict['sku_primario'] = None
                         row_dict['sku_primario_name'] = None
                         row_dict['unidades'] = quantity  # Default to quantity if not mapped
+                        row_dict['peso_display_total'] = 0.0
+                        row_dict['peso_total'] = 0.0
                         row_dict['pack_quantity'] = 1
                         row_dict['match_type'] = 'no_match'
                         row_dict['confidence'] = 0
@@ -1160,10 +1142,11 @@ async def get_audit_data(
 
                     enriched_rows.append(row_dict)
 
-                # NOTE: total_unidades uses quantity as approximation
-                # TODO: For 100% accuracy, pre-compute conversion factors in database
-                # Currently uses raw quantity which is conservative for multi-pack products
-                filtered_totals["total_unidades"] = filtered_totals["total_quantity"]
+                # Calculate totals from enriched data
+                # NOTE: These are calculated from the current page of results
+                # For full dataset totals, a separate aggregation query would be needed
+                filtered_totals["total_unidades"] = sum(row.get('unidades', 0) for row in enriched_rows)
+                filtered_totals["total_peso"] = round(sum(row.get('peso_total', 0) for row in enriched_rows), 4)
 
                 return {
                     "status": "success",
@@ -1188,6 +1171,7 @@ async def get_audit_data(
                     "summary": {
                         "total_pedidos": filtered_totals["total_pedidos"],
                         "total_unidades": filtered_totals["total_unidades"],
+                        "total_peso": filtered_totals["total_peso"],
                         "total_revenue": filtered_totals["total_revenue"]
                     }
                 }

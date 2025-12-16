@@ -32,6 +32,7 @@ export default function Navigation() {
         { name: 'Por Bodega', href: '/dashboard/warehouse-inventory/by-warehouse', icon: '🏢' },
       ]
     },
+    { name: 'Mapeo SKUs', href: '/dashboard/sku-mappings', icon: '🔗' },
   ];
 
   const isActive = (href: string) => {

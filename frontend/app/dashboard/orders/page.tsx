@@ -5,6 +5,8 @@ import Link from 'next/link'
 import Navigation from '@/components/Navigation'
 import Pagination from '@/components/Pagination'
 import AuditView from '@/components/AuditView'
+import { StatCardsGridSkeleton, TableSkeleton, Skeleton } from '@/components/ui/Skeleton'
+import { cn } from '@/lib/utils'
 
 interface OrderItem {
   id: number
@@ -112,19 +114,8 @@ export default function OrdersPage() {
     }
   }, [currentPage, pageSize, sourceFilter, monthFilter, searchQuery, viewMode])
 
-  if (loading && viewMode === 'orders') {
-    return (
-      <>
-        <Navigation />
-        <div className="min-h-screen flex items-center justify-center bg-gray-50">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Cargando pedidos...</p>
-          </div>
-        </div>
-      </>
-    )
-  }
+  // We now handle loading inline instead of returning early
+  // This keeps the page structure visible during loading
 
   if (error && viewMode === 'orders') {
     return (
@@ -201,7 +192,7 @@ export default function OrdersPage() {
           {viewMode === 'orders' ? (
             <>
               {/* Filters and Search */}
-              <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {/* Search Bar */}
                   <div className="md:col-span-1">
@@ -277,7 +268,22 @@ export default function OrdersPage() {
               </div>
 
               {/* Orders Table */}
-              <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                {loading ? (
+                  <div className="p-6">
+                    <div className="flex items-center justify-center gap-3 py-8 mb-4">
+                      <div className="relative">
+                        <div className="w-10 h-10 border-4 border-gray-200 rounded-full"></div>
+                        <div className="w-10 h-10 border-4 border-green-500 rounded-full animate-spin border-t-transparent absolute top-0 left-0"></div>
+                      </div>
+                      <div className="text-gray-600">
+                        <p className="font-medium">Cargando pedidos...</p>
+                        <p className="text-xs text-gray-400">Esto puede tomar unos segundos</p>
+                      </div>
+                    </div>
+                    <TableSkeleton rows={8} columns={6} />
+                  </div>
+                ) : (
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
@@ -348,6 +354,7 @@ export default function OrdersPage() {
                     ))}
                   </tbody>
                 </table>
+                )}
               </div>
 
               {/* Pagination */}
@@ -377,37 +384,53 @@ export default function OrdersPage() {
               )}
 
               {/* Stats Summary - Current page stats */}
-              {filteredOrders.length > 0 && (
-                <div className="mt-8 bg-gradient-to-r from-green-50 to-blue-50 rounded-xl shadow-sm p-6">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-4">
-                    Estadísticas de esta página
-                  </h3>
+              <div className="mt-8 bg-gradient-to-r from-green-50 to-blue-50 rounded-xl shadow-sm border border-gray-100 p-6">
+                <h3 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                  Estadísticas de esta página
+                </h3>
+                {loading ? (
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-                    <div className="bg-white rounded-lg p-4">
+                    {[1, 2, 3, 4].map(i => (
+                      <div key={i} className="bg-white rounded-lg p-4 animate-pulse">
+                        <Skeleton className="h-8 w-16 mx-auto mb-2" />
+                        <Skeleton className="h-4 w-20 mx-auto" />
+                      </div>
+                    ))}
+                  </div>
+                ) : filteredOrders.length > 0 ? (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                    <div className="bg-white rounded-lg p-4 hover:shadow-md transition-shadow">
                       <div className="text-2xl font-bold text-gray-900">{filteredOrders.length}</div>
                       <div className="text-sm text-gray-600">Pedidos</div>
                     </div>
-                    <div className="bg-white rounded-lg p-4">
+                    <div className="bg-white rounded-lg p-4 hover:shadow-md transition-shadow">
                       <div className="text-2xl font-bold text-green-600">
                         ${filteredOrders.reduce((sum, o) => sum + o.total, 0).toLocaleString('es-CL')}
                       </div>
                       <div className="text-sm text-gray-600">Ingresos</div>
                     </div>
-                    <div className="bg-white rounded-lg p-4">
+                    <div className="bg-white rounded-lg p-4 hover:shadow-md transition-shadow">
                       <div className="text-2xl font-bold text-blue-600">
                         {filteredOrders.filter(o => o.status === 'completed').length}
                       </div>
                       <div className="text-sm text-gray-600">Completados</div>
                     </div>
-                    <div className="bg-white rounded-lg p-4">
+                    <div className="bg-white rounded-lg p-4 hover:shadow-md transition-shadow">
                       <div className="text-2xl font-bold text-yellow-600">
                         {filteredOrders.filter(o => o.status === 'pending').length}
                       </div>
                       <div className="text-sm text-gray-600">Pendientes</div>
                     </div>
                   </div>
-                </div>
-              )}
+                ) : (
+                  <div className="text-center text-gray-500 py-4">
+                    No hay datos para mostrar estadísticas
+                  </div>
+                )}
+              </div>
             </>
           ) : (
             <AuditView />

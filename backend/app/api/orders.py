@@ -271,9 +271,11 @@ async def get_executive_kpis(
                     'is_actual': True
                 })
 
-        # 2025 projected data (remaining months)
-        for month in range(current_month + 1, 13):
+        # 2025 projected data for ALL 12 months (based on 2024 + growth rate)
+        # This allows comparison of actual vs projected for past months too
+        for month in range(1, 13):
             month_name = datetime(2025, month, 1).strftime('%b')
+            is_future_month = month > current_month
 
             # Use same month from 2024 as baseline
             if month in monthly_2024:
@@ -296,6 +298,7 @@ async def get_executive_kpis(
                     'total_revenue': projected_revenue,
                     'is_actual': False,
                     'is_projection': True,
+                    'is_future': is_future_month,
                     'confidence_lower': confidence_lower,
                     'confidence_upper': confidence_upper,
                     'growth_rate_applied': avg_growth_rate
@@ -317,6 +320,7 @@ async def get_executive_kpis(
                     'total_revenue': float(avg_revenue),
                     'is_actual': False,
                     'is_projection': True,
+                    'is_future': is_future_month,
                     'confidence_lower': float(avg_revenue * 0.8),
                     'confidence_upper': float(avg_revenue * 1.2),
                     'growth_rate_applied': 0

@@ -172,6 +172,43 @@ Respuesta: "Para darte un analisis preciso, necesito saber:
 
 Si quieres un resumen rapido, puedo mostrarte las ventas de los ultimos 30 dias por canal."
 
+## IMPORTANTE: Graficos y Visualizaciones
+
+Cuando el usuario pida graficos, proyecciones o visualizaciones:
+
+### Para graficos de barras/lineas/pie (usa `get_chart_data`):
+1. Llama a `get_chart_data` con los parametros apropiados
+2. Del resultado, extrae SOLO el objeto que contiene `chart_type` y `data`
+3. Incluye ese objeto en un bloque ```json
+
+Ejemplo:
+```json
+{{"chart_type": "bar", "title": "Ventas por Canal", "data": {{"labels": [...], "datasets": [...]}}}}
+```
+
+### Para proyecciones/forecasts (usa `get_sales_forecast`):
+**IMPORTANTE:** El parametro `year` es el AÑO BASE (datos historicos), NO el año objetivo.
+- Si el usuario pide "proyeccion 2026" → usa `year=2025` (proyecta 2026 basado en datos de 2025)
+- Si el usuario pide "proyeccion 2025" → usa `year=2024` (proyecta 2025 basado en datos de 2024)
+- La funcion automaticamente proyecta al año siguiente del año base
+
+1. Llama a `get_sales_forecast` con el año base (año anterior al año objetivo)
+2. Del resultado, extrae SOLO el objeto `forecast_chart`
+3. Incluye ese objeto en un bloque ```json
+
+Ejemplo para proyectar 2026:
+```json
+// Llamar con year=2025 para proyectar 2026
+{{"year": 2025, "historical_data": {{"monthly": [...], "summary": {{...}}}}, "forecast": {{"projected_year": 2026, "monthly_forecast": [...], "summary": {{...}}}}}}
+```
+
+### Reglas generales:
+- **SIEMPRE** incluye el JSON en un bloque ```json para que el frontend lo renderice
+- Agrega una breve explicacion textual de los datos
+- NO incluyas el JSON completo del tool - solo la parte que el frontend necesita para el grafico
+- Para forecasts, usa `forecast_chart` del resultado
+- Para charts, usa el objeto con `chart_type`
+
 ## Ejemplos de Preguntas que Puedes Responder
 - "Cuanto stock tenemos en total?"
 - "Que productos estan por vencer?"
@@ -181,6 +218,8 @@ Si quieres un resumen rapido, puedo mostrarte las ventas de los ultimos 30 dias 
 - "Tenemos suficiente stock de granolas para el proximo mes?"
 - "Que productos estan en nivel critico?"
 - "Comparacion de ventas por canal"
+- "Muestrame un grafico de ventas por canal" (usa get_chart_data)
+- "Proyeccion de ventas para 2026" (usa get_sales_forecast con year=2025)
 """
 
 # ============================================================================
@@ -351,6 +390,111 @@ TOOLS = [
                 }
             },
             "required": []
+        }
+    },
+    {
+        "name": "get_sales_forecast",
+        "description": """Obtiene datos historicos de ventas para un año especifico y genera proyecciones.
+
+FILTRA EXPLICITAMENTE por año usando EXTRACT(YEAR FROM order_date) = year para garantizar precision.
+
+METODOLOGIA de Proyeccion:
+- Analisis Historico: Agregacion mensual de ingresos/unidades
+- Deteccion de Tendencia: Regresion lineal sobre datos mensuales
+- Estacionalidad: Indice mensual basado en patrones historicos
+- Pronostico: (Base + Tendencia) * Factor de Estacionalidad
+
+Usa este tool cuando el usuario pida:
+- "proyeccion de ventas para 2026"
+- "forecast del proximo año"
+- "tendencia de ventas de 2025"
+- "analisis de estacionalidad"
+""",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "year": {
+                    "type": "integer",
+                    "description": "REQUERIDO: Año a analizar (ej: 2025). Filtra EXPLICITAMENTE con EXTRACT(YEAR)."
+                },
+                "group_by": {
+                    "type": "string",
+                    "enum": ["month", "quarter"],
+                    "description": "Agrupacion: 'month' (default) o 'quarter'"
+                },
+                "channel": {
+                    "type": "string",
+                    "description": "Opcional: ECOMMERCE, RETAIL, CORPORATIVO, DISTRIBUIDOR"
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Opcional: Categoria de producto (BARRAS, GRANOLAS, etc.)"
+                },
+                "forecast_months": {
+                    "type": "integer",
+                    "description": "Meses a proyectar (default: 12 para año siguiente)"
+                }
+            },
+            "required": ["year"]
+        }
+    },
+    {
+        "name": "get_chart_data",
+        "description": """Genera datos estructurados para visualizaciones/graficos en el frontend.
+
+Soporta multiples tipos de graficos:
+- line: Series de tiempo (tendencias mensuales/trimestrales)
+- bar: Comparaciones (por canal, categoria, producto)
+- pie: Distribucion (participacion de mercado, composicion)
+
+La respuesta incluye:
+- Datos listos para Chart.js/Recharts
+- Paleta de colores
+- Hints de renderizado
+- Resumen estadistico
+
+Usa este tool cuando el usuario pida:
+- "muestrame un grafico de ventas"
+- "visualizacion por canal"
+- "grafico de barras de productos"
+- "pie chart de categorias"
+""",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "chart_type": {
+                    "type": "string",
+                    "enum": ["line", "bar", "pie", "auto"],
+                    "description": "Tipo de grafico: 'line', 'bar', 'pie', o 'auto' para seleccion automatica"
+                },
+                "metric": {
+                    "type": "string",
+                    "enum": ["revenue", "units", "orders"],
+                    "description": "Metrica a graficar: 'revenue' (ingresos), 'units' (unidades), 'orders' (ordenes)"
+                },
+                "year": {
+                    "type": "integer",
+                    "description": "Opcional: Año a filtrar (usa EXTRACT para precision)"
+                },
+                "group_by": {
+                    "type": "string",
+                    "enum": ["month", "quarter", "channel", "category", "product"],
+                    "description": "Dimension de agrupacion"
+                },
+                "channel": {
+                    "type": "string",
+                    "description": "Opcional: Filtro de canal"
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Opcional: Filtro de categoria"
+                },
+                "top_n": {
+                    "type": "integer",
+                    "description": "Para graficos de producto, limitar a top N (default: 10)"
+                }
+            },
+            "required": ["chart_type", "group_by"]
         }
     }
 ]

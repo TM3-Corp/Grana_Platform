@@ -92,25 +92,41 @@ async def get_product_stats():
 
 
 @router.get("/minimum-stock-suggestions")
-async def get_minimum_stock_suggestions():
+async def get_minimum_stock_suggestions(months: int = 6):
     """
-    Calculate suggested minimum stock levels based on average sales from last 4 months
+    Calculate suggested minimum stock levels based on average sales from last N months.
 
     Logic:
-    - Analyzes sales from last 4 months (current month excluded)
+    - Analyzes sales from last N months (current month excluded)
     - Calculates average monthly sales per SKU
-    - If less than 4 months of data, uses average of available months
+    - If less than N months of data, uses average of available months
     - If no sales data, suggests 0
 
+    Args:
+        months: Number of months to analyze (default: 6, max: 12)
+
     Returns:
-        Dictionary mapping SKU -> suggested minimum stock
+        Dictionary mapping SKU -> suggested minimum stock and recommended value
     """
+    from datetime import datetime
+    from dateutil.relativedelta import relativedelta
+
+    # Limit months to reasonable range
+    months = max(1, min(months, 12))
+
     try:
         conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
-        # Calculate average monthly sales for last 4 months
-        # November 2025 is current, so we look at: Oct, Sep, Aug, July (2025-07-01 to 2025-10-31)
+        # Calculate dynamic date range: from N months ago to start of current month
+        today = datetime.now()
+        end_date = today.replace(day=1)  # First day of current month
+        start_date = end_date - relativedelta(months=months)
+
+        date_from = start_date.strftime('%Y-%m-%d')
+        date_to = end_date.strftime('%Y-%m-%d')
+
+        # Calculate average monthly sales for last N months
         query = """
         WITH monthly_sales AS (
             SELECT
@@ -119,21 +135,22 @@ async def get_minimum_stock_suggestions():
                 SUM(oi.quantity) as total_quantity
             FROM order_items oi
             JOIN orders o ON o.id = oi.order_id
-            WHERE o.order_date >= '2025-07-01'
-              AND o.order_date < '2025-11-01'
+            WHERE o.order_date >= %s
+              AND o.order_date < %s
               AND o.source = 'relbase'
             GROUP BY oi.product_sku, DATE_TRUNC('month', o.order_date)
         )
         SELECT
             product_sku,
             COALESCE(ROUND(AVG(total_quantity)), 0)::INTEGER as suggested_min_stock,
-            COUNT(DISTINCT month)::INTEGER as months_with_data
+            COUNT(DISTINCT month)::INTEGER as months_with_data,
+            COALESCE(SUM(total_quantity), 0)::INTEGER as total_sold
         FROM monthly_sales
         GROUP BY product_sku
         ORDER BY product_sku;
         """
 
-        cursor.execute(query)
+        cursor.execute(query, (date_from, date_to))
         results = cursor.fetchall()
 
         cursor.close()
@@ -143,14 +160,16 @@ async def get_minimum_stock_suggestions():
         suggestions = {
             row['product_sku']: {
                 'suggested_min_stock': row['suggested_min_stock'],
-                'months_with_data': row['months_with_data']
+                'months_with_data': row['months_with_data'],
+                'total_sold': row['total_sold']
             }
             for row in results
         }
 
         return {
             "status": "success",
-            "calculation_period": "2025-07-01 to 2025-10-31 (4 months)",
+            "calculation_period": f"{date_from} to {date_to} ({months} months)",
+            "months_analyzed": months,
             "total_skus_analyzed": len(suggestions),
             "data": suggestions
         }

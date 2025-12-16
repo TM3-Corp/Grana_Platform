@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { toTitleCase } from '@/lib/utils';
 
 // Types
 interface WarehouseStock {
@@ -281,19 +282,19 @@ export default function EnhancedWarehouseInventoryTable({
                   <div className="text-xs font-mono font-medium text-gray-900">{product.sku}</div>
                 </td>
                 <td className="px-3 py-3 max-w-[180px]">
-                  <div className="text-xs text-gray-900 line-clamp-2 leading-tight" title={product.name}>
-                    {product.name}
+                  <div className="text-xs text-gray-900 line-clamp-2 leading-tight" title={toTitleCase(product.name)}>
+                    {toTitleCase(product.name)}
                   </div>
                   {(product as InventoryProduct).subfamily && (
                     <div className="text-xs text-gray-400 mt-0.5 truncate">
-                      {(product as InventoryProduct).subfamily}
+                      {toTitleCase((product as InventoryProduct).subfamily)}
                     </div>
                   )}
                 </td>
                 <td className="px-3 py-3 whitespace-nowrap">
                   {product.category && (
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                      {product.category}
+                      {toTitleCase(product.category)}
                     </span>
                   )}
                 </td>

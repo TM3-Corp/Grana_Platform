@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Navigation from '@/components/Navigation'
 import ExecutiveSalesChart from '@/components/charts/ExecutiveSalesChart'
+import QuarterlyAnalytics from '@/components/charts/QuarterlyAnalytics'
 
 interface MonthData {
   month: number
@@ -192,9 +193,9 @@ export default function DashboardPage() {
                 )}
               </div>
               <div className="text-sm opacity-90 mb-1">Ingresos Totales</div>
-              <div className="text-3xl font-bold">${(data.kpis.total_revenue_2025_actual / 1000000).toFixed(1)}M</div>
+              <div className="text-2xl font-bold">${Math.round(data.kpis.total_revenue_2025_actual).toLocaleString('es-CL')}</div>
               <div className="text-xs opacity-75 mt-2">
-                YTD 2025 vs 2024: ${(data.kpis.total_revenue_2024 / 1000000).toFixed(1)}M
+                YTD 2025 vs 2024: ${Math.round(data.kpis.total_revenue_2024).toLocaleString('es-CL')}
               </div>
             </div>
 
@@ -240,9 +241,9 @@ export default function DashboardPage() {
                 )}
               </div>
               <div className="text-sm opacity-90 mb-1">Ticket Promedio</div>
-              <div className="text-3xl font-bold">${(data.kpis.avg_ticket_2025 / 1000).toFixed(0)}k</div>
+              <div className="text-2xl font-bold">${Math.round(data.kpis.avg_ticket_2025).toLocaleString('es-CL')}</div>
               <div className="text-xs opacity-75 mt-2">
-                2025: ${(data.kpis.avg_ticket_2024 / 1000).toFixed(0)}k en 2024
+                2025: ${Math.round(data.kpis.avg_ticket_2024).toLocaleString('es-CL')} en 2024
               </div>
             </div>
           </div>
@@ -258,7 +259,7 @@ export default function DashboardPage() {
 
           {/* Projection Metadata */}
           {data.projection_metadata.months_projected > 0 && (
-            <div className="bg-blue-50 border-l-4 border-blue-500 rounded-lg p-6">
+            <div className="bg-blue-50 border-l-4 border-blue-500 rounded-lg p-6 mb-10">
               <div className="flex items-start gap-4">
                 <div className="text-4xl">📊</div>
                 <div>
@@ -289,6 +290,9 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
+
+          {/* Quarterly Analytics - Pie Charts by Product Family, Channel, Top Customers */}
+          <QuarterlyAnalytics />
         </div>
       </div>
     </>

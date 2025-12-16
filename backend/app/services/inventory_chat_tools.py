@@ -1,7 +1,7 @@
 """
 Inventory Chat Tools for Claude AI Integration
 
-This module provides 8 tools for querying Grana's inventory and sales data:
+This module provides 10 tools for querying Grana's inventory and sales data:
 1. get_inventory_summary - Overall stats
 2. get_product_stock - Stock by SKU/name
 3. get_expiring_products - Expiration alerts
@@ -10,9 +10,12 @@ This module provides 8 tools for querying Grana's inventory and sales data:
 6. get_sales_by_product - Top sellers
 7. get_sales_by_channel - Channel breakdown
 8. compare_stock_vs_sales - Days of stock projection
+9. get_sales_forecast - Explicit year filtering + forecast methodology (NEW)
+10. get_chart_data - Structured chart data for visualizations (NEW)
 
 Author: TM3
 Date: 2025-11-24
+Updated: 2025-11-28 - Added forecast and chart tools
 """
 import json
 from typing import Optional, Dict, Any, List
@@ -906,6 +909,539 @@ def compare_stock_vs_sales(
 
 
 # ============================================================================
+# TOOL 9: get_sales_forecast
+# ============================================================================
+
+def get_sales_forecast(
+    year: int,
+    group_by: str = "month",
+    channel: Optional[str] = None,
+    category: Optional[str] = None,
+    forecast_months: int = 12
+) -> str:
+    """
+    Get historical sales data for a specific year with optional sales forecast.
+
+    EXPLICIT YEAR FILTERING: Uses EXTRACT(YEAR FROM order_date) = year
+    to guarantee only data from the specified year is included.
+
+    INCOMPLETE MONTH FILTERING: Automatically excludes the current month
+    and any future months when analyzing the current year, since they have
+    incomplete data that would skew the forecast negatively.
+
+    METHODOLOGY:
+    - Historical Analysis: Monthly revenue/units aggregation (complete months only)
+    - Trend Detection: Linear regression on monthly data
+    - Seasonality: Monthly index based on historical patterns
+    - Forecast: (Base + Trend) * Seasonality Factor
+
+    Args:
+        year: The year to analyze (e.g., 2025). REQUIRED.
+        group_by: Grouping period - 'month' (default) or 'quarter'
+        channel: Optional channel filter (ECOMMERCE, RETAIL, CORPORATIVO, DISTRIBUIDOR)
+        category: Optional product category filter
+        forecast_months: Number of months to forecast (default: 12 for next year)
+
+    Returns:
+        JSON with historical data, trend analysis, and forecasts
+    """
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection_dict_with_retry()
+        cursor = conn.cursor()
+
+        # Determine which months are complete
+        # Current month and future months have incomplete data
+        from datetime import datetime
+        today = datetime.now()
+        current_year = today.year
+        current_month = today.month
+
+        # Calculate last complete month for the requested year
+        if year < current_year:
+            # Past years: all 12 months are complete
+            last_complete_month = 12
+            excluded_months = []
+        elif year == current_year:
+            # Current year: exclude current month and future (they have incomplete data)
+            last_complete_month = current_month - 1
+            excluded_months = list(range(current_month, 13))
+        else:
+            # Future year: no complete months yet
+            last_complete_month = 0
+            excluded_months = list(range(1, 13))
+
+        # Build WHERE conditions with EXPLICIT year filter
+        conditions = [
+            "o.source = 'relbase'",
+            "o.invoice_status IN ('accepted', 'accepted_objection')",
+            "EXTRACT(YEAR FROM o.order_date) = %s"  # EXPLICIT year filtering
+        ]
+        params = [year]
+
+        # Add filter to exclude incomplete months (for current year)
+        if year == current_year and last_complete_month < 12:
+            conditions.append("EXTRACT(MONTH FROM o.order_date) <= %s")
+            params.append(last_complete_month)
+
+        if channel:
+            conditions.append("ch.name = %s")
+            params.append(channel.upper())
+
+        if category:
+            conditions.append("p.category = %s")
+            params.append(category.upper())
+
+        where_clause = " AND ".join(conditions)
+
+        # Choose grouping
+        if group_by == "quarter":
+            period_expr = "EXTRACT(QUARTER FROM o.order_date)"
+            period_format = "'Q' || EXTRACT(QUARTER FROM o.order_date)::int"
+        else:
+            period_expr = "EXTRACT(MONTH FROM o.order_date)"
+            period_format = "TO_CHAR(o.order_date, 'YYYY-MM')"
+
+        # Get monthly/quarterly aggregated data
+        cursor.execute(f"""
+            SELECT
+                {period_format} as period,
+                {period_expr} as period_num,
+                COUNT(DISTINCT o.id) as orders,
+                COALESCE(SUM(oi.quantity), 0) as units,
+                COALESCE(SUM(oi.subtotal), 0) as revenue
+            FROM orders o
+            JOIN order_items oi ON oi.order_id = o.id
+            LEFT JOIN products p ON p.sku = oi.product_sku
+            LEFT JOIN channels ch ON ch.id = o.channel_id
+            WHERE {where_clause}
+            GROUP BY {period_expr}, {period_format}
+            ORDER BY {period_expr}
+        """, params)
+
+        historical = cursor.fetchall()
+
+        if not historical:
+            return json.dumps({
+                "error": f"No data found for year {year}",
+                "filters_applied": {
+                    "year": year,
+                    "channel": channel,
+                    "category": category
+                }
+            }, ensure_ascii=False)
+
+        # Convert to list of dicts
+        periods = []
+        revenues = []
+        units_list = []
+        for row in historical:
+            periods.append({
+                "period": row['period'],
+                "period_num": int(row['period_num']),
+                "orders": row['orders'],
+                "units": int(row['units']),
+                "revenue": int(row['revenue'])
+            })
+            revenues.append(float(row['revenue']))
+            units_list.append(float(row['units']))
+
+        # Calculate statistics
+        total_revenue = sum(revenues)
+        total_units = sum(units_list)
+        avg_revenue = total_revenue / len(revenues) if revenues else 0
+        avg_units = total_units / len(units_list) if units_list else 0
+
+        # Simple linear trend calculation (slope)
+        n = len(revenues)
+        if n >= 2:
+            x_mean = (n + 1) / 2
+            y_mean = sum(revenues) / n
+            numerator = sum((i + 1 - x_mean) * (revenues[i] - y_mean) for i in range(n))
+            denominator = sum((i + 1 - x_mean) ** 2 for i in range(n))
+            slope = numerator / denominator if denominator != 0 else 0
+            trend_direction = "creciente" if slope > 0 else "decreciente" if slope < 0 else "estable"
+            monthly_change_pct = (slope / avg_revenue * 100) if avg_revenue > 0 else 0
+        else:
+            slope = 0
+            trend_direction = "insuficientes datos"
+            monthly_change_pct = 0
+
+        # Calculate seasonality indices (each period's deviation from average)
+        seasonality = {}
+        for p in periods:
+            idx = p['revenue'] / avg_revenue if avg_revenue > 0 else 1.0
+            seasonality[p['period_num']] = round(idx, 2)
+
+        # Generate forecast for next year
+        forecast = []
+        if forecast_months > 0:
+            base_forecast = avg_revenue
+            for m in range(1, min(forecast_months + 1, 13)):
+                # Forecast = (base + trend * month_offset) * seasonality
+                month_offset = n + m
+                trend_component = slope * month_offset
+                seasonality_factor = seasonality.get(m, 1.0)
+                projected = (base_forecast + trend_component) * seasonality_factor
+
+                forecast.append({
+                    "month": m,
+                    "month_name": ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun",
+                                   "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"][m],
+                    "projected_revenue": max(0, int(projected)),
+                    "seasonality_factor": seasonality_factor,
+                    "confidence": "medium" if n >= 6 else "low"
+                })
+
+        # Total projected for next year
+        total_forecast = sum(f['projected_revenue'] for f in forecast) if forecast else 0
+        growth_vs_current = ((total_forecast - total_revenue) / total_revenue * 100) if total_revenue > 0 else 0
+
+        # Map month numbers to names for excluded months info
+        month_names = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+                       "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+        excluded_month_names = [month_names[m] for m in excluded_months if m <= 12]
+
+        # Build the forecast_chart object that matches ForecastData interface exactly
+        # This is what the frontend ChatChart component expects for rendering
+        forecast_chart = {
+            "year": year,
+            "historical_data": {
+                "monthly": [
+                    {
+                        "month": p['period_num'],
+                        "month_name": month_names[p['period_num']] if p['period_num'] <= 12 else "",
+                        "revenue": p['revenue'],
+                        "units": p['units'],
+                        "orders": p['orders']
+                    }
+                    for p in periods
+                ],
+                "summary": {
+                    "total_revenue": int(total_revenue),
+                    "total_units": int(total_units),
+                    "total_orders": sum(p['orders'] for p in periods),
+                    "months_with_data": len(periods)
+                }
+            },
+            "forecast": {
+                "methodology": "Linear Trend + Seasonality Adjustment",
+                "base_monthly_revenue": int(avg_revenue),
+                "trend_per_month": int(slope),
+                "projected_year": year + 1,
+                "monthly_forecast": [
+                    {
+                        "month": f['month'],
+                        "month_name": month_names[f['month']] if f['month'] <= 12 else "",
+                        "projected_revenue": f['projected_revenue'],
+                        "seasonality_factor": f['seasonality_factor']
+                    }
+                    for f in forecast
+                ],
+                "summary": {
+                    "projected_annual_revenue": int(total_forecast),
+                    "average_monthly": int(total_forecast / 12) if total_forecast > 0 else 0,
+                    "growth_vs_base": round(growth_vs_current, 1),
+                    "confidence_level": "medium" if len(periods) >= 6 else "low"
+                }
+            }
+        }
+
+        return json.dumps({
+            "query_info": {
+                "year": year,
+                "filters": {
+                    "channel": channel,
+                    "category": category
+                },
+                "date_range": {
+                    "from": f"{year}-01-01",
+                    "to": f"{year}-{last_complete_month:02d}-31" if last_complete_month > 0 else f"{year}-01-01",
+                    "explicit_filter": f"EXTRACT(YEAR FROM order_date) = {year}",
+                    "complete_months_only": True if excluded_months else False,
+                    "last_complete_month": last_complete_month,
+                    "excluded_months": excluded_month_names,
+                    "exclusion_reason": f"Meses {', '.join(excluded_month_names)} excluidos por tener datos incompletos (mes actual o futuro)" if excluded_months else None
+                }
+            },
+            "historical_data": {
+                "periods": periods,
+                "totals": {
+                    "revenue": int(total_revenue),
+                    "units": int(total_units),
+                    "periods_count": len(periods)
+                }
+            },
+            "analysis": {
+                "trend": {
+                    "direction": trend_direction,
+                    "slope_per_month": int(slope),
+                    "monthly_change_percent": round(monthly_change_pct, 1)
+                },
+                "seasonality": seasonality,
+                "average_monthly_revenue": int(avg_revenue),
+                "average_monthly_units": int(avg_units)
+            },
+            "forecast": {
+                "methodology": "Linear Trend + Seasonality Adjustment (Complete Months Only)",
+                "description": f"Proyección basada en {len(periods)} meses completos (Ene-{month_names[last_complete_month] if last_complete_month > 0 else 'N/A'}). Meses incompletos excluidos para evitar sesgo negativo.",
+                "months_used_for_calculation": len(periods),
+                "next_year_projection": forecast,
+                "total_projected": int(total_forecast),
+                "growth_vs_current_year": round(growth_vs_current, 1)
+            },
+            # This is the chart-ready format that the frontend can render directly
+            "forecast_chart": forecast_chart
+        }, ensure_ascii=False)
+
+    except Exception as e:
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+# ============================================================================
+# TOOL 10: get_chart_data
+# ============================================================================
+
+def get_chart_data(
+    chart_type: str,
+    metric: str = "revenue",
+    year: Optional[int] = None,
+    group_by: str = "month",
+    channel: Optional[str] = None,
+    category: Optional[str] = None,
+    top_n: int = 10
+) -> str:
+    """
+    Generate structured chart data for visualizations in the frontend.
+
+    Supports multiple chart types optimized for different analyses:
+    - line: Time series (monthly/quarterly trends)
+    - bar: Comparisons (by channel, category, product)
+    - pie: Distribution (market share, composition)
+    - stacked_bar: Multi-dimensional comparison
+
+    Args:
+        chart_type: 'line', 'bar', 'pie', or 'stacked_bar'
+        metric: 'revenue', 'units', or 'orders'
+        year: Optional year filter (uses explicit EXTRACT)
+        group_by: 'month', 'quarter', 'channel', 'category', or 'product'
+        channel: Optional channel filter
+        category: Optional category filter
+        top_n: For product charts, limit to top N (default: 10)
+
+    Returns:
+        JSON with chart-ready data structure for frontend rendering
+    """
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection_dict_with_retry()
+        cursor = conn.cursor()
+
+        # Build base conditions
+        conditions = [
+            "o.source = 'relbase'",
+            "o.invoice_status IN ('accepted', 'accepted_objection')"
+        ]
+        params = []
+
+        # EXPLICIT year filter if provided
+        year_filter_sql = None
+        if year:
+            conditions.append("EXTRACT(YEAR FROM o.order_date) = %s")
+            params.append(year)
+            year_filter_sql = f"EXTRACT(YEAR FROM order_date) = {year}"
+
+        if channel:
+            conditions.append("ch.name = %s")
+            params.append(channel.upper())
+
+        if category:
+            conditions.append("p.category = %s")
+            params.append(category.upper())
+
+        where_clause = " AND ".join(conditions)
+
+        # Select metric column
+        metric_expr = {
+            "revenue": "COALESCE(SUM(oi.subtotal), 0)",
+            "units": "COALESCE(SUM(oi.quantity), 0)",
+            "orders": "COUNT(DISTINCT o.id)"
+        }.get(metric, "COALESCE(SUM(oi.subtotal), 0)")
+
+        metric_label = {
+            "revenue": "Ingresos ($)",
+            "units": "Unidades",
+            "orders": "Órdenes"
+        }.get(metric, "Valor")
+
+        # Build query based on group_by
+        if group_by in ("month", "quarter"):
+            if group_by == "quarter":
+                group_expr = "EXTRACT(QUARTER FROM o.order_date)"
+                label_expr = "'Q' || EXTRACT(QUARTER FROM o.order_date)::int"
+            else:
+                group_expr = "EXTRACT(MONTH FROM o.order_date)"
+                label_expr = "TO_CHAR(o.order_date, 'YYYY-MM')"
+
+            cursor.execute(f"""
+                SELECT
+                    {label_expr} as label,
+                    {group_expr} as sort_order,
+                    {metric_expr} as value
+                FROM orders o
+                JOIN order_items oi ON oi.order_id = o.id
+                LEFT JOIN products p ON p.sku = oi.product_sku
+                LEFT JOIN channels ch ON ch.id = o.channel_id
+                WHERE {where_clause}
+                GROUP BY {group_expr}, {label_expr}
+                ORDER BY {group_expr}
+            """, params)
+
+        elif group_by == "channel":
+            cursor.execute(f"""
+                SELECT
+                    COALESCE(ch.name, 'SIN CANAL') as label,
+                    {metric_expr} as value
+                FROM orders o
+                JOIN order_items oi ON oi.order_id = o.id
+                LEFT JOIN products p ON p.sku = oi.product_sku
+                LEFT JOIN channels ch ON ch.id = o.channel_id
+                WHERE {where_clause}
+                GROUP BY ch.name
+                ORDER BY value DESC
+            """, params)
+
+        elif group_by == "category":
+            cursor.execute(f"""
+                SELECT
+                    COALESCE(p.category, 'SIN CATEGORIA') as label,
+                    {metric_expr} as value
+                FROM orders o
+                JOIN order_items oi ON oi.order_id = o.id
+                LEFT JOIN products p ON p.sku = oi.product_sku
+                LEFT JOIN channels ch ON ch.id = o.channel_id
+                WHERE {where_clause}
+                GROUP BY p.category
+                ORDER BY value DESC
+            """, params)
+
+        elif group_by == "product":
+            params.append(top_n)
+            cursor.execute(f"""
+                SELECT
+                    oi.product_sku || ' - ' || SUBSTRING(oi.product_name, 1, 30) as label,
+                    {metric_expr} as value
+                FROM orders o
+                JOIN order_items oi ON oi.order_id = o.id
+                LEFT JOIN products p ON p.sku = oi.product_sku
+                LEFT JOIN channels ch ON ch.id = o.channel_id
+                WHERE {where_clause}
+                GROUP BY oi.product_sku, oi.product_name
+                ORDER BY value DESC
+                LIMIT %s
+            """, params)
+        else:
+            return json.dumps({"error": f"Invalid group_by: {group_by}"}, ensure_ascii=False)
+
+        results = cursor.fetchall()
+
+        if not results:
+            return json.dumps({
+                "error": "No data found",
+                "filters": {"year": year, "channel": channel, "category": category}
+            }, ensure_ascii=False)
+
+        # Build chart data structure
+        labels = [row['label'] for row in results]
+        values = [int(row['value']) for row in results]
+        total = sum(values)
+
+        # For pie charts, also calculate percentages
+        percentages = [round(v / total * 100, 1) if total > 0 else 0 for v in values]
+
+        # Determine suggested chart type based on data
+        suggested_type = chart_type
+        if chart_type == "auto":
+            if group_by in ("month", "quarter"):
+                suggested_type = "line"
+            elif group_by in ("channel", "category"):
+                suggested_type = "bar" if len(labels) > 5 else "pie"
+            else:
+                suggested_type = "bar"
+
+        # Color palette for charts
+        colors = [
+            "#4F46E5",  # Indigo
+            "#10B981",  # Emerald
+            "#F59E0B",  # Amber
+            "#EF4444",  # Red
+            "#8B5CF6",  # Violet
+            "#06B6D4",  # Cyan
+            "#EC4899",  # Pink
+            "#84CC16",  # Lime
+            "#F97316",  # Orange
+            "#6366F1",  # Indigo-lighter
+        ]
+
+        return json.dumps({
+            "chart_type": suggested_type,
+            "title": f"{metric_label} por {group_by.replace('_', ' ').title()}",
+            "subtitle": f"Año {year}" if year else "Todos los períodos",
+            "query_info": {
+                "year": year,
+                "year_filter_sql": year_filter_sql,
+                "group_by": group_by,
+                "metric": metric,
+                "filters": {
+                    "channel": channel,
+                    "category": category
+                }
+            },
+            "data": {
+                "labels": labels,
+                "datasets": [
+                    {
+                        "label": metric_label,
+                        "data": values,
+                        "backgroundColor": colors[:len(values)],
+                        "borderColor": colors[:len(values)]
+                    }
+                ]
+            },
+            "summary": {
+                "total": total,
+                "count": len(values),
+                "average": int(total / len(values)) if values else 0,
+                "max": max(values) if values else 0,
+                "min": min(values) if values else 0,
+                "percentages": dict(zip(labels, percentages))
+            },
+            "render_hint": {
+                "type": suggested_type,
+                "show_legend": len(labels) <= 10,
+                "show_data_labels": chart_type == "pie" or len(labels) <= 5,
+                "x_axis_label": group_by.replace('_', ' ').title() if suggested_type != "pie" else None,
+                "y_axis_label": metric_label if suggested_type != "pie" else None
+            }
+        }, ensure_ascii=False)
+
+    except Exception as e:
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+# ============================================================================
 # TOOL REGISTRY
 # ============================================================================
 
@@ -918,6 +1454,8 @@ TOOL_FUNCTIONS = {
     "get_sales_by_product": get_sales_by_product,
     "get_sales_by_channel": get_sales_by_channel,
     "compare_stock_vs_sales": compare_stock_vs_sales,
+    "get_sales_forecast": get_sales_forecast,
+    "get_chart_data": get_chart_data,
 }
 
 

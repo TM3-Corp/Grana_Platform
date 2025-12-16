@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { toTitleCase } from '@/lib/utils';
 
 // Types for dynamic warehouse structure
 interface DynamicInventoryProduct {
@@ -14,12 +15,16 @@ interface DynamicInventoryProduct {
   stock_total: number;
   lot_count: number;
   last_updated: string | null;
-  min_stock?: number; // Minimum stock level (from database or calculated from sales)
+  min_stock?: number; // User-editable minimum stock level
+  recommended_min_stock?: number; // System-calculated recommendation (based on 6-month sales avg)
+  sku_value?: number; // Unit cost from product_catalog
+  valor?: number; // Total value (stock_total × sku_value)
 }
 
 interface DynamicWarehouseInventoryTableProps {
   products: DynamicInventoryProduct[];
   loading?: boolean;
+  onDataChanged?: () => void;  // Callback to refresh data after edits
 }
 
 type SortDirection = 'asc' | 'desc';
@@ -27,6 +32,7 @@ type SortDirection = 'asc' | 'desc';
 export default function DynamicWarehouseInventoryTable({
   products,
   loading = false,
+  onDataChanged,
 }: DynamicWarehouseInventoryTableProps) {
   const [sortField, setSortField] = useState<string>('category');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
@@ -68,7 +74,13 @@ export default function DynamicWarehouseInventoryTable({
   // Inline editing handlers
   const startEditing = (sku: string, currentValue: number) => {
     setEditingSku(sku);
-    setEditingValue(currentValue);
+    // If value is 0, start with empty string so user can type fresh
+    setEditingValue(currentValue || 0);
+  };
+
+  // Track if input was just focused (to select all text)
+  const handleInputFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    e.target.select(); // Select all text on focus so typing replaces it
   };
 
   const cancelEditing = () => {
@@ -97,17 +109,13 @@ export default function DynamicWarehouseInventoryTable({
         throw new Error('Failed to update minimum stock');
       }
 
-      // Update the product in the local state
-      const updatedProducts = products.map(p =>
-        p.sku === sku ? { ...p, min_stock: newValue } : p
-      );
-
-      // Note: Since products is a prop, we can't directly update it
-      // The parent component should refetch data or we need to emit an event
-      // For now, the change will be reflected after the next data refresh
-
       setEditingSku(null);
       setEditingValue(0);
+
+      // Trigger parent to refetch data so new value is displayed
+      if (onDataChanged) {
+        onDataChanged();
+      }
     } catch (error) {
       console.error('Error updating min stock:', error);
       alert('Error al actualizar el stock mínimo');
@@ -140,6 +148,9 @@ export default function DynamicWarehouseInventoryTable({
       } else if (sortField === 'min_stock') {
         aVal = a.min_stock || 0;
         bVal = b.min_stock || 0;
+      } else if (sortField === 'valor') {
+        aVal = a.valor || 0;
+        bVal = b.valor || 0;
       } else if (warehouseCodes.includes(sortField)) {
         aVal = a.warehouses?.[sortField] || 0;
         bVal = b.warehouses?.[sortField] || 0;
@@ -235,6 +246,7 @@ export default function DynamicWarehouseInventoryTable({
 
               <HeaderCell label="Lotes" field="lot_count" />
               <HeaderCell label="Total" field="stock_total" />
+              <HeaderCell label="Valor" field="valor" />
               <HeaderCell label="Stock Mínimo" field="min_stock" />
             </tr>
           </thead>
@@ -247,15 +259,15 @@ export default function DynamicWarehouseInventoryTable({
                 </td>
 
                 {/* Product name */}
-                <td className="px-4 py-3 text-sm text-gray-900 max-w-xs truncate" title={product.name}>
-                  {product.name}
+                <td className="px-4 py-3 text-sm text-gray-900 max-w-xs truncate" title={toTitleCase(product.name)}>
+                  {toTitleCase(product.name)}
                 </td>
 
                 {/* Category */}
                 <td className="px-4 py-3 whitespace-nowrap">
                   {product.category && (
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                      {product.category}
+                      {toTitleCase(product.category)}
                     </span>
                   )}
                 </td>
@@ -296,41 +308,67 @@ export default function DynamicWarehouseInventoryTable({
                   </span>
                 </td>
 
-                {/* Minimum stock (editable) */}
-                <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
-                  {editingSku === product.sku ? (
-                    // Editing mode: show input
-                    <input
-                      type="number"
-                      min="0"
-                      value={editingValue}
-                      onChange={(e) => setEditingValue(parseInt(e.target.value) || 0)}
-                      onBlur={() => saveMinStock(product.sku, editingValue)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          saveMinStock(product.sku, editingValue);
-                        } else if (e.key === 'Escape') {
-                          cancelEditing();
-                        }
-                      }}
-                      disabled={saving}
-                      autoFocus
-                      className="w-20 px-2 py-1 text-center border-2 border-blue-400 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                    />
-                  ) : (
-                    // View mode: show clickable span
-                    <span
-                      onClick={() => startEditing(product.sku, product.min_stock || 0)}
-                      className={`inline-flex items-center justify-center min-w-[80px] px-3 py-1 rounded-md font-medium cursor-pointer transition-all hover:ring-2 hover:ring-blue-400 ${
-                        product.stock_total < (product.min_stock || 0)
-                          ? 'bg-red-100 text-red-800 ring-2 ring-red-300'
-                          : 'bg-gray-100 text-gray-700'
-                      }`}
-                      title={product.min_stock ? `Click para editar. Stock mínimo: ${product.min_stock.toLocaleString()} (basado en ventas)` : 'Click para establecer stock mínimo'}
-                    >
-                      {product.min_stock ? product.min_stock.toLocaleString() : '-'}
+                {/* Valor (value) */}
+                <td className="px-4 py-3 whitespace-nowrap text-sm text-right">
+                  {product.valor && Number(product.valor) > 0 ? (
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-100 text-emerald-800">
+                      ${Math.round(Number(product.valor)).toLocaleString('es-CL')}
                     </span>
+                  ) : (
+                    <span className="text-gray-400">-</span>
                   )}
+                </td>
+
+                {/* Minimum stock (editable) with recommended value */}
+                <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
+                  <div className="flex flex-col items-center gap-1">
+                    {editingSku === product.sku ? (
+                      // Editing mode: show input
+                      <input
+                        type="number"
+                        min="0"
+                        value={editingValue || ''}
+                        onChange={(e) => setEditingValue(parseInt(e.target.value) || 0)}
+                        onFocus={handleInputFocus}
+                        onBlur={() => saveMinStock(product.sku, editingValue)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            saveMinStock(product.sku, editingValue);
+                          } else if (e.key === 'Escape') {
+                            cancelEditing();
+                          }
+                        }}
+                        disabled={saving}
+                        autoFocus
+                        className="w-24 px-2 py-1 text-center border-2 border-blue-400 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      />
+                    ) : (
+                      // View mode: show clickable span with current value
+                      <span
+                        onClick={() => startEditing(product.sku, product.min_stock || product.recommended_min_stock || 0)}
+                        className={`inline-flex items-center justify-center min-w-[80px] px-3 py-1 rounded-md font-medium cursor-pointer transition-all hover:ring-2 hover:ring-blue-400 ${
+                          product.stock_total < (product.min_stock || product.recommended_min_stock || 0)
+                            ? 'bg-red-100 text-red-800 ring-2 ring-red-300'
+                            : product.min_stock && product.min_stock > 0
+                              ? 'bg-blue-100 text-blue-800'  // User-edited value
+                              : 'bg-gray-100 text-gray-700'
+                        }`}
+                        title={`Click para editar.${product.min_stock ? ` Valor actual: ${product.min_stock.toLocaleString()}` : ''} Recomendado: ${(product.recommended_min_stock || 0).toLocaleString()}`}
+                      >
+                        {product.min_stock ? product.min_stock.toLocaleString() : (product.recommended_min_stock ? product.recommended_min_stock.toLocaleString() : '-')}
+                      </span>
+                    )}
+                    {/* Show recommended value below ONLY if user edited to a different value */}
+                    {product.recommended_min_stock && product.recommended_min_stock > 0 &&
+                     product.min_stock && product.min_stock !== product.recommended_min_stock && (
+                      <span
+                        className="text-xs text-amber-600 font-medium"
+                        title={`Recomendación basada en promedio de ventas de los últimos 6 meses`}
+                      >
+                        📊 Rec: {product.recommended_min_stock.toLocaleString()}
+                      </span>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

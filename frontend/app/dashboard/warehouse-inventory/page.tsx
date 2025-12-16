@@ -17,6 +17,10 @@ interface InventoryProduct {
   stock_total: number;
   lot_count: number;
   last_updated: string | null;
+  sku_value?: number;
+  valor?: number;
+  min_stock?: number;  // User-editable minimum stock
+  recommended_min_stock?: number;  // System-calculated recommendation (based on 6-month sales avg)
 }
 
 interface ExpirationStats {
@@ -37,6 +41,7 @@ interface InventorySummary {
   products_without_stock: number;
   active_warehouses: number;
   expiration?: ExpirationStats;
+  total_valor?: number;
 }
 
 interface APIResponse {
@@ -63,17 +68,21 @@ export default function WarehouseInventoryPage() {
   // Get unique categories
   const categories = [...new Set(products.map((p) => p.category).filter(Boolean))].sort() as string[];
 
-  // Enrich products with min_stock from suggestions or database
+  // Products now come from API with min_stock and recommended_min_stock
+  // Use minStockSuggestions as fallback for recommended_min_stock if not in DB
   const enrichedProducts = products.map(product => ({
     ...product,
-    min_stock: product.min_stock || minStockSuggestions[product.sku] || 0
+    min_stock: product.min_stock || 0,
+    recommended_min_stock: product.recommended_min_stock || minStockSuggestions[product.sku] || 0
   }));
 
   // Apply client-side filters for low stock
   const filteredProducts = enrichedProducts.filter(product => {
     if (showLowStockOnly) {
       // Show products where current stock is below their minimum stock
-      return product.stock_total > 0 && product.stock_total < product.min_stock;
+      // Use user-set min_stock, or fall back to recommended_min_stock
+      const effectiveMinStock = product.min_stock > 0 ? product.min_stock : product.recommended_min_stock;
+      return product.stock_total > 0 && effectiveMinStock > 0 && product.stock_total < effectiveMinStock;
     }
     return true;
   });
@@ -271,6 +280,15 @@ export default function WarehouseInventoryPage() {
             color="gray"
             subtitle={`${summary.total_products > 0 ? ((summary.products_without_stock / summary.total_products) * 100).toFixed(1) : 0}% del total`}
           />
+          {summary.total_valor !== undefined && Number(summary.total_valor) > 0 && (
+            <EnhancedSummaryCard
+              title="Valor Total Inventario"
+              value={`$${Math.round(Number(summary.total_valor)).toLocaleString('es-CL')}`}
+              icon="💰"
+              color="green"
+              subtitle="Valorización total"
+            />
+          )}
           {summary.expiration && (
             <>
               <EnhancedSummaryCard
@@ -480,7 +498,11 @@ export default function WarehouseInventoryPage() {
       )}
 
       {/* Dynamic Inventory Table (Relbase Warehouses) */}
-      <DynamicWarehouseInventoryTable products={filteredProducts} loading={loading} />
+      <DynamicWarehouseInventoryTable
+        products={filteredProducts}
+        loading={loading}
+        onDataChanged={() => fetchInventory(true)}
+      />
     </div>
     </>
   );

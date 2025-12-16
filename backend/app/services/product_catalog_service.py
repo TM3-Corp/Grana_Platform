@@ -70,7 +70,8 @@ class ProductCatalogService:
                     "units_per_display": 1,
                     "units_per_master_box": 200,
                     "is_master_sku": False,
-                    "primario": "BAKC_U04010"  # Calculated
+                    "sku_primario": "BAKC_U04010",  # From database (Migration 019)
+                    "primario": "BAKC_U04010"       # Same value for compatibility
                 },
                 "BAKC_U20010": {
                     "sku": "BAKC_U20010",
@@ -78,7 +79,8 @@ class ProductCatalogService:
                     "category": "BARRAS",
                     "units_per_display": 5,
                     "is_master_sku": False,
-                    "primario": "BAKC_U04010"  # Points to X1 variant
+                    "sku_primario": "BAKC_U04010",  # From database
+                    "primario": "BAKC_U04010"       # Points to X1 variant
                 }
             }
         """
@@ -89,6 +91,7 @@ class ProductCatalogService:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
 
             # Fetch all active products (including sku_master for reverse lookup)
+            # sku_primario is stored in the database (Migration 019)
             cursor.execute("""
                 SELECT
                     sku,
@@ -100,7 +103,11 @@ class ProductCatalogService:
                     units_per_master_box,
                     items_per_master_box,
                     is_master_sku,
-                    language
+                    language,
+                    peso_display_total,
+                    sku_value,
+                    sku_master_value,
+                    sku_primario
                 FROM product_catalog
                 WHERE is_active = TRUE
                 ORDER BY sku
@@ -120,41 +127,22 @@ class ProductCatalogService:
                 if product['sku_master']:
                     master_sku_lookup[product['sku_master']] = dict(product)
 
-            # Calculate SKU Primario for each product
-            # Rule: SKU Primario = SKU with same base_code AND units_per_display = 1 AND language = 'ESPAÑOL'
-            # This is the minimal unit for each product family (Spanish version only)
+            # Use stored sku_primario from database (Migration 019)
+            # No more dynamic calculation - the primario relationship is explicitly stored
+            # This was necessary because:
+            # 1. Some base_codes had multiple products with units_per_display=1 (ambiguous)
+            # 2. Some base_codes had NO products with units_per_display=1 (missing primario)
+            # Now admins can explicitly set the correct primario for each product
 
-            # First pass: Build a map of base_code -> minimal unit SKU (Spanish only)
-            base_code_to_primario = {}
+            # Set primario field from stored sku_primario
             for sku, data in catalog.items():
-                base_code = data['base_code']
-                units_per_display = data.get('units_per_display')
-                language = data.get('language', '').upper()
+                # Use stored sku_primario, fallback to SKU itself if NULL
+                data['primario'] = data.get('sku_primario') or sku
 
-                if base_code and units_per_display == 1 and language == 'ESPAÑOL':
-                    # This is a Spanish minimal unit (X1) - it's the SKU Primario
-                    # Only Spanish products are used as primarios
-                    base_code_to_primario[base_code] = sku
-
-            # Second pass: Assign SKU Primario to all products
-            for sku, data in catalog.items():
-                base_code = data['base_code']
-                if base_code and base_code in base_code_to_primario:
-                    # Found minimal unit for this base_code
-                    data['primario'] = base_code_to_primario[base_code]
-                else:
-                    # No minimal unit found, SKU is its own primario
-                    data['primario'] = sku
-
-            # ALSO calculate SKU Primario for master SKUs in lookup
+            # ALSO set primario for master SKUs in lookup
             for master_sku, data in master_sku_lookup.items():
-                base_code = data['base_code']
-                if base_code and base_code in base_code_to_primario:
-                    # Found minimal unit for this base_code
-                    data['primario'] = base_code_to_primario[base_code]
-                else:
-                    # No minimal unit found, use the product SKU (not master SKU)
-                    data['primario'] = data.get('sku', master_sku)
+                # Use stored sku_primario, fallback to product SKU
+                data['primario'] = data.get('sku_primario') or data.get('sku', master_sku)
 
             cursor.close()
             conn.close()
@@ -446,3 +434,60 @@ class ProductCatalogService:
             'total_master_skus': master_skus,
             'categories': categories
         }
+
+    def get_peso_display_total(self, sku: str) -> float:
+        """
+        Get the peso_display_total for a SKU
+
+        Args:
+            sku: Product SKU
+
+        Returns:
+            peso_display_total value (kg) or 0.0 if not found
+
+        Examples:
+            - BACM_U20010 (X5): returns 0.0189
+            - BAKC_U64010 (X16): returns 0.0311
+            - BAKC_U04010 (X1): returns 0.0 (no display for single units)
+        """
+        if not sku:
+            return 0.0
+
+        catalog = self._get_catalog()
+
+        if sku in catalog:
+            peso = catalog[sku].get('peso_display_total')
+            return float(peso) if peso is not None else 0.0
+
+        # Try master box SKU lookup
+        if self._master_sku_lookup and sku in self._master_sku_lookup:
+            peso = self._master_sku_lookup[sku].get('peso_display_total')
+            return float(peso) if peso is not None else 0.0
+
+        return 0.0
+
+    def calculate_peso_total(self, sku: str, quantity: int) -> float:
+        """
+        Calculate total weight for an order item
+
+        Formula: Peso Total = peso_display_total × unidades
+        Where: unidades = quantity × units_per_display
+
+        Args:
+            sku: Product SKU
+            quantity: Quantity ordered
+
+        Returns:
+            Total weight in kg (float)
+
+        Examples:
+            - BACM_U20010 (X5), qty=10: 0.0189 × 50 = 0.945 kg
+            - BAKC_U64010 (X16), qty=5: 0.0311 × 80 = 2.488 kg
+        """
+        if not sku or quantity is None:
+            return 0.0
+
+        unidades = self.calculate_units(sku, quantity)
+        peso_display = self.get_peso_display_total(sku)
+
+        return round(peso_display * unidades, 4)

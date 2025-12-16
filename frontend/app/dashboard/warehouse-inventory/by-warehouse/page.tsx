@@ -47,6 +47,8 @@ interface WarehouseProduct {
   lots: LotInfo[];
   percentage_of_warehouse?: number;  // Opcional - solo para vista warehouse-specific
   percentage_of_product?: number;     // Opcional - solo para vista warehouse-specific
+  sku_value?: number;  // Unit cost from product_catalog
+  valor?: number;      // Total value (stock × sku_value)
 }
 
 interface WarehouseSummary {
@@ -55,6 +57,7 @@ interface WarehouseSummary {
   total_lots: number;
   last_updated: string | null;
   expiration?: ExpirationStats;
+  total_valor?: number;
 }
 
 interface WarehouseInventoryResponse {
@@ -383,6 +386,15 @@ export default function WarehouseSpecificInventoryPage() {
             color="amber"
             subtitle="Con tracking"
           />
+          {summary.total_valor !== undefined && Number(summary.total_valor) > 0 && (
+            <EnhancedSummaryCard
+              title="Valor Total"
+              value={`$${Math.round(Number(summary.total_valor)).toLocaleString('es-CL')}`}
+              icon="💰"
+              color="green"
+              subtitle="Valorización bodega"
+            />
+          )}
           <EnhancedSummaryCard
             title="Última Actualización"
             value={
