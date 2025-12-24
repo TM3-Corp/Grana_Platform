@@ -35,6 +35,8 @@ class SalesSyncResult:
     errors: List[str]
     date_range: Dict[str, str]
     duration_seconds: float
+    customers_fixed: int = 0  # Cleanup: customers linked to orders
+    channels_fixed: int = 0   # Cleanup: channels fixed for orders
 
 
 @dataclass
@@ -68,8 +70,9 @@ class SyncService:
         self.relbase_user_token = os.getenv('RELBASE_USER_TOKEN')
 
         # MercadoLibre API configuration
-        self.ml_access_token = os.getenv('ML_ACCESS_TOKEN')
-        self.ml_seller_id = os.getenv('ML_SELLER_ID')
+        # Note: .env uses MERCADOLIBRE_* prefix, not ML_*
+        self.ml_access_token = os.getenv('MERCADOLIBRE_ACCESS_TOKEN') or os.getenv('ML_ACCESS_TOKEN')
+        self.ml_seller_id = os.getenv('MERCADOLIBRE_SELLER_ID') or os.getenv('ML_SELLER_ID')
 
         # Rate limiting
         self.rate_limit_delay = 0.17  # ~6 requests/second
@@ -232,12 +235,13 @@ class SyncService:
             logger.error(f"Error fetching lots for product {product_id}: {e}")
             return []
 
-    def _fetch_relbase_customer(self, customer_id: int) -> Optional[Dict]:
+    def _fetch_relbase_customer(self, customer_id: int, retries: int = 3) -> Optional[Dict]:
         """
-        Fetch customer details from RelBase API
+        Fetch customer details from RelBase API with retry logic
 
         Args:
             customer_id: RelBase customer ID
+            retries: Number of retry attempts (default 3)
 
         Returns:
             Customer data dict or None if not found
@@ -245,16 +249,161 @@ class SyncService:
         url = f"{self.relbase_base_url}/api/v1/clientes/{customer_id}"
         headers = self._get_relbase_headers()
 
-        try:
-            response = requests.get(url, headers=headers, timeout=30)
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            if hasattr(e, 'response') and getattr(e.response, 'status_code', None) == 404:
-                logger.warning(f"Customer {customer_id} not found in RelBase")
-                return None
-            logger.error(f"Error fetching customer {customer_id}: {e}")
-            return None
+        for attempt in range(retries):
+            try:
+                # Add small delay between retries to avoid rate limiting
+                if attempt > 0:
+                    time.sleep(0.5 * attempt)  # 0.5s, 1s delay on retries
+
+                response = requests.get(url, headers=headers, timeout=30)
+                response.raise_for_status()
+                return response.json()
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 404:
+                    logger.warning(f"Customer {customer_id} not found in RelBase (404)")
+                    return None
+                elif e.response.status_code == 429:  # Rate limited
+                    logger.warning(f"Rate limited fetching customer {customer_id}, attempt {attempt + 1}/{retries}")
+                    continue
+                else:
+                    logger.error(f"HTTP error fetching customer {customer_id}: {e}")
+                    if attempt == retries - 1:
+                        return None
+            except requests.exceptions.Timeout:
+                logger.warning(f"Timeout fetching customer {customer_id}, attempt {attempt + 1}/{retries}")
+                continue
+            except Exception as e:
+                logger.error(f"Error fetching customer {customer_id}: {e}")
+                if attempt == retries - 1:
+                    return None
+
+        logger.error(f"Failed to fetch customer {customer_id} after {retries} attempts")
+        return None
+
+    def _fix_missing_order_references(self, cursor) -> tuple:
+        """
+        Cleanup step: Find and fix orders with missing customer/channel references.
+
+        This catches any orders where customer/channel creation failed during sync.
+        Called at the end of sync to ensure data integrity.
+
+        Returns:
+            Tuple of (customers_fixed, channels_fixed)
+        """
+        customers_fixed = 0
+        channels_fixed = 0
+
+        # === FIX MISSING CUSTOMERS ===
+        # Find orders with customer_id_relbase in notes but no customer_id
+        cursor.execute("""
+            SELECT
+                o.id,
+                o.external_id,
+                (o.customer_notes::jsonb->>'customer_id_relbase')::int as customer_id_relbase
+            FROM orders o
+            WHERE o.source = 'relbase'
+              AND o.customer_id IS NULL
+              AND o.customer_notes IS NOT NULL
+              AND o.customer_notes::jsonb ? 'customer_id_relbase'
+              AND (o.customer_notes::jsonb->>'customer_id_relbase') IS NOT NULL
+              AND (o.customer_notes::jsonb->>'customer_id_relbase') != 'null'
+        """)
+        orders_missing_customer = cursor.fetchall()
+
+        if orders_missing_customer:
+            logger.info(f"Cleanup: Found {len(orders_missing_customer)} orders with missing customer_id")
+
+        for order_id, external_id, customer_id_relbase in orders_missing_customer:
+            if not customer_id_relbase:
+                continue
+
+            # Check if customer now exists (might have been created by another order)
+            cursor.execute("""
+                SELECT id FROM customers
+                WHERE external_id = %s AND source = 'relbase'
+            """, (str(customer_id_relbase),))
+            existing = cursor.fetchone()
+
+            if existing:
+                customer_id = existing[0]
+            else:
+                # Fetch from Relbase API and create
+                time.sleep(0.15)  # Rate limit protection
+                try:
+                    customer_response = self._fetch_relbase_customer(customer_id_relbase)
+                    if customer_response:
+                        cust_data = customer_response.get('data', {})
+                        cursor.execute("""
+                            INSERT INTO customers
+                            (external_id, source, name, rut, email, phone, address, created_at)
+                            VALUES (%s, 'relbase', %s, %s, %s, %s, %s, NOW())
+                            RETURNING id
+                        """, (
+                            str(customer_id_relbase),
+                            cust_data.get('name', f'Customer {customer_id_relbase}'),
+                            cust_data.get('rut', ''),
+                            cust_data.get('email', ''),
+                            cust_data.get('phone', ''),
+                            cust_data.get('address', '')
+                        ))
+                        customer_id = cursor.fetchone()[0]
+                        logger.info(f"Cleanup: Created customer {cust_data.get('name')} (ID: {customer_id})")
+                    else:
+                        logger.warning(f"Cleanup: Could not fetch customer {customer_id_relbase} for order {external_id}")
+                        continue
+                except Exception as e:
+                    logger.error(f"Cleanup: Error creating customer {customer_id_relbase}: {e}")
+                    continue
+
+            # Update order with customer_id
+            cursor.execute("UPDATE orders SET customer_id = %s WHERE id = %s", (customer_id, order_id))
+            customers_fixed += 1
+            logger.info(f"Cleanup: Linked order {external_id} to customer {customer_id}")
+
+        # === FIX MISSING CHANNELS ===
+        # Find orders with channel_id_relbase in notes but no channel_id (or wrong channel)
+        cursor.execute("""
+            SELECT
+                o.id,
+                o.external_id,
+                o.channel_id,
+                (o.customer_notes::jsonb->>'channel_id_relbase')::int as channel_id_relbase
+            FROM orders o
+            WHERE o.source = 'relbase'
+              AND o.customer_notes IS NOT NULL
+              AND o.customer_notes::jsonb ? 'channel_id_relbase'
+              AND (o.customer_notes::jsonb->>'channel_id_relbase') IS NOT NULL
+              AND (o.customer_notes::jsonb->>'channel_id_relbase') != 'null'
+              AND (
+                  o.channel_id IS NULL
+                  OR NOT EXISTS (
+                      SELECT 1 FROM channels c
+                      WHERE c.id = o.channel_id
+                        AND c.external_id = (o.customer_notes::jsonb->>'channel_id_relbase')
+                  )
+              )
+        """)
+        orders_wrong_channel = cursor.fetchall()
+
+        for order_id, external_id, current_channel_id, channel_id_relbase in orders_wrong_channel:
+            if not channel_id_relbase:
+                continue
+
+            # Find the correct channel
+            cursor.execute("""
+                SELECT id FROM channels
+                WHERE external_id = %s AND source = 'relbase'
+            """, (str(channel_id_relbase),))
+            channel_result = cursor.fetchone()
+
+            if channel_result:
+                correct_channel_id = channel_result[0]
+                if correct_channel_id != current_channel_id:
+                    cursor.execute("UPDATE orders SET channel_id = %s WHERE id = %s", (correct_channel_id, order_id))
+                    channels_fixed += 1
+                    logger.info(f"Cleanup: Fixed channel for order {external_id} ({current_channel_id} -> {correct_channel_id})")
+
+        return customers_fixed, channels_fixed
 
     # =========================================================================
     # MercadoLibre API Methods
@@ -344,6 +493,23 @@ class SyncService:
         orders_created = 0
         orders_updated = 0
         order_items_created = 0
+
+        # === VALIDATE CREDENTIALS ===
+        if not self.relbase_company_token or not self.relbase_user_token:
+            error_msg = "RELBASE_COMPANY_TOKEN or RELBASE_USER_TOKEN not configured"
+            logger.error(f"Sync failed: {error_msg}")
+            return SalesSyncResult(
+                success=False,
+                message=error_msg,
+                orders_created=0,
+                orders_updated=0,
+                order_items_created=0,
+                errors=[error_msg],
+                date_range={'from': 'N/A', 'to': 'N/A'},
+                duration_seconds=0,
+                customers_fixed=0,
+                channels_fixed=0
+            )
 
         conn = get_db_connection_with_retry()
         cursor = conn.cursor()
@@ -478,6 +644,9 @@ class SyncService:
                                     customer_id = customer_result[0]
                                 else:
                                     # Customer not found - fetch from RelBase API and create
+                                    # Add small delay to prevent rate limiting when creating many new customers
+                                    time.sleep(0.15)  # 150ms delay between customer API calls
+
                                     try:
                                         customer_response = self._fetch_relbase_customer(customer_id_relbase)
                                         if customer_response:
@@ -497,8 +666,11 @@ class SyncService:
                                             ))
                                             customer_id = cursor.fetchone()[0]
                                             logger.info(f"Created new customer: {cust_data.get('name')} (ID: {customer_id})")
+                                        else:
+                                            # API returned None (404 or failed after retries)
+                                            logger.error(f"CUSTOMER_MISSING: Could not fetch customer {customer_id_relbase} from Relbase API for DTE {dte_id}")
                                     except Exception as e:
-                                        logger.warning(f"Could not create customer {customer_id_relbase}: {e}")
+                                        logger.error(f"CUSTOMER_CREATE_FAILED: Could not create customer {customer_id_relbase} for DTE {dte_id}: {e}")
 
                             # Create order
                             cursor.execute("""
@@ -578,6 +750,11 @@ class SyncService:
                     page += 1
                     time.sleep(self.rate_limit_delay)  # Rate limiting between pages
 
+            # === CLEANUP: Fix any orders with missing customer/channel data ===
+            customers_fixed, channels_fixed = self._fix_missing_order_references(cursor)
+            if customers_fixed > 0 or channels_fixed > 0:
+                logger.info(f"Cleanup: Fixed {customers_fixed} missing customers, {channels_fixed} missing channels")
+
             # Commit changes
             conn.commit()
 
@@ -623,7 +800,9 @@ class SyncService:
                 order_items_created=order_items_created,
                 errors=errors[:10],  # Limit returned errors
                 date_range={'from': date_from, 'to': date_to},
-                duration_seconds=round(duration, 2)
+                duration_seconds=round(duration, 2),
+                customers_fixed=customers_fixed,
+                channels_fixed=channels_fixed
             )
 
         except Exception as e:
@@ -639,7 +818,9 @@ class SyncService:
                 order_items_created=order_items_created,
                 errors=errors,
                 date_range={'from': date_from, 'to': date_to},
-                duration_seconds=round(time.time() - start_time, 2)
+                duration_seconds=round(time.time() - start_time, 2),
+                customers_fixed=0,  # No cleanup on error
+                channels_fixed=0
             )
 
         finally:
@@ -788,14 +969,28 @@ class SyncService:
             try:
                 ml_listings = await self._fetch_ml_listings()
 
-                # Get or create ML warehouse
+                # Get the existing Mercado Libre warehouse (from RelBase sync)
+                # Use 'mercado_libre' which has source='relbase' and external_id=2013
                 cursor.execute("""
-                    INSERT INTO warehouses (code, name, source, update_method, is_active)
-                    VALUES ('mercadolibre', 'MercadoLibre Stock', 'mercadolibre', 'api', true)
-                    ON CONFLICT (code) DO UPDATE SET updated_at = NOW()
-                    RETURNING id
+                    SELECT id FROM warehouses
+                    WHERE code = 'mercado_libre' AND source = 'relbase' AND is_active = true
                 """)
-                ml_warehouse_id = cursor.fetchone()[0]
+                result = cursor.fetchone()
+
+                if result:
+                    ml_warehouse_id = result[0]
+                else:
+                    # Fallback: Create warehouse with source='relbase' so it appears in inventory
+                    cursor.execute("""
+                        INSERT INTO warehouses (code, name, source, update_method, is_active)
+                        VALUES ('mercado_libre', 'Mercado Libre', 'relbase', 'api', true)
+                        ON CONFLICT (code) DO UPDATE SET
+                            source = 'relbase',
+                            is_active = true,
+                            updated_at = NOW()
+                        RETURNING id
+                    """)
+                    ml_warehouse_id = cursor.fetchone()[0]
 
                 for listing in ml_listings:
                     sku = listing.get('sku')

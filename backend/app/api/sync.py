@@ -91,6 +91,8 @@ class SalesSyncResponse(BaseModel):
     errors: List[str]
     date_range: Dict[str, str]
     duration_seconds: float
+    customers_fixed: int = 0  # Cleanup: customers linked to orders
+    channels_fixed: int = 0   # Cleanup: channels fixed for orders
 
 
 class InventorySyncResponse(BaseModel):
@@ -176,7 +178,9 @@ async def sync_sales(
             order_items_created=result.order_items_created,
             errors=result.errors,
             date_range=result.date_range,
-            duration_seconds=result.duration_seconds
+            duration_seconds=result.duration_seconds,
+            customers_fixed=result.customers_fixed,
+            channels_fixed=result.channels_fixed
         )
     except Exception as e:
         logger.error(f"Error syncing sales: {e}")
@@ -265,7 +269,9 @@ async def sync_all(
             order_items_created=sales_result.order_items_created,
             errors=sales_result.errors,
             date_range=sales_result.date_range,
-            duration_seconds=sales_result.duration_seconds
+            duration_seconds=sales_result.duration_seconds,
+            customers_fixed=sales_result.customers_fixed,
+            channels_fixed=sales_result.channels_fixed
         )
 
         inventory_response = InventorySyncResponse(
@@ -313,3 +319,87 @@ async def sync_health():
         "service": "sync",
         "timestamp": datetime.now().isoformat()
     }
+
+
+@router.get("/debug-relbase")
+async def debug_relbase_connectivity():
+    """
+    Debug endpoint to test RelBase API connectivity.
+    Helps diagnose if Railway can reach RelBase.
+    """
+    import requests
+    import time
+
+    results = {
+        "timestamp": datetime.now().isoformat(),
+        "relbase_company_token": bool(os.getenv('RELBASE_COMPANY_TOKEN')),
+        "relbase_user_token": bool(os.getenv('RELBASE_USER_TOKEN')),
+        "tests": []
+    }
+
+    base_url = "https://api.relbase.cl"
+    headers = {
+        'company': os.getenv('RELBASE_COMPANY_TOKEN', ''),
+        'authorization': os.getenv('RELBASE_USER_TOKEN', ''),
+        'Content-Type': 'application/json'
+    }
+
+    # Test 1: Simple API connectivity (channels endpoint)
+    try:
+        start = time.time()
+        response = requests.get(
+            f"{base_url}/api/v1/canal_ventas",
+            headers=headers,
+            timeout=30
+        )
+        elapsed = round(time.time() - start, 2)
+        results["tests"].append({
+            "test": "channels_endpoint",
+            "status_code": response.status_code,
+            "elapsed_seconds": elapsed,
+            "success": response.status_code == 200,
+            "data_preview": str(response.json())[:200] if response.status_code == 200 else response.text[:200]
+        })
+    except Exception as e:
+        results["tests"].append({
+            "test": "channels_endpoint",
+            "success": False,
+            "error": str(e)
+        })
+
+    # Test 2: DTEs endpoint (what sync uses)
+    try:
+        start = time.time()
+        response = requests.get(
+            f"{base_url}/api/v1/dtes",
+            headers=headers,
+            params={
+                'type_document': 33,
+                'start_date': '2025-12-20',
+                'end_date': '2025-12-22',
+                'page': 1,
+                'per_page': 5
+            },
+            timeout=60
+        )
+        elapsed = round(time.time() - start, 2)
+        data = response.json() if response.status_code == 200 else {}
+        dtes_count = len(data.get('data', {}).get('dtes', []))
+        results["tests"].append({
+            "test": "dtes_endpoint",
+            "status_code": response.status_code,
+            "elapsed_seconds": elapsed,
+            "success": response.status_code == 200,
+            "dtes_returned": dtes_count
+        })
+    except Exception as e:
+        results["tests"].append({
+            "test": "dtes_endpoint",
+            "success": False,
+            "error": str(e)
+        })
+
+    # Overall status
+    results["overall_success"] = all(t.get("success", False) for t in results["tests"])
+
+    return results
