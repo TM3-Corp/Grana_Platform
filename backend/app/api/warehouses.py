@@ -151,44 +151,41 @@ async def get_inventory_general(
     search: Optional[str] = Query(None, description="Search by SKU or product name"),
     category: Optional[str] = Query(None, description="Filter by category"),
     only_with_stock: bool = Query(False, description="Show only products with stock > 0"),
-    warehouse_group: Optional[str] = Query(None, description="Filter by warehouse group (e.g., 'amplifica')")
+    warehouse_group: Optional[str] = Query(None, description="Filter by warehouse group (e.g., 'amplifica')"),
+    show_unmapped: bool = Query(True, description="Show products not in product_catalog")
 ):
     """
-    Get consolidated inventory view with dynamic warehouse columns (Relbase only)
+    Get consolidated inventory view with SKU mapping and dynamic warehouse columns.
+
+    This endpoint applies the same SKU mapping logic as Desglose Pedidos:
+    1. Maps raw SKUs (e.g., PACKGRCA_U26010) to canonical product_catalog SKUs (GRCA_U26010)
+    2. Applies quantity multipliers for PACK products (e.g., 1× PACK = 4× base units)
+    3. Consolidates stock under the mapped SKU
+    4. Returns in_catalog flag for warning indicator
 
     Query Parameters:
         - search: Filter by SKU or product name (optional)
         - category: Filter by category (optional)
         - only_with_stock: Show only products with stock (optional)
         - warehouse_group: Filter by warehouse group (optional)
+        - show_unmapped: Show products not in product_catalog (default: true)
 
     Returns:
         {
             "status": "success",
             "data": [
                 {
-                    "sku": "BAMC_U04010",
-                    "name": "Barra Low Carb Manzana Canela x 1",
-                    "category": "BARRAS",
-                    "subfamily": "Barra Low Carb Manzana Canela",
-                    "warehouses": {
-                        "mi_bodega": 7218,
-                        "casa_maca": 12,
-                        ...
-                    },
-                    "stock_total": 7230,
-                    "lot_count": 3,
-                    "last_updated": "2025-11-20T17:58:21Z"
+                    "sku": "GRCA_U26010",
+                    "original_skus": ["GRCA_U26010", "PACKGRCA_U26010"],
+                    "name": "Granola Low Carb Cacao 260 Grs",
+                    "category": "GRANOLAS",
+                    "warehouses": {"mi_bodega": 90, ...},
+                    "stock_total": 90,
+                    "in_catalog": true,
+                    ...
                 },
                 ...
-            ],
-            "summary": {
-                "total_products": 9,
-                "total_stock": 45648,
-                "products_with_stock": 9,
-                "products_without_stock": 0,
-                "active_warehouses": 10
-            }
+            ]
         }
     """
     conn = None
@@ -197,88 +194,211 @@ async def get_inventory_general(
         conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
-        # Build WHERE clause for products
-        product_where_conditions = ["p.is_active = true"]
+        # Build filter conditions
+        filter_conditions = []
         params = []
 
         if search:
-            product_where_conditions.append("(p.sku ILIKE %s OR p.name ILIKE %s)")
-            params.extend([f"%{search}%", f"%{search}%"])
+            filter_conditions.append("""
+                (final.sku ILIKE %s OR final.name ILIKE %s OR
+                 EXISTS (SELECT 1 FROM unnest(final.original_skus) os WHERE os ILIKE %s))
+            """)
+            params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
 
         if category:
-            product_where_conditions.append("p.category = %s")
+            filter_conditions.append("final.category = %s")
             params.append(category)
 
-        product_where_clause = " AND ".join(product_where_conditions)
+        if only_with_stock:
+            filter_conditions.append("final.stock_total > 0")
 
-        # Dynamic query with JSON aggregation for warehouses
-        # Two-step aggregation to avoid nested aggregate functions
-        # Now includes sku_value from product_catalog for valuation
+        if not show_unmapped:
+            filter_conditions.append("final.in_catalog = true")
+
+        filter_clause = " AND ".join(filter_conditions) if filter_conditions else "1=1"
+
+        # Main query with SKU mapping and consolidation
+        # Flow: raw inventory → apply sku_mappings → aggregate by mapped SKU → join product_catalog
         query = f"""
-            WITH warehouse_stock_per_product_warehouse AS (
-                -- Step 1: Sum quantities per product-warehouse combination
+            WITH raw_inventory AS (
+                -- Step 1: Get raw inventory per product-warehouse with SKU from products table
                 SELECT
-                    ws.product_id,
+                    p.sku as original_sku,
+                    p.name as original_name,
                     w.code as warehouse_code,
-                    SUM(ws.quantity) as warehouse_total,
-                    COUNT(ws.id) as warehouse_lots,
+                    SUM(ws.quantity) as raw_quantity,
+                    COUNT(ws.id) as lot_count,
                     MAX(ws.last_updated) as last_updated
                 FROM warehouse_stock ws
+                JOIN products p ON p.id = ws.product_id
                 JOIN warehouses w ON w.id = ws.warehouse_id
                 WHERE w.is_active = true
                   AND w.source = 'relbase'
                   AND w.external_id IS NOT NULL
-                GROUP BY ws.product_id, w.code
+                  AND p.is_active = true
+                GROUP BY p.sku, p.name, w.code
             ),
-            warehouse_stock_agg AS (
-                -- Step 2: Aggregate into JSON object per product
+            mapped_inventory AS (
+                -- Step 2: Apply SKU mapping to get canonical SKU + multiplier
                 SELECT
-                    product_id,
-                    json_object_agg(warehouse_code, warehouse_total) as warehouse_stocks,
-                    SUM(warehouse_total) as stock_total,
-                    SUM(warehouse_lots) as lot_count,
-                    MAX(last_updated) as last_updated
-                FROM warehouse_stock_per_product_warehouse
-                GROUP BY product_id
+                    ri.original_sku,
+                    ri.original_name,
+                    ri.warehouse_code,
+                    ri.raw_quantity,
+                    ri.lot_count,
+                    ri.last_updated,
+                    COALESCE(sm.target_sku, ri.original_sku) as mapped_sku,
+                    COALESCE(sm.quantity_multiplier, 1) as multiplier,
+                    sm.rule_name as mapping_rule
+                FROM raw_inventory ri
+                LEFT JOIN sku_mappings sm
+                    ON sm.source_pattern = UPPER(ri.original_sku)
+                    AND sm.pattern_type = 'exact'
+                    AND sm.is_active = TRUE
+            ),
+            aggregated_per_warehouse AS (
+                -- Step 3: Aggregate by mapped SKU and warehouse (apply multiplier)
+                SELECT
+                    mapped_sku as sku,
+                    warehouse_code,
+                    SUM(raw_quantity * multiplier) as adjusted_quantity,
+                    SUM(lot_count) as lot_count,
+                    MAX(last_updated) as last_updated,
+                    array_agg(DISTINCT original_sku ORDER BY original_sku) as original_skus
+                FROM mapped_inventory
+                GROUP BY mapped_sku, warehouse_code
+            ),
+            -- Step 3b: Aggregate SKU mapping details (total across all warehouses)
+            sku_mapping_details AS (
+                SELECT
+                    mapped_sku as sku,
+                    original_sku,
+                    MAX(original_name) as original_name,
+                    bool_or(mapping_rule IS NOT NULL) as is_mapped,
+                    MAX(CASE WHEN mapping_rule IS NOT NULL THEN mapped_sku ELSE NULL END) as target_sku,
+                    MAX(CASE WHEN mapping_rule IS NOT NULL THEN multiplier ELSE NULL END) as multiplier,
+                    MAX(mapping_rule) as rule_name,
+                    SUM(raw_quantity) as raw_quantity,
+                    SUM(raw_quantity * multiplier) as adjusted_quantity
+                FROM mapped_inventory
+                GROUP BY mapped_sku, original_sku
+            ),
+            aggregated_total AS (
+                -- Step 4: Aggregate warehouse stocks into JSON per mapped SKU
+                SELECT
+                    sku,
+                    json_object_agg(warehouse_code, adjusted_quantity) as warehouses,
+                    SUM(adjusted_quantity) as stock_total,
+                    SUM(lot_count) as lot_count,
+                    MAX(last_updated) as last_updated,
+                    -- Flatten and deduplicate original_skus across warehouses
+                    (SELECT array_agg(DISTINCT os ORDER BY os)
+                     FROM aggregated_per_warehouse apw2,
+                          unnest(apw2.original_skus) as os
+                     WHERE apw2.sku = aggregated_per_warehouse.sku) as original_skus,
+                    -- Get aggregated SKU mapping details
+                    (SELECT json_agg(
+                        json_build_object(
+                            'sku', smd.original_sku,
+                            'name', smd.original_name,
+                            'is_mapped', smd.is_mapped,
+                            'target_sku', smd.target_sku,
+                            'multiplier', smd.multiplier,
+                            'rule_name', smd.rule_name,
+                            'raw_quantity', smd.raw_quantity,
+                            'adjusted_quantity', smd.adjusted_quantity
+                        ) ORDER BY smd.original_sku
+                     )
+                     FROM sku_mapping_details smd
+                     WHERE smd.sku = aggregated_per_warehouse.sku) as original_skus_detail
+                FROM aggregated_per_warehouse
+                GROUP BY sku
+            ),
+            final AS (
+                -- Step 5: Join with product_catalog for enrichment
+                SELECT
+                    at.sku,
+                    at.original_skus,
+                    at.original_skus_detail,
+                    COALESCE(
+                        pc.product_name,
+                        pc_master.master_box_name,
+                        (SELECT name FROM products WHERE sku = at.sku LIMIT 1),
+                        at.sku
+                    ) as name,
+                    COALESCE(
+                        pc.category,
+                        CASE WHEN pc_master.sku IS NOT NULL THEN 'CAJA MASTER' END,
+                        (SELECT category FROM products WHERE sku = at.sku LIMIT 1)
+                    ) as category,
+                    NULL as subfamily,  -- product_catalog doesn't have subfamily column
+                    COALESCE(at.warehouses, '{{}}'::json) as warehouses,
+                    COALESCE(at.stock_total, 0) as stock_total,
+                    COALESCE(at.lot_count, 0) as lot_count,
+                    at.last_updated,
+                    COALESCE(pc.sku_value, pc_master.sku_value, 0) as sku_value,
+                    COALESCE(at.stock_total, 0) * COALESCE(pc.sku_value, pc_master.sku_value, 0) as valor,
+                    -- Get min_stock from products table (user-editable value)
+                    COALESCE(
+                        (SELECT min_stock FROM products WHERE sku = at.sku AND is_active = true LIMIT 1),
+                        0
+                    ) as min_stock,
+                    -- Get recommended_min_stock based on 6-month monthly sales average from sales_facts_mv
+                    COALESCE(
+                        (SELECT ROUND(SUM(units_sold)::NUMERIC / 6)::INTEGER
+                         FROM sales_facts_mv
+                         WHERE sku_primario = at.sku
+                           AND order_date >= CURRENT_DATE - INTERVAL '6 months'),
+                        0
+                    ) as recommended_min_stock,
+                    -- in_catalog: TRUE if SKU found in product_catalog (sku or sku_master)
+                    CASE WHEN pc.sku IS NOT NULL OR pc_master.sku IS NOT NULL THEN true ELSE false END as in_catalog,
+                    -- is_inventory_active: NULL means active (default), FALSE means hidden
+                    COALESCE(pc.is_inventory_active, pc_master.is_inventory_active, true) as is_inventory_active
+                FROM aggregated_total at
+                -- Direct match on product_catalog.sku
+                LEFT JOIN product_catalog pc
+                    ON pc.sku = at.sku
+                    AND pc.is_active = TRUE
+                -- Match on product_catalog.sku_master (for CAJA MASTER)
+                LEFT JOIN product_catalog pc_master
+                    ON pc_master.sku_master = at.sku
+                    AND pc_master.is_active = TRUE
+                    AND pc.sku IS NULL
             )
-            SELECT
-                p.sku,
-                p.name,
-                p.category,
-                p.subfamily,
-                COALESCE(wsa.warehouse_stocks, '{{}}'::json) as warehouses,
-                COALESCE(wsa.stock_total, 0) as stock_total,
-                COALESCE(wsa.lot_count, 0) as lot_count,
-                wsa.last_updated,
-                COALESCE(pc.sku_value, 0) as sku_value,
-                COALESCE(wsa.stock_total, 0) * COALESCE(pc.sku_value, 0) as valor,
-                COALESCE(p.min_stock, 0) as min_stock,
-                COALESCE(p.recommended_min_stock, 0) as recommended_min_stock
-            FROM products p
-            LEFT JOIN warehouse_stock_agg wsa ON wsa.product_id = p.id
-            LEFT JOIN product_catalog pc ON pc.sku = p.sku AND pc.is_active = true
-            WHERE {product_where_clause}
-              {f"AND wsa.stock_total > 0" if only_with_stock else ""}
-            ORDER BY p.category, p.name
+            SELECT *
+            FROM final
+            WHERE is_inventory_active = true
+              AND {filter_clause}
+            ORDER BY category NULLS LAST, name
         """
 
         cursor.execute(query, params)
         products = cursor.fetchall()
 
-        # Get summary stats including total valuation
+        # Get summary stats with the new mapping logic
         cursor.execute("""
+            WITH mapped_stock AS (
+                SELECT
+                    COALESCE(sm.target_sku, p.sku) as mapped_sku,
+                    ws.quantity * COALESCE(sm.quantity_multiplier, 1) as adjusted_qty,
+                    pc.sku_value
+                FROM warehouse_stock ws
+                JOIN products p ON p.id = ws.product_id
+                JOIN warehouses w ON w.id = ws.warehouse_id
+                LEFT JOIN sku_mappings sm ON sm.source_pattern = UPPER(p.sku)
+                    AND sm.pattern_type = 'exact' AND sm.is_active = TRUE
+                LEFT JOIN product_catalog pc ON pc.sku = COALESCE(sm.target_sku, p.sku)
+                    AND pc.is_active = TRUE
+                WHERE w.is_active = true AND w.source = 'relbase' AND p.is_active = true
+            )
             SELECT
-                COUNT(DISTINCT p.id) as total_products,
-                COALESCE(SUM(ws.quantity), 0) as total_stock,
-                COUNT(DISTINCT CASE WHEN ws.quantity > 0 THEN p.id END) as products_with_stock,
-                COUNT(DISTINCT CASE WHEN ws.quantity IS NULL OR ws.quantity = 0 THEN p.id END) as products_without_stock,
-                COUNT(DISTINCT w.id) as active_warehouses,
-                COALESCE(SUM(ws.quantity * COALESCE(pc.sku_value, 0)), 0) as total_valor
-            FROM products p
-            LEFT JOIN warehouse_stock ws ON ws.product_id = p.id
-            LEFT JOIN warehouses w ON w.id = ws.warehouse_id AND w.is_active = true AND w.source = 'relbase'
-            LEFT JOIN product_catalog pc ON pc.sku = p.sku AND pc.is_active = true
-            WHERE p.is_active = true
+                COUNT(DISTINCT mapped_sku) as total_products,
+                COALESCE(SUM(adjusted_qty), 0) as total_stock,
+                COUNT(DISTINCT CASE WHEN adjusted_qty > 0 THEN mapped_sku END) as products_with_stock,
+                (SELECT COUNT(DISTINCT id) FROM warehouses WHERE is_active = true AND source = 'relbase') as active_warehouses,
+                COALESCE(SUM(adjusted_qty * COALESCE(sku_value, 0)), 0) as total_valor
+            FROM mapped_stock
         """)
 
         summary = cursor.fetchone()

@@ -44,41 +44,52 @@ async def get_quarterly_breakdown(
     - Top 10 Customers by revenue
 
     Each breakdown includes revenue, units, and orders per quarter.
+
+    For incomplete quarters (e.g., Q4 when December is not finished),
+    includes MTD metadata and estimated full quarter values.
     """
     try:
         # Default to current year if not specified
         if year is None:
             year = datetime.now().year
 
+        # Check if we're in an incomplete quarter for this year
+        now = datetime.now()
+        current_year = now.year
+        current_month = now.month
+        current_day = now.day
+
+        # Determine if Q4 is incomplete (we're in Oct, Nov, or Dec of the requested year)
+        is_current_year = (year == current_year)
+        is_q4_incomplete = is_current_year and current_month in [10, 11, 12]
+
+        # MTD metadata for incomplete quarters
+        mtd_metadata = None
+        if is_q4_incomplete:
+            mtd_metadata = {
+                'is_incomplete': True,
+                'current_month': current_month,
+                'current_day': current_day,
+                'incomplete_quarter': 'Q4',
+                'message': f'Q4 incluye datos hasta el {current_day} de {"octubre" if current_month == 10 else "noviembre" if current_month == 11 else "diciembre"}'
+            }
+
         conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
         # Query 1: Quarterly breakdown by Product Family
+        # Uses sales_facts_mv for consistent category data aligned with Desglose Pedidos
         query_product_families = """
-            WITH order_data AS (
-                SELECT
-                    o.id as order_id,
-                    o.order_date,
-                    EXTRACT(QUARTER FROM o.order_date) as quarter,
-                    oi.product_sku,
-                    oi.quantity,
-                    oi.subtotal,
-                    COALESCE(UPPER(p.category), 'OTROS') as product_family
-                FROM orders o
-                JOIN order_items oi ON oi.order_id = o.id
-                LEFT JOIN products p ON UPPER(p.sku) = UPPER(oi.product_sku)
-                WHERE o.source = 'relbase'
-                AND o.invoice_status IN ('accepted', 'accepted_objection')
-                AND EXTRACT(YEAR FROM o.order_date) = %s
-            )
             SELECT
-                product_family,
-                quarter::int,
-                COALESCE(SUM(subtotal), 0) as revenue,
-                COALESCE(SUM(quantity), 0) as units,
+                COALESCE(category, 'OTROS') as product_family,
+                EXTRACT(QUARTER FROM order_date)::int as quarter,
+                COALESCE(SUM(revenue), 0) as revenue,
+                COALESCE(SUM(units_sold), 0) as units,
                 COUNT(DISTINCT order_id) as orders
-            FROM order_data
-            GROUP BY product_family, quarter
+            FROM sales_facts_mv
+            WHERE source = 'relbase'
+            AND EXTRACT(YEAR FROM order_date) = %s
+            GROUP BY COALESCE(category, 'OTROS'), EXTRACT(QUARTER FROM order_date)
             ORDER BY product_family, quarter
         """
 
@@ -86,30 +97,18 @@ async def get_quarterly_breakdown(
         product_family_data = cursor.fetchall()
 
         # Query 2: Quarterly breakdown by Channel
+        # Uses sales_facts_mv for consistent data aligned with Desglose Pedidos
         query_channels = """
-            WITH order_data AS (
-                SELECT
-                    o.id as order_id,
-                    o.order_date,
-                    EXTRACT(QUARTER FROM o.order_date) as quarter,
-                    oi.quantity,
-                    oi.subtotal,
-                    COALESCE(UPPER(ch.name), 'OTROS') as channel_name
-                FROM orders o
-                JOIN order_items oi ON oi.order_id = o.id
-                LEFT JOIN channels ch ON ch.id = o.channel_id
-                WHERE o.source = 'relbase'
-                AND o.invoice_status IN ('accepted', 'accepted_objection')
-                AND EXTRACT(YEAR FROM o.order_date) = %s
-            )
             SELECT
-                channel_name,
-                quarter::int,
-                COALESCE(SUM(subtotal), 0) as revenue,
-                COALESCE(SUM(quantity), 0) as units,
+                COALESCE(UPPER(channel_name), 'OTROS') as channel_name,
+                EXTRACT(QUARTER FROM order_date)::int as quarter,
+                COALESCE(SUM(revenue), 0) as revenue,
+                COALESCE(SUM(units_sold), 0) as units,
                 COUNT(DISTINCT order_id) as orders
-            FROM order_data
-            GROUP BY channel_name, quarter
+            FROM sales_facts_mv
+            WHERE source = 'relbase'
+            AND EXTRACT(YEAR FROM order_date) = %s
+            GROUP BY COALESCE(UPPER(channel_name), 'OTROS'), EXTRACT(QUARTER FROM order_date)
             ORDER BY channel_name, quarter
         """
 
@@ -117,39 +116,34 @@ async def get_quarterly_breakdown(
         channel_data = cursor.fetchall()
 
         # Query 3: Top 10 Customers by revenue with quarterly breakdown
+        # Uses sales_facts_mv for consistent data aligned with Desglose Pedidos
         query_top_customers = """
             WITH customer_totals AS (
                 SELECT
-                    c.id as customer_id,
-                    c.name as customer_name,
-                    SUM(oi.subtotal) as total_revenue
-                FROM orders o
-                JOIN order_items oi ON oi.order_id = o.id
-                JOIN customers c ON c.id = o.customer_id
-                WHERE o.source = 'relbase'
-                AND o.invoice_status IN ('accepted', 'accepted_objection')
-                AND EXTRACT(YEAR FROM o.order_date) = %s
-                AND c.name IS NOT NULL
-                GROUP BY c.id, c.name
+                    customer_id,
+                    customer_name,
+                    SUM(revenue) as total_revenue
+                FROM sales_facts_mv
+                WHERE source = 'relbase'
+                AND EXTRACT(YEAR FROM order_date) = %s
+                AND customer_name IS NOT NULL
+                GROUP BY customer_id, customer_name
                 ORDER BY total_revenue DESC
                 LIMIT 10
             ),
             quarterly_data AS (
                 SELECT
-                    c.id as customer_id,
-                    c.name as customer_name,
-                    EXTRACT(QUARTER FROM o.order_date) as quarter,
-                    COALESCE(SUM(oi.subtotal), 0) as revenue,
-                    COALESCE(SUM(oi.quantity), 0) as units,
-                    COUNT(DISTINCT o.id) as orders
-                FROM orders o
-                JOIN order_items oi ON oi.order_id = o.id
-                JOIN customers c ON c.id = o.customer_id
-                WHERE o.source = 'relbase'
-                AND o.invoice_status IN ('accepted', 'accepted_objection')
-                AND EXTRACT(YEAR FROM o.order_date) = %s
-                AND c.id IN (SELECT customer_id FROM customer_totals)
-                GROUP BY c.id, c.name, EXTRACT(QUARTER FROM o.order_date)
+                    customer_id,
+                    customer_name,
+                    EXTRACT(QUARTER FROM order_date) as quarter,
+                    COALESCE(SUM(revenue), 0) as revenue,
+                    COALESCE(SUM(units_sold), 0) as units,
+                    COUNT(DISTINCT order_id) as orders
+                FROM sales_facts_mv
+                WHERE source = 'relbase'
+                AND EXTRACT(YEAR FROM order_date) = %s
+                AND customer_id IN (SELECT customer_id FROM customer_totals)
+                GROUP BY customer_id, customer_name, EXTRACT(QUARTER FROM order_date)
             )
             SELECT
                 ct.customer_id,
@@ -300,7 +294,8 @@ async def get_quarterly_breakdown(
                 'available_years': available_years,
                 'product_families': sorted_families,
                 'channels': sorted_channels,
-                'top_customers': sorted_customers
+                'top_customers': sorted_customers,
+                'mtd_metadata': mtd_metadata
             }
         }
 

@@ -1,8 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useSession } from 'next-auth/react'
 import Navigation from '@/components/Navigation'
 import ExecutiveSalesChart from '@/components/charts/ExecutiveSalesChart'
+import DistributionPieCharts from '@/components/charts/DistributionPieCharts'
 import QuarterlyAnalytics from '@/components/charts/QuarterlyAnalytics'
 
 interface MonthData {
@@ -13,6 +15,9 @@ interface MonthData {
   total_revenue: number
   is_actual?: boolean
   is_projection?: boolean
+  is_mtd?: boolean
+  mtd_day?: number
+  total_revenue_full_month?: number  // Full month value when is_mtd=true
   confidence_lower?: number
   confidence_upper?: number
   growth_rate_applied?: number
@@ -22,11 +27,14 @@ interface ExecutiveData {
   sales_2024: MonthData[]
   sales_2025_actual: MonthData[]
   sales_2025_projected: MonthData[]
+  sales_2026_projected: MonthData[]
   kpis: {
     total_revenue_2024: number
     total_revenue_2025_actual: number
+    total_revenue_2026_projected: number
     total_orders_2024: number
     total_orders_2025_actual: number
+    total_orders_2026_projected: number
     avg_ticket_2024: number
     avg_ticket_2025: number
     revenue_yoy_change: number
@@ -35,22 +43,42 @@ interface ExecutiveData {
   }
   projection_metadata: {
     avg_growth_rate: number
+    avg_growth_rate_2026: number
     std_dev: number
+    std_dev_2026: number
     months_projected: number
     current_month: number
     current_year: number
+    mtd_day?: number
+    is_mtd_comparison?: boolean
+    mtd_comparison_info?: string | null
   }
 }
 
 const PRODUCT_FAMILIES = [
-  { name: 'Todas', icon: '🎯', value: 'TODAS' },
-  { name: 'Barras', icon: '🍫', value: 'BARRAS' },
-  { name: 'Crackers', icon: '🍘', value: 'CRACKERS' },
-  { name: 'Granolas', icon: '🥣', value: 'GRANOLAS' },
-  { name: 'Keepers', icon: '🍪', value: 'KEEPERS' },
+  { name: 'Todas', value: 'TODAS' },
+  { name: 'Barras', value: 'BARRAS' },
+  { name: 'Crackers', value: 'CRACKERS' },
+  { name: 'Granolas', value: 'GRANOLAS' },
+  { name: 'Keepers', value: 'KEEPERS' },
 ]
 
+// Get greeting based on user name (uses feminine form for Macarena)
+function getGreeting(name: string | null | undefined): string {
+  if (!name) return 'Bienvenido/a'
+
+  // Female users get "Bienvenida", others get "Bienvenido"
+  const femaleNames = ['macarena', 'maria', 'ana', 'carolina', 'francisca', 'constanza', 'valentina', 'camila', 'javiera', 'fernanda', 'catalina', 'paula', 'daniela', 'andrea', 'nicole', 'alejandra', 'natalia', 'claudia', 'patricia', 'lorena', 'sandra']
+  const firstName = name.split(' ')[0].toLowerCase()
+
+  if (femaleNames.includes(firstName)) {
+    return `Bienvenida, ${name.split(' ')[0]}`
+  }
+  return `Bienvenido, ${name.split(' ')[0]}`
+}
+
 export default function DashboardPage() {
+  const { data: session } = useSession()
   const [data, setData] = useState<ExecutiveData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -118,132 +146,101 @@ export default function DashboardPage() {
       <Navigation />
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          {/* Header */}
+          {/* Welcome Banner */}
           <div className="mb-8">
-            <div className="flex items-center justify-between">
+            <div className="bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-100 rounded-2xl p-6 shadow-sm border border-blue-100/50">
               <div>
-                <h1 className="text-4xl font-bold mb-2 flex items-center gap-3">
-                  <span className="text-4xl">📊</span>
-                  <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                    Dashboard Ejecutivo
-                  </span>
+                <h1 className="text-2xl font-semibold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">
+                  {getGreeting(session?.user?.name)}
                 </h1>
-                <p className="text-lg text-gray-600">
-                  Vista consolidada de métricas clave y proyecciones de ventas
+                <p className="text-blue-600/70 mt-1 font-medium">
+                  Resumen ejecutivo · {new Date().toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })}
                 </p>
               </div>
-              <button
-                onClick={() => fetchExecutiveData(selectedFamily)}
-                className="flex items-center gap-2 px-6 py-3 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl transition-all shadow-sm hover:shadow-md"
-              >
-                <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                <span className="font-medium text-gray-900">Actualizar</span>
-              </button>
             </div>
           </div>
 
           {/* Product Family Filters */}
-          <div className="mb-8 bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-            <h3 className="text-sm font-semibold text-gray-700 mb-4">Filtrar por Familia de Producto</h3>
-            <div className="flex flex-wrap gap-3">
+          <div className="mb-8 bg-white rounded-xl border border-gray-200 p-4">
+            <div className="flex flex-wrap gap-2">
               {PRODUCT_FAMILIES.map((family) => (
                 <button
                   key={family.value}
                   onClick={() => setSelectedFamily(family.value)}
                   className={`
-                    flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all
+                    px-4 py-2 rounded-lg text-sm font-medium transition-all
                     ${
                       selectedFamily === family.value
-                        ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-lg scale-105'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                     }
                   `}
                 >
-                  <span className="text-xl">{family.icon}</span>
-                  <span>{family.name}</span>
+                  {family.name}
                 </button>
               ))}
             </div>
-            {selectedFamily !== 'TODAS' && (
-              <p className="mt-4 text-sm text-gray-600">
-                Mostrando datos solo para: <span className="font-semibold">{PRODUCT_FAMILIES.find(f => f.value === selectedFamily)?.name}</span>
-              </p>
-            )}
           </div>
 
-          {/* KPI Cards with YoY Comparison */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+          {/* MTD Comparison Info */}
+          {data.projection_metadata.is_mtd_comparison && (
+            <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 flex items-center gap-2">
+              <svg className="w-5 h-5 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="text-sm text-blue-700">
+                Diciembre: comparando días 1-{data.projection_metadata.mtd_day} de 2024 vs 2025 (mes en curso)
+              </span>
+            </div>
+          )}
+
+          {/* KPI Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
             {/* Revenue KPI */}
-            <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-6 text-white shadow-lg hover:shadow-xl transition-all transform hover:scale-105">
-              <div className="flex items-center justify-between mb-4">
-                <div className="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
-                  <span className="text-3xl">💰</span>
-                </div>
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm text-gray-500">Ingresos Totales</span>
                 {data.kpis.revenue_yoy_change !== 0 && (
-                  <div className={`flex items-center gap-1 px-3 py-1 rounded-full ${
-                    data.kpis.revenue_yoy_change > 0 ? 'bg-green-400/30' : 'bg-red-400/30'
-                  }`}>
-                    <svg className={`w-4 h-4 ${data.kpis.revenue_yoy_change > 0 ? '' : 'transform rotate-180'}`} fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M5.293 7.707a1 1 0 010-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L6.707 7.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                    </svg>
-                    <span className="text-sm font-medium">{data.kpis.revenue_yoy_change.toFixed(1)}%</span>
-                  </div>
+                  <span className={`text-sm font-medium ${data.kpis.revenue_yoy_change > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {data.kpis.revenue_yoy_change > 0 ? '+' : ''}{data.kpis.revenue_yoy_change.toFixed(1)}%
+                  </span>
                 )}
               </div>
-              <div className="text-sm opacity-90 mb-1">Ingresos Totales</div>
-              <div className="text-2xl font-bold">${Math.round(data.kpis.total_revenue_2025_actual).toLocaleString('es-CL')}</div>
-              <div className="text-xs opacity-75 mt-2">
-                YTD 2025 vs 2024: ${Math.round(data.kpis.total_revenue_2024).toLocaleString('es-CL')}
+              <div className="text-2xl font-semibold text-gray-900">${Math.round(data.kpis.total_revenue_2025_actual).toLocaleString('es-CL')}</div>
+              <div className="text-xs text-gray-400 mt-1">
+                vs ${Math.round(data.kpis.total_revenue_2024).toLocaleString('es-CL')} en 2024
               </div>
             </div>
 
             {/* Orders KPI */}
-            <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-6 text-white shadow-lg hover:shadow-xl transition-all transform hover:scale-105">
-              <div className="flex items-center justify-between mb-4">
-                <div className="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
-                  <span className="text-3xl">📦</span>
-                </div>
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm text-gray-500">Total Órdenes</span>
                 {data.kpis.orders_yoy_change !== 0 && (
-                  <div className={`flex items-center gap-1 px-3 py-1 rounded-full ${
-                    data.kpis.orders_yoy_change > 0 ? 'bg-blue-400/30' : 'bg-red-400/30'
-                  }`}>
-                    <svg className={`w-4 h-4 ${data.kpis.orders_yoy_change > 0 ? '' : 'transform rotate-180'}`} fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M5.293 7.707a1 1 0 010-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L6.707 7.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                    </svg>
-                    <span className="text-sm font-medium">{data.kpis.orders_yoy_change.toFixed(1)}%</span>
-                  </div>
+                  <span className={`text-sm font-medium ${data.kpis.orders_yoy_change > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {data.kpis.orders_yoy_change > 0 ? '+' : ''}{data.kpis.orders_yoy_change.toFixed(1)}%
+                  </span>
                 )}
               </div>
-              <div className="text-sm opacity-90 mb-1">Total Órdenes</div>
-              <div className="text-3xl font-bold">{data.kpis.total_orders_2025_actual.toLocaleString('es-CL')}</div>
-              <div className="text-xs opacity-75 mt-2">
-                YTD 2025 vs 2024: {data.kpis.total_orders_2024.toLocaleString('es-CL')}
+              <div className="text-2xl font-semibold text-gray-900">{data.kpis.total_orders_2025_actual.toLocaleString('es-CL')}</div>
+              <div className="text-xs text-gray-400 mt-1">
+                vs {data.kpis.total_orders_2024.toLocaleString('es-CL')} en 2024
               </div>
             </div>
 
             {/* Avg Ticket KPI */}
-            <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl p-6 text-white shadow-lg hover:shadow-xl transition-all transform hover:scale-105">
-              <div className="flex items-center justify-between mb-4">
-                <div className="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
-                  <span className="text-3xl">🎫</span>
-                </div>
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm text-gray-500">Ticket Promedio</span>
                 {data.kpis.ticket_yoy_change !== 0 && (
-                  <div className={`flex items-center gap-1 px-3 py-1 rounded-full ${
-                    data.kpis.ticket_yoy_change > 0 ? 'bg-purple-400/30' : 'bg-red-400/30'
-                  }`}>
-                    <svg className={`w-4 h-4 ${data.kpis.ticket_yoy_change > 0 ? '' : 'transform rotate-180'}`} fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M5.293 7.707a1 1 0 010-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L6.707 7.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                    </svg>
-                    <span className="text-sm font-medium">{data.kpis.ticket_yoy_change.toFixed(1)}%</span>
-                  </div>
+                  <span className={`text-sm font-medium ${data.kpis.ticket_yoy_change > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {data.kpis.ticket_yoy_change > 0 ? '+' : ''}{data.kpis.ticket_yoy_change.toFixed(1)}%
+                  </span>
                 )}
               </div>
-              <div className="text-sm opacity-90 mb-1">Ticket Promedio</div>
-              <div className="text-2xl font-bold">${Math.round(data.kpis.avg_ticket_2025).toLocaleString('es-CL')}</div>
-              <div className="text-xs opacity-75 mt-2">
-                2025: ${Math.round(data.kpis.avg_ticket_2024).toLocaleString('es-CL')} en 2024
+              <div className="text-2xl font-semibold text-gray-900">${Math.round(data.kpis.avg_ticket_2025).toLocaleString('es-CL')}</div>
+              <div className="text-xs text-gray-400 mt-1">
+                vs ${Math.round(data.kpis.avg_ticket_2024).toLocaleString('es-CL')} en 2024
               </div>
             </div>
           </div>
@@ -254,42 +251,46 @@ export default function DashboardPage() {
               sales_2024={data.sales_2024}
               sales_2025_actual={data.sales_2025_actual}
               sales_2025_projected={data.sales_2025_projected}
+              sales_2026_projected={data.sales_2026_projected}
             />
           </div>
 
-          {/* Projection Metadata */}
-          {data.projection_metadata.months_projected > 0 && (
-            <div className="bg-blue-50 border-l-4 border-blue-500 rounded-lg p-6 mb-10">
-              <div className="flex items-start gap-4">
-                <div className="text-4xl">📊</div>
+          {/* Projection Metadata - 2026 */}
+          {data.sales_2026_projected && data.sales_2026_projected.length > 0 && (
+            <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-xl p-5 mb-8">
+              <h3 className="text-sm font-medium text-gray-900 mb-2">
+                Proyección de Ventas 2026
+              </h3>
+              <p className="text-sm text-gray-600 mb-3">
+                Proyección anual basada en el crecimiento histórico 2024-2025
+              </p>
+              <div className="flex flex-wrap gap-6 text-sm">
                 <div>
-                  <h3 className="text-lg font-semibold text-blue-900 mb-2">
-                    Proyección de Ventas 2025
-                  </h3>
-                  <p className="text-blue-800 mb-3">
-                    Proyectando <span className="font-semibold">{data.projection_metadata.months_projected} meses restantes</span> basado en datos históricos de 2024 y tendencias YTD 2025.
-                  </p>
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="text-blue-700">Tasa de crecimiento promedio:</span>
-                      <span className="ml-2 font-semibold text-blue-900">
-                        {data.projection_metadata.avg_growth_rate.toFixed(1)}%
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-blue-700">Variabilidad:</span>
-                      <span className="ml-2 font-semibold text-blue-900">
-                        ±{data.projection_metadata.std_dev.toFixed(1)}%
-                      </span>
-                    </div>
-                  </div>
-                  <p className="text-xs text-blue-700 mt-3">
-                    Las proyecciones utilizan suavizado exponencial con ajuste estacional basado en el mismo mes del año anterior.
-                  </p>
+                  <span className="text-gray-500">Revenue 2026 Proyectado:</span>
+                  <span className="ml-2 font-semibold text-purple-700">
+                    ${Math.round(data.kpis.total_revenue_2026_projected).toLocaleString('es-CL')}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Crecimiento aplicado:</span>
+                  <span className="ml-2 font-medium text-gray-900">
+                    +{data.projection_metadata.avg_growth_rate_2026.toFixed(1)}%
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Variabilidad:</span>
+                  <span className="ml-2 font-medium text-gray-900">
+                    ±{data.projection_metadata.std_dev_2026.toFixed(1)}%
+                  </span>
                 </div>
               </div>
             </div>
           )}
+
+          {/* Distribution Pie Charts - By Channel, Family, and Top Customers */}
+          <div className="mb-10">
+            <DistributionPieCharts />
+          </div>
 
           {/* Quarterly Analytics - Pie Charts by Product Family, Channel, Top Customers */}
           <QuarterlyAnalytics />

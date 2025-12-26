@@ -32,7 +32,15 @@ export default function Navigation() {
         { name: 'Por Bodega', href: '/dashboard/warehouse-inventory/by-warehouse', icon: '🏢' },
       ]
     },
-    { name: 'Mapeo SKUs', href: '/dashboard/sku-mappings', icon: '🔗' },
+    {
+      name: 'Productos',
+      icon: '🏷️',
+      isDropdown: true,
+      subItems: [
+        { name: 'Catálogo', href: '/dashboard/product-catalog', icon: '📋' },
+        { name: 'Mapeo SKUs', href: '/dashboard/sku-mappings', icon: '🔗' },
+      ]
+    },
   ];
 
   const isActive = (href: string) => {
@@ -153,7 +161,11 @@ export default function Navigation() {
               <div className="flex items-center gap-3 ml-4 pl-4 border-l border-gray-200">
                 <span className="text-sm text-gray-600">{session.user?.email}</span>
                 <button
-                  onClick={() => signOut({ callbackUrl: '/login' })}
+                  onClick={() => {
+                    // Use window.location.origin to get the correct host (works in both dev and prod)
+                    const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+                    signOut({ callbackUrl: `${baseUrl}/login` });
+                  }}
                   className="px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-all"
                 >
                   Cerrar Sesión

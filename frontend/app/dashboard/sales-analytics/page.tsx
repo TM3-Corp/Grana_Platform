@@ -77,6 +77,11 @@ export default function SalesAnalyticsPage() {
   const [selectedChannels, setSelectedChannels] = useState<string[]>([])
   const [selectedCustomers, setSelectedCustomers] = useState<string[]>([])
   const [selectedFormats, setSelectedFormats] = useState<string[]>([])
+  const [selectedSkuPrimarios, setSelectedSkuPrimarios] = useState<string[]>([])
+
+  // Search state
+  const [searchTerm, setSearchTerm] = useState<string>('')
+  const [debouncedSearch, setDebouncedSearch] = useState<string>('')
 
   const [timePeriod, setTimePeriod] = useState<'auto' | 'day' | 'week' | 'month' | 'quarter' | 'year'>('auto')
   const [groupBy, setGroupBy] = useState<string>('')
@@ -88,6 +93,16 @@ export default function SalesAnalyticsPage() {
   const [availableChannels, setAvailableChannels] = useState<string[]>([])
   const [availableCustomers, setAvailableCustomers] = useState<string[]>([])
   const [availableFormats, setAvailableFormats] = useState<string[]>([])
+  const [availableSkuPrimarios, setAvailableSkuPrimarios] = useState<string[]>([])
+
+  // Debounce search term
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm)
+      setCurrentPage(1)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [searchTerm])
 
   // Fetch data
   useEffect(() => {
@@ -103,10 +118,12 @@ export default function SalesAnalyticsPage() {
     selectedChannels,
     selectedCustomers,
     selectedFormats,
+    selectedSkuPrimarios,
     groupBy,
     stackBy,
     topLimit,
-    currentPage
+    currentPage,
+    debouncedSearch
   ])
 
   // Fetch available filter options on mount
@@ -114,38 +131,77 @@ export default function SalesAnalyticsPage() {
     fetchFilterOptions()
   }, [])
 
+  // Fetch Formato options when Familia (category) selection changes
+  useEffect(() => {
+    fetchFormatoOptions()
+  }, [selectedCategories])
+
   const fetchFilterOptions = async () => {
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://granaplatform-production.up.railway.app'
 
-      // Fetch channels - only Relbase channels with 2025 data
-      const channelsRes = await fetch(`${apiUrl}/api/v1/channels`)
-      if (channelsRes.ok) {
-        const channelsData = await channelsRes.json()
-        if (channelsData.data) {
-          // Channels with no 2025 data (exclude from filters)
-          const excludedChannels = ['EXPORTACIÓN', 'HORECA', 'MARKETPLACES']
+      // Fetch filter options from audit/filters endpoint
+      // This returns channels, customers, and SKUs with 2025 data
+      const filtersRes = await fetch(`${apiUrl}/api/v1/audit/filters`)
+      if (filtersRes.ok) {
+        const filtersData = await filtersRes.json()
+        if (filtersData.data) {
+          // Set channels (already filtered in backend)
+          if (filtersData.data.channels) {
+            setAvailableChannels(filtersData.data.channels)
+          }
 
-          // Filter only Relbase channels with 2025 data
-          const relbaseChannels = channelsData.data
-            .filter((ch: any) =>
-              ch.code?.startsWith('RB_') &&
-              ch.is_active &&
-              !excludedChannels.includes(ch.name)
-            )
-            .map((ch: any) => ch.name)
-            .sort()
-
-          // "Sin Canal Asignado" is already in the DB with code RB_SIN_CANAL
-          setAvailableChannels(relbaseChannels)
+          // Set customers (top 100 by order count)
+          if (filtersData.data.customers) {
+            setAvailableCustomers(filtersData.data.customers)
+          }
         }
       }
-
-      // Note: We would also fetch customers and formats here if we had dedicated endpoints
-      // For now, they'll be populated from the audit/filters endpoint or remain empty
-
     } catch (err) {
       console.error('Error fetching filter options:', err)
+    }
+  }
+
+  // Fetch Formato and SKU Primario options dynamically based on selected categories
+  const fetchFormatoOptions = async () => {
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://granaplatform-production.up.railway.app'
+
+      // Build query parameters for categories
+      const params = new URLSearchParams()
+      selectedCategories.forEach(cat => params.append('categories', cat))
+
+      const response = await fetch(`${apiUrl}/api/v1/sales-analytics/filter-options?${params}`)
+      if (response.ok) {
+        const result = await response.json()
+        if (result.status === 'success' && result.data) {
+          // Set Formato options
+          if (result.data.formats) {
+            setAvailableFormats(result.data.formats)
+
+            // Clear selected formats that are no longer available
+            if (selectedCategories.length > 0) {
+              setSelectedFormats(prev =>
+                prev.filter(fmt => result.data.formats.includes(fmt))
+              )
+            }
+          }
+
+          // Set SKU Primario options
+          if (result.data.sku_primarios) {
+            setAvailableSkuPrimarios(result.data.sku_primarios)
+
+            // Clear selected SKU Primarios that are no longer available
+            if (selectedCategories.length > 0) {
+              setSelectedSkuPrimarios(prev =>
+                prev.filter(sku => result.data.sku_primarios.includes(sku))
+              )
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching formato options:', err)
     }
   }
 
@@ -164,9 +220,14 @@ export default function SalesAnalyticsPage() {
         const years = selectedYears.map(y => parseInt(y)).sort()
         params.append('from_date', `${years[0]}-01-01`)
         params.append('to_date', `${years[years.length - 1]}-12-31`)
-      } else if (dateFilterType === 'month' && selectedYears.length > 0 && selectedMonths.length > 0) {
+      } else if (dateFilterType === 'month' && selectedMonths.length > 0) {
+        // Default to current year if no year selected
+        const yearsToUse = selectedYears.length > 0
+          ? selectedYears
+          : [new Date().getFullYear().toString()]
+
         // Build date range from selected years and months
-        const yearMonths = selectedYears.flatMap(year =>
+        const yearMonths = yearsToUse.flatMap(year =>
           selectedMonths.map(month => ({ year: parseInt(year), month: parseInt(month) }))
         ).sort((a, b) => {
           if (a.year !== b.year) return a.year - b.year
@@ -192,6 +253,12 @@ export default function SalesAnalyticsPage() {
       selectedChannels.forEach(ch => params.append('channels', ch))
       selectedCustomers.forEach(cust => params.append('customers', cust))
       selectedFormats.forEach(fmt => params.append('formats', fmt))
+      selectedSkuPrimarios.forEach(sku => params.append('sku_primarios', sku))
+
+      // Search filter
+      if (debouncedSearch) {
+        params.append('search', debouncedSearch)
+      }
 
       // Time period
       params.append('time_period', timePeriod)
@@ -243,6 +310,8 @@ export default function SalesAnalyticsPage() {
     setSelectedChannels([])
     setSelectedCustomers([])
     setSelectedFormats([])
+    setSelectedSkuPrimarios([])
+    setSearchTerm('')
     setGroupBy('')
     setStackBy(null)
     setTopLimit(10)
@@ -302,6 +371,10 @@ export default function SalesAnalyticsPage() {
         onCustomersChange={setSelectedCustomers}
         selectedFormats={selectedFormats}
         onFormatsChange={setSelectedFormats}
+        selectedSkuPrimarios={selectedSkuPrimarios}
+        onSkuPrimariosChange={setSelectedSkuPrimarios}
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
         groupBy={groupBy}
         onGroupByChange={setGroupBy}
         stackBy={stackBy}
@@ -311,6 +384,7 @@ export default function SalesAnalyticsPage() {
         availableChannels={availableChannels}
         availableCustomers={availableCustomers}
         availableFormats={availableFormats}
+        availableSkuPrimarios={availableSkuPrimarios}
         onClearFilters={handleClearFilters}
       />
 

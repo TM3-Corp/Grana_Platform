@@ -340,12 +340,23 @@ export default function AuditView() {
         // For date grouping, filter by specific date
         params.set('from_date', groupValue);
         params.set('to_date', groupValue);
+      } else if (groupBy === 'order_month') {
+        // For month grouping (e.g., "2025-09"), filter by date range for that month
+        const [year, month] = groupValue.split('-').map(Number);
+        const lastDay = new Date(year, month, 0).getDate(); // Get last day of month
+        params.set('from_date', `${year}-${month.toString().padStart(2, '0')}-01`);
+        params.set('to_date', `${year}-${month.toString().padStart(2, '0')}-${lastDay}`);
       } else if (groupBy === 'customer_name') {
         params.set('customer', groupValue);
       } else if (groupBy === 'channel_name') {
         params.set('channel', groupValue);
       } else if (groupBy === 'category') {
         params.set('category', groupValue);
+      } else if (groupBy === 'order_source') {
+        params.set('source', groupValue);
+      } else if (groupBy === 'sku' || groupBy === 'family') {
+        // For SKU or family grouping, filter by the SKU value
+        params.set('sku', groupValue);
       }
       // Note: sku_primario can't be filtered server-side (requires CSV mapping)
       // We'll fetch detail rows and filter client-side below

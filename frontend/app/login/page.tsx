@@ -50,27 +50,25 @@ export default function LoginPage() {
         {/* Login Card */}
         <div className="bg-white rounded-2xl shadow-2xl p-8 border border-gray-100">
           {/* Logo */}
-          <div className="flex justify-center mb-8">
-            <div className="relative">
-              <div className="absolute inset-0 bg-green-400 blur-2xl opacity-20 rounded-full"></div>
-              <Image
-                src="/images/logo_grana.avif"
-                alt="Grana Logo"
-                width={80}
-                height={80}
-                className="relative object-contain"
-                style={{ height: 'auto' }}
-              />
-            </div>
+          <div className="flex justify-center mb-6">
+            <Image
+              src="/images/logo_grana.avif"
+              alt="Grana"
+              width={120}
+              height={120}
+              className="object-contain"
+              style={{ height: 'auto' }}
+              priority
+            />
           </div>
 
           {/* Title */}
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">
-              Bienvenida
+            <h1 className="text-xl font-semibold text-gray-900 mb-1">
+              Plataforma Integral de Gestión
             </h1>
-            <p className="text-gray-600">
-              Ingresa a Grana Platform
+            <p className="text-sm text-gray-500">
+              Ingresa con tus credenciales
             </p>
           </div>
 

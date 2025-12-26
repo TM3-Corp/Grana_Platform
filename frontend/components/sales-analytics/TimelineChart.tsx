@@ -186,6 +186,7 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
   }
 
   // Extract unique group values and limit to top 20 by total revenue
+  // IMPORTANT: Filter out null/empty group values
   const groupValues = hasGrouping
     ? (() => {
         // Calculate total for each group across all periods
@@ -193,6 +194,9 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
 
         formattedData.forEach(d => {
           d.by_group?.forEach(g => {
+            // Skip null/empty group values
+            if (!g.group_value || g.group_value.trim() === '') return;
+
             const value = selectedMetric === 'revenue' ? g.revenue : selectedMetric === 'units' ? g.units : g.orders;
             groupTotals.set(g.group_value, (groupTotals.get(g.group_value) || 0) + value);
           });
@@ -208,27 +212,35 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
 
   // === DATA TRANSFORMATION FOR STACKED BARS ===
   // Extract all unique stack values for simple stacked bars
+  // IMPORTANT: Filter out null/empty values to prevent chart rendering issues
   const simpleStackValues = new Set<string>()
 
   if (useStackedBars) {
     formattedData.forEach(d => {
       d.by_group?.forEach(g => {
         g.by_stack?.forEach(s => {
-          simpleStackValues.add(s.stack_value)
+          // Only add valid, non-empty stack values
+          if (s.stack_value && s.stack_value.trim() !== '') {
+            simpleStackValues.add(s.stack_value)
+          }
         })
       })
     })
   }
 
   // Legacy: Extract all unique combinations of (group_value, stack_value) for grouped stacked bars
+  // IMPORTANT: Filter out null/empty values
   const stackCombinations: Array<{ group: string; stack: string }> = []
   const uniqueStackValues = new Set<string>()
 
   if (hasStacking && !useStackedBars) {
     formattedData.forEach(d => {
       d.by_group?.forEach(g => {
-        if (groupValues.includes(g.group_value)) {
+        if (g.group_value && groupValues.includes(g.group_value)) {
           g.by_stack?.forEach(s => {
+            // Skip null/empty stack values
+            if (!s.stack_value || s.stack_value.trim() === '') return
+
             const key = `${g.group_value}_${s.stack_value}`
             if (!stackCombinations.find(c => c.group === g.group_value && c.stack === s.stack_value)) {
               stackCombinations.push({ group: g.group_value, stack: s.stack_value })
@@ -241,6 +253,7 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
   }
 
   // Prepare chart data (different structure for stacked bars)
+  // IMPORTANT: Filter out null/empty values to prevent chart bugs like "$ago 25 CLP"
   const chartData = useStackedBars
     ? formattedData.map(d => {
         const point: any = {
@@ -252,6 +265,9 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
 
         d.by_group?.forEach(g => {
           g.by_stack?.forEach(s => {
+            // Skip null/empty stack values
+            if (!s.stack_value || s.stack_value.trim() === '') return
+
             const value = selectedMetric === 'revenue' ? s.revenue : selectedMetric === 'units' ? s.units : s.orders
             stackTotals.set(s.stack_value, (stackTotals.get(s.stack_value) || 0) + value)
           })
@@ -272,13 +288,17 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
 
         // For each group, add all its stack values as separate fields
         d.by_group?.forEach(g => {
-          if (groupValues.includes(g.group_value)) {
-            g.by_stack?.forEach(s => {
-              const key = `${g.group_value}_${s.stack_value}`
-              const value = selectedMetric === 'revenue' ? s.revenue : selectedMetric === 'units' ? s.units : s.orders
-              point[key] = value
-            })
-          }
+          // Skip null/empty group values
+          if (!g.group_value || !groupValues.includes(g.group_value)) return
+
+          g.by_stack?.forEach(s => {
+            // Skip null/empty stack values
+            if (!s.stack_value || s.stack_value.trim() === '') return
+
+            const key = `${g.group_value}_${s.stack_value}`
+            const value = selectedMetric === 'revenue' ? s.revenue : selectedMetric === 'units' ? s.units : s.orders
+            point[key] = value
+          })
         })
 
         return point
@@ -292,10 +312,11 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
 
         // Add each group as a separate line (only if in top 20)
         d.by_group?.forEach(g => {
-          if (groupValues.includes(g.group_value)) {
-            const value = selectedMetric === 'revenue' ? g.revenue : selectedMetric === 'units' ? g.units : g.orders
-            point[g.group_value] = value
-          }
+          // Skip null/empty group values
+          if (!g.group_value || !groupValues.includes(g.group_value)) return
+
+          const value = selectedMetric === 'revenue' ? g.revenue : selectedMetric === 'units' ? g.units : g.orders
+          point[g.group_value] = value
         })
 
         return point

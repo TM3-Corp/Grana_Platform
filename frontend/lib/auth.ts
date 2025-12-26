@@ -2,12 +2,38 @@ import NextAuth from "next-auth"
 import Credentials from "next-auth/providers/credentials"
 import bcrypt from "bcryptjs"
 
-// Admin credentials - In production, this should be in a database
-const ADMIN_USER = {
-  email: "macarena@grana.cl",
-  name: "Macarena Vicuña",
-  // Password: Grana_2025 (hashed)
-  passwordHash: "$2a$10$YourHashedPasswordHere" // We'll generate this
+// Supabase connection for user authentication
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+async function getUserFromDatabase(email: string) {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    console.error('Supabase credentials not configured')
+    return null
+  }
+
+  try {
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/users?email=eq.${encodeURIComponent(email)}&is_active=eq.true&select=id,email,password_hash,name,role`,
+      {
+        headers: {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+      }
+    )
+
+    if (!response.ok) {
+      console.error('Failed to fetch user:', response.statusText)
+      return null
+    }
+
+    const users = await response.json()
+    return users[0] || null
+  } catch (error) {
+    console.error('Error fetching user:', error)
+    return null
+  }
 }
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
@@ -22,22 +48,32 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           return null
         }
 
-        // Check if email matches
-        if (credentials.email !== ADMIN_USER.email) {
+        // Fetch user from database
+        const user = await getUserFromDatabase(credentials.email as string)
+
+        if (!user) {
+          console.log('User not found:', credentials.email)
           return null
         }
 
-        // For initial setup, accept the plain password
-        // In production, use bcrypt.compare(credentials.password, ADMIN_USER.passwordHash)
-        if (credentials.password === "Grana_2025") {
-          return {
-            id: "1",
-            email: ADMIN_USER.email,
-            name: ADMIN_USER.name,
-          }
+        // Verify password with bcrypt
+        const isValidPassword = await bcrypt.compare(
+          credentials.password as string,
+          user.password_hash
+        )
+
+        if (!isValidPassword) {
+          console.log('Invalid password for:', credentials.email)
+          return null
         }
 
-        return null
+        // Return user data for session
+        return {
+          id: user.id.toString(),
+          email: user.email,
+          name: user.name,
+          role: user.role,
+        }
       },
     }),
   ],
@@ -59,12 +95,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id
+        token.role = (user as { role?: string }).role
       }
       return token
     },
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string
+        ;(session.user as { role?: string }).role = token.role as string
       }
       return session
     },

@@ -217,11 +217,16 @@ class ProductCatalogService:
         # We NEVER invent codes that don't exist
         return sku
 
-    def calculate_units(self, sku: str, quantity: int) -> int:
+    def calculate_units(self, sku: str, quantity: int, source: str = None) -> int:
         """
         Calculate total units based on SKU and quantity
 
-        Formula: Units = Quantity × Conversion Factor
+        Formula: Units = Quantity × SKU Mapping Multiplier × Target SKU Conversion Factor
+
+        Priority:
+        1. Check sku_mappings table for quantity_multiplier (e.g., KEEPERPACK → KSMC_U03010 ×5)
+        2. Check product_catalog for units_per_display or items_per_master_box
+        3. Fallback to 1:1 if not found
 
         Conversion factors from product_catalog:
         - units_per_display: For normal SKUs (X1, X5, X16, etc.)
@@ -232,8 +237,9 @@ class ProductCatalogService:
         - units_per_master_box = number of packages in master box (NOT used for conversion)
 
         Args:
-            sku: Product SKU
+            sku: Product SKU (original, as it appears in order)
             quantity: Quantity ordered
+            source: Data source (e.g., 'relbase') - used for source-specific mappings
 
         Returns:
             Total units (int)
@@ -241,29 +247,50 @@ class ProductCatalogService:
         Examples:
             - BAKC_U04010 (X1): 10 × 1 = 10 bars
             - BAKC_U20010 (X5): 10 × 5 = 50 bars
-            - BAKC_C02810 (CM): 2 × 140 = 280 bars (NOT 2 × 28 = 56!)
+            - BAKC_C02810 (CM): 2 × 140 = 280 bars
+            - KEEPERPACK (mapped to KSMC_U03010 ×5): 7 × 5 × 1 = 35 keepers
         """
         if not sku or quantity is None:
             return 0
 
         catalog = self._get_catalog()
 
-        # Try normal SKU first
+        # Step 1: Check sku_mappings table for quantity_multiplier
+        # This handles PACK products, MercadoLibre IDs, ANU- prefixes, etc.
+        from app.services.sku_mapping_service import get_sku_mapping_service
+        mapping_service = get_sku_mapping_service()
+        mapping_result = mapping_service.map_sku(sku, source)
+
+        if mapping_result:
+            # Found a mapping - apply multiplier and look up target SKU's conversion factor
+            multiplier = mapping_result.quantity_multiplier or 1
+            target_sku = mapping_result.target_sku
+
+            # Get target SKU's conversion factor from catalog
+            target_conversion = 1
+            if target_sku in catalog:
+                target_conversion = catalog[target_sku].get('units_per_display', 1) or 1
+            elif self._master_sku_lookup and target_sku in self._master_sku_lookup:
+                target_conversion = self._master_sku_lookup[target_sku].get('items_per_master_box', 1) or 1
+
+            # Final calculation: quantity × mapping_multiplier × target_conversion
+            return quantity * multiplier * target_conversion
+
+        # Step 2: Try direct catalog lookup (no mapping needed)
         if sku in catalog:
             product = catalog[sku]
             # Normal SKUs use units_per_display
             conversion_factor = product.get('units_per_display', 1)
             return quantity * (conversion_factor or 1)
 
-        # Try master box SKU lookup
+        # Step 3: Try master box SKU lookup
         if self._master_sku_lookup and sku in self._master_sku_lookup:
             product = self._master_sku_lookup[sku]
             # Master box SKUs use items_per_master_box (total individual items)
             conversion_factor = product.get('items_per_master_box', 1)
             return quantity * (conversion_factor or 1)
 
-        # SKU not found in catalog - return 1:1 conversion (no fallback patterns)
-        # This ensures we rely 100% on the database
+        # Step 4: SKU not found anywhere - return 1:1 conversion
         # Products not in catalog will show quantity as units, making them easy to identify
         return quantity * 1
 

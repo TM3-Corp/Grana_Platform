@@ -88,13 +88,19 @@ export default function MultiSelect({
         </label>
       )}
 
-      {/* Trigger button */}
-      <button
-        type="button"
+      {/* Trigger div (not button to allow nested buttons for remove actions) */}
+      <div
+        role="button"
+        tabIndex={disabled ? -1 : 0}
         onClick={() => !disabled && setIsOpen(!isOpen)}
-        disabled={disabled}
+        onKeyDown={(e) => {
+          if (!disabled && (e.key === 'Enter' || e.key === ' ')) {
+            e.preventDefault()
+            setIsOpen(!isOpen)
+          }
+        }}
         className={cn(
-          'w-full min-h-[42px] px-3 py-2 text-left',
+          'w-full min-h-[42px] px-3 py-2 text-left cursor-pointer',
           'bg-white border border-gray-300 rounded-lg',
           'focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent',
           'transition-all duration-200',
@@ -102,7 +108,7 @@ export default function MultiSelect({
           isOpen && 'ring-2 ring-green-500 border-transparent'
         )}
       >
-        <div className="flex flex-wrap gap-1.5 items-center">
+        <div className="flex flex-wrap gap-1.5 items-center pr-6">
           {selected.length === 0 ? (
             <span className="text-gray-400 text-sm">{placeholder}</span>
           ) : selected.length <= 3 ? (
@@ -153,7 +159,7 @@ export default function MultiSelect({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
         </span>
-      </button>
+      </div>
 
       {/* Dropdown */}
       {isOpen && (

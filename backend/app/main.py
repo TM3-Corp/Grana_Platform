@@ -14,10 +14,13 @@ env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(env_path)
 
 # Import API routers
-from app.api import conversion, shopify, products, orders, mercadolibre, product_mapping, relbase, audit, inventory, sales_analytics, sales_analytics_realtime, admin, warehouses, chat, sync, sku_mappings, analytics
+from app.api import conversion, shopify, products, orders, mercadolibre, product_mapping, relbase, audit, inventory, sales_analytics, sales_analytics_realtime, admin, warehouses, chat, sync, sku_mappings, analytics, auth, product_catalog
 
 # Import centralized database connection with retry logic
 from app.core.database import get_db_connection_with_retry, CONNECTION_TIMEOUT
+
+# Import rate limiting middleware
+from app.core.rate_limit import RateLimitMiddleware
 
 # Import psycopg2 with error handling
 try:
@@ -88,7 +91,11 @@ def custom_cors_origin_check(origin: str) -> bool:
         return True
     return False
 
-# Configure CORS with both specific origins and Vercel regex pattern
+# Add rate limiting middleware FIRST (will run second due to reverse order)
+app.add_middleware(RateLimitMiddleware)
+
+# Configure CORS LAST so it runs FIRST (outermost middleware)
+# This ensures CORS headers are added to ALL responses, including rate limit errors
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"https://.*\.vercel\.app",  # Allow all Vercel preview/production deployments
@@ -126,8 +133,14 @@ app.include_router(sync.router)
 # SKU Mappings API (database-driven SKU transformation rules)
 app.include_router(sku_mappings.router, prefix="/api/v1/sku-mappings", tags=["SKU Mappings"])
 
+# Product Catalog API (CRUD for product catalog management)
+app.include_router(product_catalog.router, prefix="/api/v1/product-catalog", tags=["Product Catalog"])
+
 # Analytics API (quarterly breakdown for dashboard)
 app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["Analytics"])
+
+# Authentication API (user management, API keys)
+app.include_router(auth.router)
 
 @app.get("/")
 async def root():

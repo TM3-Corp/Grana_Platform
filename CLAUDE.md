@@ -343,17 +343,164 @@ unset DATABASE_URL
 ## 🏗️ **Project Architecture**
 
 ### Current Stack
-- **Backend:** FastAPI + PostgreSQL/Supabase
-- **Frontend:** Next.js 13 (App Router) + TypeScript
-- **Database:** PostgreSQL with Supabase
+- **Backend:** FastAPI + PostgreSQL/Supabase (Python 3.12+)
+- **Frontend:** Next.js 15.5 (App Router) + TypeScript + React 19
+- **Database:** PostgreSQL with Supabase (Session Pooler for IPv4)
+- **Auth:** NextAuth v5 + bcrypt + Supabase `users` table
 - **Deployment:** Railway (backend) + Vercel (frontend)
 
-### Clean Architecture Pattern
+### Architecture Pattern
+
+**Note:** The backend is primarily an **API Integration/ETL Layer**, not a traditional application backend:
+
 ```
-Domain Layer     → Pure business logic (app/domain/)
-Repository Layer → Data access (app/repositories/)
-Service Layer    → Business orchestration (app/services/)
-API Layer        → HTTP endpoints (app/api/)
+┌─────────────────────────────────────────────────────────────┐
+│                    EXTERNAL APIs                            │
+│   Relbase │ Shopify │ MercadoLibre │ Chipax │ Lokal        │
+└─────────────────────┬───────────────────────────────────────┘
+                      │
+                      ▼
+┌─────────────────────────────────────────────────────────────┐
+│              BACKEND (FastAPI on Railway)                   │
+│  • API Connectors (sync data from external sources)         │
+│  • Data transformation & enrichment                         │
+│  • Business rules (channel mapping, SKU conversion)         │
+│  • Analytics aggregation                                    │
+│  • Auth middleware (JWT validation)                         │
+└─────────────────────┬───────────────────────────────────────┘
+                      │
+                      ▼
+┌─────────────────────────────────────────────────────────────┐
+│              DATABASE (Supabase PostgreSQL)                 │
+│  • orders (7,790+ records)                                  │
+│  • customers (2,869 records)                                │
+│  • products, channels, inventory                            │
+│  • users (auth - paul@tm3.ai, macarena@grana.cl)           │
+└─────────────────────┬───────────────────────────────────────┘
+                      │
+                      ▼
+┌─────────────────────────────────────────────────────────────┐
+│              FRONTEND (Next.js on Vercel)                   │
+│  • NextAuth v5 (credentials provider → Supabase users)      │
+│  • Dashboard views & analytics                              │
+│  • Audit system                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Backend API Structure
+```
+backend/app/api/
+├── audit.py          # Data auditing & validation (66KB - largest)
+├── relbase.py        # Relbase API connector
+├── shopify.py        # Shopify API connector
+├── mercadolibre.py   # MercadoLibre API connector
+├── sales_analytics.py # Sales reporting
+├── products.py       # Product management
+├── orders.py         # Order management
+├── sync.py           # Data synchronization
+├── warehouses.py     # Inventory management
+└── auth.py           # Authentication endpoints (NEW)
+```
+
+---
+
+## 🔐 **Authentication System**
+
+### Overview
+
+Authentication uses a hybrid approach:
+- **Frontend:** NextAuth v5 with Credentials provider
+- **Backend:** JWT validation middleware (validates NextAuth tokens)
+- **Database:** `users` table in Supabase with bcrypt-hashed passwords
+
+### Users Table Schema
+
+```sql
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,  -- bcrypt hashed
+    name VARCHAR(255),
+    role VARCHAR(50) DEFAULT 'user',      -- 'admin', 'user', 'viewer'
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+### Current Users
+
+| Email | Name | Role |
+|-------|------|------|
+| paul@tm3.ai | Paul | admin |
+| macarena@grana.cl | Macarena Vicuña | admin |
+
+### Frontend Authentication Flow
+
+```
+1. User visits /login
+2. Enters email + password
+3. NextAuth calls authorize() in lib/auth.ts
+4. authorize() queries Supabase users table
+5. bcrypt.compare() verifies password
+6. JWT session created with user info + role
+7. Redirect to /dashboard
+```
+
+### Backend Authentication (JWT Middleware)
+
+```python
+# backend/app/core/auth.py
+from fastapi import Depends, HTTPException
+from fastapi.security import HTTPBearer
+
+security = HTTPBearer()
+
+async def get_current_user(token: str = Depends(security)):
+    """Validate JWT from NextAuth and return user info"""
+    # Validates token signature using AUTH_SECRET
+    # Returns user with id, email, role
+    pass
+
+# Usage in endpoints:
+@router.get("/protected")
+async def protected_route(user = Depends(get_current_user)):
+    return {"message": f"Hello {user.email}"}
+```
+
+### API Key Authentication (for external integrations)
+
+```sql
+CREATE TABLE api_keys (
+    id SERIAL PRIMARY KEY,
+    key_hash VARCHAR(255) NOT NULL,       -- bcrypt hashed
+    name VARCHAR(255) NOT NULL,            -- "Shopify Integration"
+    user_id INTEGER REFERENCES users(id),
+    permissions JSONB DEFAULT '[]',        -- ["read:orders", "write:products"]
+    rate_limit INTEGER DEFAULT 100,        -- requests per minute
+    is_active BOOLEAN DEFAULT TRUE,
+    last_used_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+### Rate Limiting
+
+- **Authenticated users:** 1000 requests/minute
+- **API keys:** Configurable per key (default 100/min)
+- **Unauthenticated:** 10 requests/minute (health checks only)
+
+### Environment Variables
+
+```bash
+# Frontend (.env.local)
+AUTH_SECRET=grana_platform_secret_key_2025_production_ready
+NEXT_PUBLIC_SUPABASE_URL=https://lypuvibmtxjaxmcmahxr.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+
+# Backend (.env)
+AUTH_SECRET=grana_platform_secret_key_2025_production_ready  # Must match frontend!
+DATABASE_URL=postgresql://...
 ```
 
 ---
@@ -383,11 +530,70 @@ print(f"Found {len(products)} products")  # Quick verification
 
 ## 🚀 **Deployment**
 
-- **Backend (Railway):** Auto-deploys from `main` branch
-- **Frontend (Vercel):** Auto-deploys from `main` branch
-- **Database:** Supabase PostgreSQL
+### Production URLs
+
+| Service | URL | Platform |
+|---------|-----|----------|
+| Frontend | https://grana-platform.vercel.app | Vercel |
+| Backend API | https://granaplatform-production.up.railway.app | Railway |
+| API Docs | https://granaplatform-production.up.railway.app/docs | Railway |
+| Database | Supabase (sa-east-1 region) | Supabase |
+
+### Local Development
+
+```bash
+# Start both services
+./dev.sh
+
+# Or manually:
+# Terminal 1 - Backend
+cd backend && source venv/bin/activate && uvicorn app.main:app --reload --port 8000
+
+# Terminal 2 - Frontend
+cd frontend && npm run dev
+```
+
+**Local URLs:**
+- Frontend: http://localhost:3000
+- Backend: http://localhost:8000
+- API Docs: http://localhost:8000/docs
+
+### Vercel Configuration
+
+For monorepo deployment, set in Vercel project settings:
+- **Root Directory:** `frontend`
+- **Framework:** Next.js (auto-detected)
+
+Environment variables needed:
+- `NEXT_PUBLIC_API_URL` = backend URL
+- `AUTH_SECRET` = must match backend
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+### Railway Configuration
+
+Environment variables needed (see `backend/.env.example`):
+- `DATABASE_URL` (Session Pooler URL)
+- `AUTH_SECRET`
+- All API credentials (Relbase, Shopify, etc.)
 
 **IMPORTANT:** Only production code should reach Railway/Vercel. Session artifacts in `.claude_sessions/` are .gitignored and never deployed.
+
+---
+
+## 🔑 **External API Credentials Reference**
+
+All credentials stored in `backend/.env`:
+
+| Service | Purpose | Key Variables |
+|---------|---------|---------------|
+| **Supabase** | Database | `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY` |
+| **Relbase** | Invoicing (Chile) | `RELBASE_COMPANY_TOKEN`, `RELBASE_USER_TOKEN` |
+| **Shopify** | E-commerce | `SHOPIFY_STORE_NAME`, `SHOPIFY_PASSWORD` |
+| **MercadoLibre** | Marketplace | `MERCADOLIBRE_APP_ID`, `MERCADOLIBRE_ACCESS_TOKEN` |
+| **Chipax** | Accounting | `CHIPAX_APP_ID`, `CHIPAX_SECRET_KEY` |
+| **Lokal** | Distribution | `LOKAL_API_KEY`, `LOKAL_MAKER_ID` |
+| **Anthropic** | AI (Claude) | `ANTHROPIC_API_KEY` |
 
 ---
 

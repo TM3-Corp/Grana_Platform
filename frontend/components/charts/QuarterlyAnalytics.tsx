@@ -38,12 +38,21 @@ interface Customer {
   totals: QuarterData
 }
 
+interface MtdMetadata {
+  is_incomplete: boolean
+  current_month: number
+  current_day: number
+  incomplete_quarter: string
+  message: string
+}
+
 interface QuarterlyData {
   year: number
   available_years: number[]
   product_families: ProductFamily[]
   channels: Channel[]
   top_customers: Customer[]
+  mtd_metadata: MtdMetadata | null
 }
 
 // Quarter colors - consistent across all charts
@@ -155,10 +164,11 @@ interface AnalyticsSectionProps {
   year: number
   availableYears: number[]
   onYearChange: (year: number) => void
+  mtdMetadata: MtdMetadata | null
   children: React.ReactNode
 }
 
-const AnalyticsSection = ({ title, icon, year, availableYears, onYearChange, children }: AnalyticsSectionProps) => {
+const AnalyticsSection = ({ title, icon, year, availableYears, onYearChange, mtdMetadata, children }: AnalyticsSectionProps) => {
   return (
     <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6 mb-6">
       <div className="flex items-center justify-between mb-4">
@@ -177,6 +187,16 @@ const AnalyticsSection = ({ title, icon, year, availableYears, onYearChange, chi
         </select>
       </div>
 
+      {/* MTD Warning for incomplete quarters */}
+      {mtdMetadata && mtdMetadata.is_incomplete && (
+        <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 flex items-center gap-2">
+          <svg className="w-4 h-4 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span className="text-xs text-blue-700">{mtdMetadata.message}</span>
+        </div>
+      )}
+
       {/* Column Headers */}
       <div className="grid grid-cols-4 gap-4 mb-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
         <div></div>
@@ -188,16 +208,19 @@ const AnalyticsSection = ({ title, icon, year, availableYears, onYearChange, chi
       {children}
 
       {/* Legend */}
-      <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-center gap-4 text-xs text-gray-600">
+      <div className="mt-4 pt-4 border-t border-gray-100 flex flex-wrap items-center justify-center gap-4 text-xs text-gray-600">
         {Object.entries(QUARTER_LABELS).map(([key, label]) => (
           <div key={key} className="flex items-center gap-1.5">
             <div
               className="w-3 h-3 rounded-sm"
               style={{ backgroundColor: QUARTER_COLORS[key as keyof typeof QUARTER_COLORS] }}
             />
-            <span>{label}</span>
+            <span>{label}{mtdMetadata?.incomplete_quarter === key ? ' *' : ''}</span>
           </div>
         ))}
+        {mtdMetadata && mtdMetadata.is_incomplete && (
+          <span className="text-gray-400 text-[10px]">* Trimestre en curso</span>
+        )}
       </div>
     </div>
   )
@@ -337,6 +360,7 @@ export default function QuarterlyAnalytics() {
         year={selectedYear}
         availableYears={data.available_years}
         onYearChange={handleYearChange}
+        mtdMetadata={data.mtd_metadata}
       >
         {mainFamilies.map((family) => (
           <AnalyticsRow
@@ -356,6 +380,7 @@ export default function QuarterlyAnalytics() {
         year={selectedYear}
         availableYears={data.available_years}
         onYearChange={handleYearChange}
+        mtdMetadata={data.mtd_metadata}
       >
         {mainChannels.map((channel) => (
           <AnalyticsRow
@@ -375,6 +400,7 @@ export default function QuarterlyAnalytics() {
         year={selectedYear}
         availableYears={data.available_years}
         onYearChange={handleYearChange}
+        mtdMetadata={data.mtd_metadata}
       >
         {data.top_customers.map((customer, index) => (
           <AnalyticsRow

@@ -143,26 +143,33 @@ def get_sku_primario(sku: str, conversion_map: dict = None) -> str:
     return service.get_sku_primario(sku)
 
 
-def calculate_units(sku: str, quantity: int, conversion_map: dict = None) -> int:
+def calculate_units(sku: str, quantity: int, conversion_map: dict = None, source: str = None) -> int:
     """
     Calculate total units based on SKU and quantity.
 
-    Formula: Units = Quantity × Conversion Factor
+    Formula: Units = Quantity × SKU Mapping Multiplier × Target SKU Conversion Factor
 
     Phase 3: Now uses ProductCatalogService (database) instead of CSV.
     The conversion_map parameter is kept for backward compatibility but is ignored.
+
+    Args:
+        sku: Product SKU (original, as it appears in order)
+        quantity: Quantity ordered
+        conversion_map: Deprecated, ignored
+        source: Data source (e.g., 'relbase') for source-specific mappings
 
     Examples:
         - BAKC_U04010 (X1): 10 × 1 = 10 units
         - BAKC_U20010 (X5): 10 × 5 = 50 units
         - BAKC_C02810 (CM X5): 17 × 140 = 2,380 units
+        - KEEPERPACK (mapped ×5): 7 × 5 = 35 units
     """
     if not sku or quantity is None:
         return 0
 
     # Phase 3: Use ProductCatalogService (database query)
     service = get_product_catalog_service()
-    return service.calculate_units(sku, quantity)
+    return service.calculate_units(sku, quantity, source)
 
 
 def map_sku_with_quantity(sku, product_name, product_map, catalog_skus, catalog_master_skus, source=None):
@@ -233,21 +240,14 @@ def map_sku_with_quantity(sku, product_name, product_map, catalog_skus, catalog_
     # These rules require logic that can't easily be expressed in database
     # =========================================================================
 
-    # PACK prefix removal with quantity extraction from product_name
-    # (Kept programmatic because it extracts quantity from product_name)
-    if sku.startswith('PACK'):
-        clean_sku = sku[4:]
-
-        # Extract quantity from product name using pattern "Pack N"
-        pack_quantity = 1  # Default
-        pack_match = re.search(r'Pack\s+(\d+)', product_name, re.IGNORECASE)
-        if pack_match:
-            pack_quantity = int(pack_match.group(1))
-
-        if clean_sku in catalog_skus:
-            return clean_sku, 'pack_prefix_removed', pack_quantity, product_map[clean_sku], 90
-        if clean_sku in catalog_master_skus:
-            return clean_sku, 'pack_prefix_removed+caja_master', pack_quantity, product_map[clean_sku], 90
+    # NOTE: PACK prefix logic REMOVED (2025-12-18)
+    # PACK products must be explicitly defined in sku_mappings table.
+    # Reasons:
+    # - Some PACK products are quantity multipliers (PACKGRCA_U26010 = 4× GRCA_U26010)
+    # - Some PACK products are variety packs with multiple different products
+    # - Extracting quantity from product_name is unreliable
+    # - All PACK mappings should be explicit in the database
+    # If a PACK SKU is not in sku_mappings, it should remain unmapped.
 
     # Trailing "20" → "10" pattern (90% confidence)
     # (Kept programmatic - regex-like transformation)
@@ -550,7 +550,8 @@ async def get_audit_data(
                         group_key = sku_primario if sku_primario else 'SIN CLASIFICAR'
 
                         # Calculate converted units for this item
-                        converted_units = service.calculate_units(sku, quantity)
+                        # Pass order_source to apply sku_mappings quantity_multiplier
+                        converted_units = service.calculate_units(sku, quantity, order_source)
 
                         # Aggregate
                         groups[group_key]['pedidos'].add(item['order_external_id'])
@@ -753,7 +754,8 @@ async def get_audit_data(
                         unidades_query = f"""
                             SELECT
                                 oi.product_sku,
-                                oi.quantity
+                                oi.quantity,
+                                o.source as order_source
                             FROM orders o
                             LEFT JOIN order_items oi ON oi.order_id = o.id
                             LEFT JOIN products p ON p.sku = oi.product_sku
@@ -791,8 +793,10 @@ async def get_audit_data(
                         for item in group_items:
                             sku = item['product_sku']
                             quantity = item['quantity'] or 0
+                            order_source = item.get('order_source')
                             # Use ProductCatalogService to calculate converted units
-                            converted_units = service.calculate_units(sku, quantity)
+                            # Pass source to apply sku_mappings quantity_multiplier
+                            converted_units = service.calculate_units(sku, quantity, order_source)
                             total_unidades += converted_units
 
                         # Add the properly calculated total_unidades to the row
@@ -1104,7 +1108,9 @@ async def get_audit_data(
                         sku_primario_name = service.get_product_name_for_sku_primario(sku_primario) if sku_primario else None
 
                         # Calculate total units
-                        unidades = calculate_units(official_sku, quantity, conversion_map)
+                        # IMPORTANT: Pass original SKU (not official_sku) to check sku_mappings for multipliers
+                        # e.g., KEEPERPACK (original) → finds mapping ×5 → 7 × 5 = 35 units
+                        unidades = calculate_units(sku, quantity, conversion_map, order_source)
 
                         # Calculate peso (weight) - Phase 4
                         peso_display_total = service.get_peso_display_total(official_sku)

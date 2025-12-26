@@ -302,3 +302,66 @@ async def update_product_min_stock(sku: str, update: MinStockUpdate):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error updating minimum stock: {str(e)}")
+
+
+# Request model for inventory active toggle
+class InventoryActiveUpdate(BaseModel):
+    is_active: bool
+
+
+@router.put("/{sku}/inventory-active")
+async def update_product_inventory_active(sku: str, update: InventoryActiveUpdate):
+    """
+    Toggle the is_inventory_active flag for a product in product_catalog.
+
+    When is_inventory_active = FALSE, the product is hidden from the
+    Inventario General view (warehouse-inventory page).
+
+    Args:
+        sku: Product SKU (can match either sku or sku_master column)
+        update: InventoryActiveUpdate model with is_active value
+
+    Returns:
+        Updated product information
+    """
+    try:
+        conn = get_db_connection_dict_with_retry()
+        cursor = conn.cursor()
+
+        # Update is_inventory_active for the product in product_catalog
+        # Check both sku and sku_master columns
+        cursor.execute(
+            """
+            UPDATE product_catalog
+            SET is_inventory_active = %s,
+                updated_at = NOW()
+            WHERE sku = %s OR sku_master = %s
+            RETURNING sku, product_name, is_inventory_active, updated_at
+            """,
+            (update.is_active, sku, sku)
+        )
+
+        result = cursor.fetchone()
+
+        if not result:
+            cursor.close()
+            conn.close()
+            raise HTTPException(
+                status_code=404,
+                detail=f"Product with SKU '{sku}' not found in product_catalog"
+            )
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {
+            "status": "success",
+            "message": f"Inventory active status updated for {sku}",
+            "data": result
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating inventory active status: {str(e)}")

@@ -29,6 +29,34 @@ if not DATABASE_URL:
 
 
 # =====================================================================
+# Helper Functions
+# =====================================================================
+
+def refresh_sales_facts_mv():
+    """
+    Refresh the sales_facts_mv materialized view.
+
+    This should be called after any change to sku_mappings to ensure
+    analytics data reflects the latest mappings.
+
+    Note: This runs synchronously and may take a few seconds for large datasets.
+    For production, consider using REFRESH MATERIALIZED VIEW CONCURRENTLY
+    (requires a unique index on the MV).
+    """
+    try:
+        conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
+        cursor = conn.cursor()
+        cursor.execute("REFRESH MATERIALIZED VIEW sales_facts_mv")
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Warning: Failed to refresh sales_facts_mv: {e}")
+        return False
+
+
+# =====================================================================
 # Pydantic Models
 # =====================================================================
 
@@ -378,12 +406,16 @@ async def create_mapping(mapping: SKUMappingCreate):
         service = get_sku_mapping_service()
         service.invalidate_cache()
 
+        # Refresh materialized view for analytics
+        mv_refreshed = refresh_sales_facts_mv()
+
         return {
             "status": "success",
             "message": "Mapping created successfully",
             "data": {
                 "id": result['id'],
-                "created_at": result['created_at']
+                "created_at": result['created_at'],
+                "mv_refreshed": mv_refreshed
             }
         }
 
@@ -458,12 +490,16 @@ async def update_mapping(mapping_id: int, mapping: SKUMappingUpdate):
         service = get_sku_mapping_service()
         service.invalidate_cache()
 
+        # Refresh materialized view for analytics
+        mv_refreshed = refresh_sales_facts_mv()
+
         return {
             "status": "success",
             "message": "Mapping updated successfully",
             "data": {
                 "id": result['id'],
-                "updated_at": result['updated_at']
+                "updated_at": result['updated_at'],
+                "mv_refreshed": mv_refreshed
             }
         }
 
@@ -514,10 +550,13 @@ async def delete_mapping(mapping_id: int, hard_delete: bool = Query(False, descr
         service = get_sku_mapping_service()
         service.invalidate_cache()
 
+        # Refresh materialized view for analytics
+        mv_refreshed = refresh_sales_facts_mv()
+
         return {
             "status": "success",
             "message": f"Mapping '{mapping['source_pattern']}' {action}",
-            "data": {"id": mapping_id}
+            "data": {"id": mapping_id, "mv_refreshed": mv_refreshed}
         }
 
     except HTTPException:

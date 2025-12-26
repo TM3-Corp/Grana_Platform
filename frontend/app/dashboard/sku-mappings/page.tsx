@@ -95,11 +95,6 @@ export default function SKUMappingsPage() {
   const [editingMapping, setEditingMapping] = useState<SKUMapping | null>(null);
   const [prefillSKU, setPrefillSKU] = useState<{sku: string; product_name: string} | null>(null);
 
-  // Test SKU state
-  const [testSKU, setTestSKU] = useState('');
-  const [testResult, setTestResult] = useState<any>(null);
-  const [testLoading, setTestLoading] = useState(false);
-
   // Form state
   const [formData, setFormData] = useState({
     source_pattern: '',
@@ -223,27 +218,6 @@ export default function SKUMappingsPage() {
       fetchMappings();
     }
   }, [viewMode, fetchOrderSKUs, fetchMappings]);
-
-  // Test SKU
-  const handleTestSKU = async () => {
-    if (!testSKU) return;
-    setTestLoading(true);
-    try {
-      const response = await fetch(`${API_URL}/api/v1/sku-mappings/test`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sku: testSKU }),
-      });
-      const data = await response.json();
-      if (data.status === 'success') {
-        setTestResult(data.data);
-      }
-    } catch (err) {
-      console.error('Error testing SKU:', err);
-    } finally {
-      setTestLoading(false);
-    }
-  };
 
   // Create/Update/Delete mappings (full CRUD support)
   const handleSave = async () => {
@@ -558,51 +532,6 @@ export default function SKUMappingsPage() {
             </div>
           )}
 
-          {/* Test SKU Section */}
-          <div className="bg-white rounded-lg shadow p-4 mb-6">
-            <h3 className="text-lg font-semibold mb-3">Probar SKU</h3>
-            <div className="flex gap-3 items-end">
-              <div className="flex-1">
-                <label className="block text-sm text-gray-600 mb-1">SKU a probar</label>
-                <input
-                  type="text"
-                  value={testSKU}
-                  onChange={(e) => setTestSKU(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleTestSKU()}
-                  placeholder="Ej: PACKKSMC_U54010, ANU-BAMC_U04010"
-                  className="w-full border rounded px-3 py-2"
-                />
-              </div>
-              <button
-                onClick={handleTestSKU}
-                disabled={testLoading || !testSKU}
-                className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
-              >
-                {testLoading ? 'Probando...' : 'Probar'}
-              </button>
-            </div>
-            {testResult && (
-              <div className={`mt-3 p-3 rounded ${testResult.matched ? 'bg-green-50 border border-green-200' : 'bg-yellow-50 border border-yellow-200'}`}>
-                {testResult.matched ? (
-                  <div>
-                    <span className="text-green-600 font-semibold">Mapeo encontrado:</span>
-                    <span className="ml-2 font-mono">{testResult.input_sku}</span>
-                    <span className="mx-2">→</span>
-                    <span className="font-mono font-semibold">{testResult.result.target_sku}</span>
-                    <span className="ml-2 text-gray-600">(x{testResult.result.quantity_multiplier})</span>
-                    {testResult.result.rule_name && (
-                      <span className="ml-2 text-gray-500">- {testResult.result.rule_name}</span>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-yellow-700">
-                    Sin mapeo encontrado para "<span className="font-mono">{testResult.input_sku}</span>"
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
           {/* View Toggle & Filters */}
           <div className="bg-white rounded-lg shadow p-4 mb-6">
             <div className="flex gap-4 flex-wrap items-end">
@@ -793,13 +722,36 @@ export default function SKUMappingsPage() {
                             + Mapear
                           </button>
                         ) : sku.mapping_status === 'mapped' ? (
-                          <button
-                            onClick={() => openAddMappingModal(sku)}
-                            className="text-blue-600 hover:text-blue-800 text-sm"
-                            title="Agregar mas componentes al mapeo"
-                          >
-                            Editar
-                          </button>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => openAddMappingModal(sku)}
+                              className="text-blue-600 hover:text-blue-800 text-sm"
+                              title="Editar mapeo"
+                            >
+                              Editar
+                            </button>
+                            {sku.mapping_components && sku.mapping_components.length > 0 && (
+                              <button
+                                onClick={() => {
+                                  // Delete all mapping components for this SKU
+                                  if (confirm(`¿Eliminar todos los mapeos para ${sku.sku}?`)) {
+                                    Promise.all(
+                                      sku.mapping_components!.map(comp =>
+                                        fetch(`${API_URL}/api/v1/sku-mappings/${comp.id}?hard_delete=true`, { method: 'DELETE' })
+                                      )
+                                    ).then(() => {
+                                      fetchOrderSKUStats();
+                                      fetchOrderSKUs();
+                                    });
+                                  }
+                                }}
+                                className="text-red-600 hover:text-red-800 text-sm"
+                                title="Eliminar mapeo"
+                              >
+                                Eliminar
+                              </button>
+                            )}
+                          </div>
                         ) : sku.mapping_status === 'in_catalog' ? (
                           <button
                             onClick={() => openAddMappingModal(sku)}
@@ -847,12 +799,12 @@ export default function SKUMappingsPage() {
                       <td className="px-4 py-3 text-sm text-gray-500 max-w-[200px] truncate">
                         {mapping.notes || <span className="text-gray-400">-</span>}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 space-x-2">
                         <button
-                          onClick={() => handleDelete(mapping.id, false)}
-                          className="text-red-600 hover:text-red-800"
+                          onClick={() => handleDelete(mapping.id, true)}
+                          className="text-red-600 hover:text-red-800 font-medium"
                         >
-                          Desactivar
+                          Eliminar
                         </button>
                       </td>
                     </tr>

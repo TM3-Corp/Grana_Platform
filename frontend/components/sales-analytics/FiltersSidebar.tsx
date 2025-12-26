@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import MultiSelect from '@/components/ui/MultiSelect'
 
 interface FiltersSidebarProps {
   // Date filters
@@ -24,6 +25,8 @@ interface FiltersSidebarProps {
   onCustomersChange: (customers: string[]) => void
   selectedFormats: string[]
   onFormatsChange: (formats: string[]) => void
+  selectedSkuPrimarios: string[]
+  onSkuPrimariosChange: (skuPrimarios: string[]) => void
 
   // Grouping and Top X
   groupBy: string
@@ -33,11 +36,16 @@ interface FiltersSidebarProps {
   topLimit: number
   onTopLimitChange: (limit: number) => void
 
+  // Search
+  searchTerm: string
+  onSearchChange: (term: string) => void
+
   // Available options
   availableCategories?: string[]
   availableChannels?: string[]
   availableCustomers?: string[]
   availableFormats?: string[]
+  availableSkuPrimarios?: string[]
 
   // Clear filters
   onClearFilters: () => void
@@ -46,10 +54,12 @@ interface FiltersSidebarProps {
 export default function FiltersSidebar(props: FiltersSidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
 
-  const categories = props.availableCategories || ['BARRAS', 'CRACKERS', 'GRANOLAS', 'KEEPERS', 'CAJA MASTER', 'DESPACHOS', 'ALIANZA', 'OTROS']
+  const categories = props.availableCategories || ['BARRAS', 'CRACKERS', 'GRANOLAS', 'KEEPERS']
   const channels = props.availableChannels || []
   const customers = props.availableCustomers || []
-  const formats = props.availableFormats || ['X1', 'X5', 'X16', 'Caja Master']
+  // Formats and SKU Primarios are now dynamically loaded from the API based on selected categories
+  const formats = props.availableFormats || []
+  const skuPrimarios = props.availableSkuPrimarios || []
 
   const years = ['2023', '2024', '2025']
   const months = [
@@ -71,7 +81,6 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
     { value: '', label: 'Sin agrupación' },
     { value: 'category', label: 'Familia' },
     { value: 'channel', label: 'Canal' },
-    { value: 'customer', label: 'Cliente' },
     { value: 'format', label: 'Formato' },
     { value: 'sku_primario', label: 'SKU Primario' },
   ]
@@ -107,10 +116,6 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
     'CRACKERS': '🍘',
     'GRANOLAS': '🥣',
     'KEEPERS': '🍬',
-    'CAJA MASTER': '📦',
-    'DESPACHOS': '🚚',
-    'ALIANZA': '🤝',
-    'OTROS': '📦'
   }
 
   if (isCollapsed) {
@@ -142,6 +147,37 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
           >
             <span className="text-xl">←</span>
           </button>
+        </div>
+
+        {/* Search */}
+        <div className="mb-6">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+            <span>🔍</span> Buscar
+          </h3>
+          <div className="relative">
+            <input
+              type="text"
+              value={props.searchTerm}
+              onChange={(e) => props.onSearchChange(e.target.value)}
+              placeholder="Cliente, Producto, Canal, SKU..."
+              className="w-full px-3 py-2 pl-9 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            />
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+              🔍
+            </span>
+            {props.searchTerm && (
+              <button
+                onClick={() => props.onSearchChange('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                title="Limpiar búsqueda"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-gray-500 mt-1">
+            Busca por cliente, producto, canal, SKU o SKU primario
+          </p>
         </div>
 
         {/* Date Filters */}
@@ -190,30 +226,37 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
             </label>
           </div>
 
-          {/* Year selection */}
-          {props.dateFilterType === 'year' && (
-            <div className="flex flex-wrap gap-2 mb-3">
-              {years.map(year => (
-                <button
-                  key={year}
-                  onClick={() => toggleYear(year)}
-                  className={`
-                    px-3 py-1 rounded-lg text-sm font-medium transition-colors
-                    ${props.selectedYears.includes(year)
-                      ? 'bg-green-500 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }
-                  `}
-                >
-                  {year}
-                </button>
-              ))}
+          {/* Year selection - show for both 'year' and 'month' modes */}
+          {(props.dateFilterType === 'year' || props.dateFilterType === 'month') && (
+            <div className="mb-3">
+              {props.dateFilterType === 'month' && (
+                <label className="block text-xs text-gray-600 mb-2">Selecciona año(s):</label>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {years.map(year => (
+                  <button
+                    key={year}
+                    onClick={() => toggleYear(year)}
+                    className={`
+                      px-3 py-1 rounded-lg text-sm font-medium transition-colors
+                      ${props.selectedYears.includes(year)
+                        ? 'bg-green-500 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }
+                    `}
+                  >
+                    {year}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
           {/* Month selection */}
           {props.dateFilterType === 'month' && (
-            <div className="grid grid-cols-3 gap-2 mb-3">
+            <div className="mb-3">
+              <label className="block text-xs text-gray-600 mb-2">Selecciona mes(es):</label>
+              <div className="grid grid-cols-3 gap-2">
               {months.map(month => (
                 <button
                   key={month.value}
@@ -229,6 +272,7 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
                   {month.label}
                 </button>
               ))}
+              </div>
             </div>
           )}
 
@@ -285,80 +329,69 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
         {/* Channels */}
         {channels.length > 0 && (
           <div className="mb-6">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-              <span>📊</span> Canal
-            </h3>
-            <select
-              multiple
-              value={props.selectedChannels}
-              onChange={(e) => {
-                const selected = Array.from(e.target.selectedOptions, option => option.value)
-                props.onChannelsChange(selected)
-              }}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm min-h-[100px]"
-            >
-              {channels.map(channel => (
-                <option key={channel} value={channel}>
-                  {channel}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-gray-500 mt-1">
-              Mantén Ctrl/Cmd para seleccionar varios
-            </p>
+            <MultiSelect
+              label="📊 Canal"
+              options={channels}
+              selected={props.selectedChannels}
+              onChange={props.onChannelsChange}
+              placeholder="Seleccionar canales..."
+              searchable={true}
+              maxHeight="200px"
+            />
           </div>
         )}
 
         {/* Customers */}
         {customers.length > 0 && (
           <div className="mb-6">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-              <span>👥</span> Cliente
-            </h3>
-            <select
-              multiple
-              value={props.selectedCustomers}
-              onChange={(e) => {
-                const selected = Array.from(e.target.selectedOptions, option => option.value)
-                props.onCustomersChange(selected)
-              }}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm min-h-[100px]"
-            >
-              {customers.map(customer => (
-                <option key={customer} value={customer}>
-                  {customer}
-                </option>
-              ))}
-            </select>
+            <MultiSelect
+              label="👥 Cliente"
+              options={customers}
+              selected={props.selectedCustomers}
+              onChange={props.onCustomersChange}
+              placeholder="Seleccionar clientes..."
+              searchable={true}
+              maxHeight="250px"
+            />
+          </div>
+        )}
+
+        {/* Formats - dynamically loaded based on selected Familia */}
+        {formats.length > 0 && (
+          <div className="mb-6">
+            <MultiSelect
+              label="📦 Formato (Producto)"
+              options={formats}
+              selected={props.selectedFormats}
+              onChange={props.onFormatsChange}
+              placeholder="Seleccionar productos..."
+              searchable={true}
+              maxHeight="300px"
+            />
             <p className="text-xs text-gray-500 mt-1">
-              Mantén Ctrl/Cmd para seleccionar varios
+              {props.selectedCategories.length > 0
+                ? `Productos de: ${props.selectedCategories.join(', ')}`
+                : 'Selecciona una Familia para filtrar productos'}
             </p>
           </div>
         )}
 
-        {/* Formats */}
-        {formats.length > 0 && (
+        {/* SKU Primario - dynamically loaded based on selected Familia */}
+        {skuPrimarios.length > 0 && (
           <div className="mb-6">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-              <span>📦</span> Formato
-            </h3>
-            <select
-              multiple
-              value={props.selectedFormats}
-              onChange={(e) => {
-                const selected = Array.from(e.target.selectedOptions, option => option.value)
-                props.onFormatsChange(selected)
-              }}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm min-h-[100px]"
-            >
-              {formats.map(format => (
-                <option key={format} value={format}>
-                  {format}
-                </option>
-              ))}
-            </select>
+            <MultiSelect
+              label="🏷️ SKU Primario"
+              options={skuPrimarios}
+              selected={props.selectedSkuPrimarios}
+              onChange={props.onSkuPrimariosChange}
+              placeholder="Seleccionar SKU Primario..."
+              searchable={true}
+              maxHeight="250px"
+            />
             <p className="text-xs text-gray-500 mt-1">
-              Mantén Ctrl/Cmd para seleccionar varios
+              {props.selectedCategories.length > 0
+                ? `SKUs de: ${props.selectedCategories.join(', ')}`
+                : 'Selecciona una Familia para filtrar SKUs'}
             </p>
           </div>
         )}
@@ -395,7 +428,6 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
             {props.groupBy !== 'category' && <option value="category">Familia</option>}
             {props.groupBy !== 'channel' && <option value="channel">Canal</option>}
             {props.groupBy !== 'format' && <option value="format">Formato</option>}
-            {props.groupBy !== 'customer' && <option value="customer">Cliente</option>}
           </select>
           <p className="text-xs text-gray-500 mt-1">
             {props.stackBy ? 'Barras apiladas por dimensión seleccionada' : 'Gráfico de líneas'}

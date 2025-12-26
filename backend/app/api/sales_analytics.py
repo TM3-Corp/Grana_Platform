@@ -29,7 +29,11 @@ async def get_sales_analytics(
     channels: Optional[List[str]] = Query(None, description="Channel names (multi-select)"),
     customers: Optional[List[str]] = Query(None, description="Customer names (multi-select)"),
     categories: Optional[List[str]] = Query(None, description="Product categories (multi-select)"),
-    formats: Optional[List[str]] = Query(None, description="Product formats (multi-select)"),
+    formats: Optional[List[str]] = Query(None, description="Product formats/names (multi-select)"),
+    sku_primarios: Optional[List[str]] = Query(None, description="SKU Primarios (multi-select)"),
+
+    # Search filter
+    search: Optional[str] = Query(None, description="Search across customer, channel, category, SKU primario"),
 
     # Grouping and limits
     group_by: Optional[str] = Query(None, description="Group by: category, channel, customer, format, sku_primario"),
@@ -100,8 +104,27 @@ async def get_sales_analytics(
 
         if formats:
             placeholders = ','.join(['%s'] * len(formats))
-            where_clauses.append(f"mv.format IN ({placeholders})")
+            where_clauses.append(f"mv.product_name IN ({placeholders})")
             params.extend(formats)
+
+        if sku_primarios:
+            placeholders = ','.join(['%s'] * len(sku_primarios))
+            where_clauses.append(f"mv.sku_primario IN ({placeholders})")
+            params.extend(sku_primarios)
+
+        # Search filter - search across multiple fields
+        if search and search.strip():
+            search_term = f"%{search.strip()}%"
+            search_conditions = """(
+                mv.customer_name ILIKE %s OR
+                mv.channel_name ILIKE %s OR
+                mv.category ILIKE %s OR
+                mv.sku_primario ILIKE %s OR
+                mv.product_name ILIKE %s
+            )"""
+            where_clauses.append(search_conditions)
+            # Add the search term 5 times (once for each field)
+            params.extend([search_term] * 5)
 
         where_clause = " AND ".join(where_clauses)
 
@@ -138,8 +161,8 @@ async def get_sales_analytics(
             'category': 'mv.category',
             'channel': 'mv.channel_name',
             'customer': 'mv.customer_name',
-            'format': 'mv.format',
-            'sku_primario': 'mv.product_sku'
+            'format': 'mv.package_type',
+            'sku_primario': 'mv.sku_primario'
         }
         group_field = group_field_map.get(group_by, 'mv.category')  # Default to category
 
@@ -150,10 +173,18 @@ async def get_sales_analytics(
 
         # === 1. SUMMARY METRICS ===
         # MUCH FASTER: Direct SUM on materialized view (no JOINs!)
+        # NOTE: Calculate individual units using package conversion factors
+        # - units_sold already includes quantity_multiplier from sku_mappings
+        # - We also apply units_per_display (for x5, x16) or items_per_master_box (for caja master)
         summary_query = f"""
             SELECT
                 SUM(mv.revenue) as total_revenue,
-                SUM(mv.units_sold) as total_units,
+                SUM(
+                    CASE
+                        WHEN mv.is_caja_master THEN mv.units_sold * COALESCE(mv.items_per_master_box, 1)
+                        ELSE mv.units_sold * COALESCE(mv.units_per_display, 1)
+                    END
+                ) as total_units,
                 COUNT(DISTINCT mv.order_id) as total_orders,
                 CASE
                     WHEN COUNT(DISTINCT mv.order_id) > 0 THEN SUM(mv.revenue) / COUNT(DISTINCT mv.order_id)
@@ -176,6 +207,14 @@ async def get_sales_analytics(
 
         # === 2. TIMELINE DATA ===
         # MUCH FASTER: 2 JOINs instead of 4-5 (only need dim_date)
+        # Helper expression for calculating individual units with package conversion
+        units_expr = """SUM(
+                    CASE
+                        WHEN mv.is_caja_master THEN mv.units_sold * COALESCE(mv.items_per_master_box, 1)
+                        ELSE mv.units_sold * COALESCE(mv.units_per_display, 1)
+                    END
+                )"""
+
         if group_by and stack_by and stack_field:
             # DOUBLE GROUPING: period + group + stack
             timeline_query = f"""
@@ -184,7 +223,7 @@ async def get_sales_analytics(
                     {group_field} as group_value,
                     {stack_field} as stack_value,
                     SUM(mv.revenue) as revenue,
-                    SUM(mv.units_sold) as units,
+                    {units_expr} as units,
                     COUNT(DISTINCT mv.order_id) as orders
                 FROM sales_facts_mv mv
                 WHERE {where_clause}
@@ -198,7 +237,7 @@ async def get_sales_analytics(
                     {period_expr} as period,
                     {stack_field} as stack_value,
                     SUM(mv.revenue) as revenue,
-                    SUM(mv.units_sold) as units,
+                    {units_expr} as units,
                     COUNT(DISTINCT mv.order_id) as orders
                 FROM sales_facts_mv mv
                 WHERE {where_clause}
@@ -212,7 +251,7 @@ async def get_sales_analytics(
                     {period_expr} as period,
                     {group_field} as group_value,
                     SUM(mv.revenue) as revenue,
-                    SUM(mv.units_sold) as units,
+                    {units_expr} as units,
                     COUNT(DISTINCT mv.order_id) as orders
                 FROM sales_facts_mv mv
                 WHERE {where_clause}
@@ -225,7 +264,7 @@ async def get_sales_analytics(
                 SELECT
                     {period_expr} as period,
                     SUM(mv.revenue) as revenue,
-                    SUM(mv.units_sold) as units,
+                    {units_expr} as units,
                     COUNT(DISTINCT mv.order_id) as orders
                 FROM sales_facts_mv mv
                 WHERE {where_clause}
@@ -365,7 +404,7 @@ async def get_sales_analytics(
             SELECT
                 {group_field} as group_value,
                 SUM(mv.revenue) as revenue,
-                SUM(mv.units_sold) as units,
+                {units_expr} as units,
                 COUNT(DISTINCT mv.order_id) as orders
             FROM sales_facts_mv mv
             WHERE {where_clause}
@@ -397,7 +436,7 @@ async def get_sales_analytics(
             SELECT
                 {group_field} as group_value,
                 SUM(mv.revenue) as revenue,
-                SUM(mv.units_sold) as units,
+                {units_expr} as units,
                 COUNT(DISTINCT mv.order_id) as orders,
                 CASE
                     WHEN COUNT(DISTINCT mv.order_id) > 0 THEN SUM(mv.revenue) / COUNT(DISTINCT mv.order_id)
@@ -461,6 +500,7 @@ async def get_sales_analytics(
                     "customers": customers,
                     "categories": categories,
                     "formats": formats,
+                    "search": search,
                     "group_by": group_by,
                     "stack_by": stack_by,
                     "top_limit": top_limit
@@ -474,3 +514,193 @@ async def get_sales_analytics(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching sales analytics: {str(e)}")
+
+
+@router.get("/sku-timeline/{sku}")
+async def get_sku_sales_timeline(
+    sku: str,
+    months: int = Query(12, ge=6, le=24, description="Number of months to include (6-24)"),
+    source: str = Query('relbase', description="Data source filter")
+):
+    """
+    Get monthly sales timeline for a specific SKU.
+
+    Returns:
+    - Monthly units sold over the specified period
+    - Statistics: min, max, average, standard deviation
+    - Used to help determine appropriate min_stock levels
+    """
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+
+        # Query monthly sales for the SKU from sales_facts_mv
+        # Note: months is validated to be 6-24, safe to use f-string for interval
+        query = f"""
+            WITH monthly_sales AS (
+                SELECT
+                    DATE_TRUNC('month', order_date) as month,
+                    -- Calculate individual units (applying package conversion factors)
+                    -- units_sold already includes quantity_multiplier from sku_mappings
+                    -- Now we also apply units_per_display (for x5, x16) or items_per_master_box (for caja master)
+                    SUM(
+                        CASE
+                            WHEN is_caja_master THEN units_sold * COALESCE(items_per_master_box, 1)
+                            ELSE units_sold * COALESCE(units_per_display, 1)
+                        END
+                    ) as units_sold,
+                    SUM(revenue) as revenue
+                FROM sales_facts_mv
+                WHERE sku_primario = %s
+                  AND source = %s
+                  AND order_date >= CURRENT_DATE - INTERVAL '{months} months'
+                GROUP BY DATE_TRUNC('month', order_date)
+                ORDER BY month
+            ),
+            stats AS (
+                SELECT
+                    COALESCE(MIN(units_sold), 0) as min_units,
+                    COALESCE(MAX(units_sold), 0) as max_units,
+                    COALESCE(ROUND(AVG(units_sold)::numeric, 0), 0) as avg_units,
+                    COALESCE(ROUND(STDDEV(units_sold)::numeric, 0), 0) as stddev_units,
+                    COALESCE(SUM(units_sold), 0) as total_units,
+                    COALESCE(SUM(revenue), 0) as total_revenue,
+                    COUNT(*) as months_with_sales
+                FROM monthly_sales
+            )
+            SELECT
+                json_build_object(
+                    'timeline', (
+                        SELECT COALESCE(json_agg(
+                            json_build_object(
+                                'month', TO_CHAR(month, 'YYYY-MM'),
+                                'month_name', TO_CHAR(month, 'Mon YYYY'),
+                                'units_sold', units_sold,
+                                'revenue', revenue
+                            ) ORDER BY month
+                        ), '[]'::json)
+                        FROM monthly_sales
+                    ),
+                    'stats', (SELECT row_to_json(stats) FROM stats)
+                )
+        """
+
+        cursor.execute(query, (sku.upper(), source))
+        result = cursor.fetchone()
+
+        cursor.close()
+        conn.close()
+
+        if not result or not result[0]:
+            return {
+                "status": "success",
+                "sku": sku,
+                "months_requested": months,
+                "source": source,
+                "data": {
+                    "timeline": [],
+                    "stats": {
+                        "min_units": 0,
+                        "max_units": 0,
+                        "avg_units": 0,
+                        "stddev_units": 0,
+                        "total_units": 0,
+                        "total_revenue": 0,
+                        "months_with_sales": 0
+                    }
+                }
+            }
+
+        data = result[0]
+
+        return {
+            "status": "success",
+            "sku": sku,
+            "months_requested": months,
+            "source": source,
+            "data": {
+                "timeline": data.get('timeline', []),
+                "stats": data.get('stats', {})
+            }
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching SKU timeline: {str(e)}")
+
+
+@router.get("/filter-options")
+async def get_filter_options(
+    categories: Optional[List[str]] = Query(None, description="Filter formats and SKU Primarios by categories (product families)")
+):
+    """
+    Get available filter options for Sales Analytics.
+
+    Returns:
+    - formats: unique product names (Formato options) filtered by category
+    - sku_primarios: unique SKU Primarios filtered by category
+
+    When categories are provided, only returns products from those families.
+
+    Example:
+    - GET /filter-options → Returns all product names and SKU Primarios
+    - GET /filter-options?categories=BARRAS → Returns only BARRAS products and SKU Primarios
+    - GET /filter-options?categories=BARRAS&categories=CRACKERS → Returns BARRAS + CRACKERS
+    """
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+
+        # Build base where clause
+        base_where = ["source = 'relbase'"]
+        params = []
+
+        # Filter by categories if provided
+        if categories and len(categories) > 0:
+            placeholders = ','.join(['%s'] * len(categories))
+            base_where.append(f"category IN ({placeholders})")
+            params.extend(categories)
+
+        where_clause = " AND ".join(base_where)
+
+        # Query 1: Get unique product names (Formato)
+        formats_query = f"""
+            SELECT DISTINCT product_name
+            FROM sales_facts_mv
+            WHERE {where_clause}
+              AND product_name IS NOT NULL
+              AND product_name != ''
+            ORDER BY product_name
+            LIMIT 200
+        """
+        cur.execute(formats_query, params)
+        formats = [row[0] for row in cur.fetchall()]
+
+        # Query 2: Get unique SKU Primarios
+        sku_primarios_query = f"""
+            SELECT DISTINCT sku_primario
+            FROM sales_facts_mv
+            WHERE {where_clause}
+              AND sku_primario IS NOT NULL
+              AND sku_primario != ''
+            ORDER BY sku_primario
+            LIMIT 100
+        """
+        cur.execute(sku_primarios_query, params)
+        sku_primarios = [row[0] for row in cur.fetchall()]
+
+        cur.close()
+        conn.close()
+
+        return {
+            "status": "success",
+            "data": {
+                "formats": formats,
+                "formats_count": len(formats),
+                "sku_primarios": sku_primarios,
+                "sku_primarios_count": len(sku_primarios),
+                "filtered_by_categories": categories if categories else None
+            }
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching filter options: {str(e)}")

@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     SUPABASE_ANON_KEY: str
     SUPABASE_SERVICE_ROLE_KEY: str
 
+    # Authentication
+    AUTH_SECRET: str = ""  # Must match frontend NextAuth AUTH_SECRET
+
     # CORS - Can be string (comma-separated) or JSON array
     # Example: "http://localhost:3000,https://yourdomain.com" or '["http://localhost:3000"]'
     ALLOWED_ORIGINS: Optional[str] = "http://localhost:3000,http://localhost:3001"
