@@ -789,6 +789,111 @@ async def get_inventory_summary():
 
 
 # ============================================================================
+# ENDPOINT: GET /api/v1/warehouse-inventory/expiration-summary
+# ============================================================================
+
+@inventory_router.get("/expiration-summary", response_model=Dict)
+async def get_warehouse_expiration_summary():
+    """
+    Get expiration summary for all warehouses.
+
+    Returns expiration stats per warehouse for display in warehouse cards:
+    - Expired lots count and units
+    - Expiring soon (30 days) lots count and units
+    - Earliest expiration date
+
+    Returns:
+        {
+            "status": "success",
+            "data": {
+                "mi_bodega": {
+                    "expired_lots": 0,
+                    "expired_units": 0,
+                    "expiring_soon_lots": 2,
+                    "expiring_soon_units": 500,
+                    "valid_lots": 7,
+                    "valid_units": 134911,
+                    "earliest_expiration": "2026-11-13",
+                    "days_to_earliest": 319
+                },
+                ...
+            }
+        }
+    """
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection_dict_with_retry()
+        cursor = conn.cursor()
+
+        # Get expiration stats per warehouse from the view
+        cursor.execute("""
+            SELECT
+                warehouse_code,
+                -- Expired lots
+                COUNT(CASE WHEN expiration_status = 'Expired' THEN 1 END) as expired_lots,
+                COALESCE(SUM(CASE WHEN expiration_status = 'Expired' THEN quantity ELSE 0 END), 0) as expired_units,
+
+                -- Expiring soon (30 days)
+                COUNT(CASE WHEN expiration_status = 'Expiring Soon' THEN 1 END) as expiring_soon_lots,
+                COALESCE(SUM(CASE WHEN expiration_status = 'Expiring Soon' THEN quantity ELSE 0 END), 0) as expiring_soon_units,
+
+                -- Valid lots (> 30 days)
+                COUNT(CASE WHEN expiration_status = 'Valid' THEN 1 END) as valid_lots,
+                COALESCE(SUM(CASE WHEN expiration_status = 'Valid' THEN quantity ELSE 0 END), 0) as valid_units,
+
+                -- No date
+                COUNT(CASE WHEN expiration_status = 'No Date' THEN 1 END) as no_date_lots,
+                COALESCE(SUM(CASE WHEN expiration_status = 'No Date' THEN quantity ELSE 0 END), 0) as no_date_units,
+
+                -- Earliest expiration
+                MIN(expiration_date) as earliest_expiration,
+                MIN(days_to_expiration) FILTER (WHERE days_to_expiration IS NOT NULL) as days_to_earliest
+
+            FROM warehouse_stock_by_lot
+            WHERE warehouse_code IN (
+                SELECT code FROM warehouses
+                WHERE is_active = true
+                  AND source = 'relbase'
+                  AND external_id IS NOT NULL
+            )
+            GROUP BY warehouse_code
+            ORDER BY warehouse_code
+        """)
+
+        rows = cursor.fetchall()
+
+        # Convert to dictionary keyed by warehouse_code
+        result = {}
+        for row in rows:
+            result[row['warehouse_code']] = {
+                'expired_lots': row['expired_lots'],
+                'expired_units': int(row['expired_units']),
+                'expiring_soon_lots': row['expiring_soon_lots'],
+                'expiring_soon_units': int(row['expiring_soon_units']),
+                'valid_lots': row['valid_lots'],
+                'valid_units': int(row['valid_units']),
+                'no_date_lots': row['no_date_lots'],
+                'no_date_units': int(row['no_date_units']),
+                'earliest_expiration': str(row['earliest_expiration']) if row['earliest_expiration'] else None,
+                'days_to_earliest': row['days_to_earliest']
+            }
+
+        return {
+            "status": "success",
+            "data": result
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching expiration summary: {str(e)}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+# ============================================================================
 # ENDPOINT: POST /api/v1/warehouse-inventory/upload
 # ============================================================================
 

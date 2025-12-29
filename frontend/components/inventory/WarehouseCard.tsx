@@ -2,6 +2,14 @@
 
 import Image from 'next/image';
 
+interface ExpirationSummary {
+  expiring_soon_lots: number;
+  expiring_soon_units: number;
+  expired_lots: number;
+  expired_units: number;
+  earliest_expiration?: string | null;
+}
+
 interface WarehouseCardProps {
   code: string;
   name: string;
@@ -11,6 +19,7 @@ interface WarehouseCardProps {
   onClick: () => void;
   stockCount?: number;
   productCount?: number;
+  expirationSummary?: ExpirationSummary;
 }
 
 export default function WarehouseCard({
@@ -22,8 +31,29 @@ export default function WarehouseCard({
   onClick,
   stockCount,
   productCount,
+  expirationSummary,
 }: WarehouseCardProps) {
   const isAmplifica = code.startsWith('amplifica');
+
+  // Format expiration date as DD/MM/YYYY
+  const formatExpDate = (dateStr: string | null | undefined): string => {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  };
+
+  // Calculate days until earliest expiration
+  const getDaysToExpiration = (): number | null => {
+    if (!expirationSummary?.earliest_expiration) return null;
+    const expDate = new Date(expirationSummary.earliest_expiration);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    expDate.setHours(0, 0, 0, 0);
+    return Math.ceil((expDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  };
+
+  const daysToExpiration = getDaysToExpiration();
+  const hasExpirationWarning = expirationSummary && (expirationSummary.expiring_soon_lots > 0 || expirationSummary.expired_lots > 0);
 
   return (
     <button
@@ -133,6 +163,40 @@ export default function WarehouseCard({
                 }`}
               />
               <span className="text-gray-600">{stockCount.toLocaleString()} un.</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Expiration Indicators */}
+      {expirationSummary && (expirationSummary.expiring_soon_lots > 0 || expirationSummary.expired_lots > 0 || expirationSummary.earliest_expiration) && (
+        <div className="mb-2 space-y-1">
+          {/* Expired warning */}
+          {expirationSummary.expired_lots > 0 && (
+            <div className="flex items-center gap-1 text-xs">
+              <span className="text-red-500">❌</span>
+              <span className="text-red-600 font-medium">
+                {expirationSummary.expired_lots} vencido{expirationSummary.expired_lots > 1 ? 's' : ''}
+              </span>
+            </div>
+          )}
+          {/* Expiring soon warning */}
+          {expirationSummary.expiring_soon_lots > 0 && (
+            <div className="flex items-center gap-1 text-xs">
+              <span className="text-amber-500">⏰</span>
+              <span className="text-amber-600 font-medium">
+                {expirationSummary.expiring_soon_lots} por vencer
+              </span>
+            </div>
+          )}
+          {/* Earliest expiration date */}
+          {expirationSummary.earliest_expiration && daysToExpiration !== null && (
+            <div className="flex items-center gap-1 text-xs">
+              <span className={daysToExpiration < 30 ? 'text-amber-500' : 'text-green-500'}>📅</span>
+              <span className={`${daysToExpiration < 30 ? 'text-amber-600' : 'text-gray-600'}`}>
+                Vence: {formatExpDate(expirationSummary.earliest_expiration)}
+                <span className="text-gray-400 ml-1">({daysToExpiration}d)</span>
+              </span>
             </div>
           )}
         </div>

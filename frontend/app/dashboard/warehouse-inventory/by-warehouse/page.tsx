@@ -76,6 +76,19 @@ interface WarehousesResponse {
   data: Warehouse[];
 }
 
+interface WarehouseExpirationSummary {
+  [warehouseCode: string]: {
+    expired_lots: number;
+    expired_units: number;
+    expiring_soon_lots: number;
+    expiring_soon_units: number;
+    valid_lots: number;
+    valid_units: number;
+    earliest_expiration: string | null;
+    days_to_earliest: number | null;
+  };
+}
+
 export default function WarehouseSpecificInventoryPage() {
   const { data: session, status } = useSession();
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -85,6 +98,7 @@ export default function WarehouseSpecificInventoryPage() {
     null
   );
   const [summary, setSummary] = useState<WarehouseSummary | null>(null);
+  const [expirationSummary, setExpirationSummary] = useState<WarehouseExpirationSummary>({});
   const [loading, setLoading] = useState(false); // Don't load by default
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -93,16 +107,29 @@ export default function WarehouseSpecificInventoryPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showOnlyWithStock, setShowOnlyWithStock] = useState(false);
 
-  // Fetch warehouses list
+  // Fetch warehouses list and expiration summary
   const fetchWarehouses = async () => {
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const response = await fetch(`${apiUrl}/api/v1/warehouses`);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+
+      // Fetch warehouses and expiration summary in parallel
+      const [warehousesResponse, expirationResponse] = await Promise.all([
+        fetch(`${apiUrl}/api/v1/warehouses`),
+        fetch(`${apiUrl}/api/v1/warehouse-inventory/expiration-summary`)
+      ]);
+
+      if (!warehousesResponse.ok) {
+        throw new Error(`HTTP ${warehousesResponse.status}: ${warehousesResponse.statusText}`);
       }
-      const data: WarehousesResponse = await response.json();
-      setWarehouses(data.data);
+
+      const warehousesData: WarehousesResponse = await warehousesResponse.json();
+      setWarehouses(warehousesData.data);
+
+      // Load expiration summary if available
+      if (expirationResponse.ok) {
+        const expirationData = await expirationResponse.json();
+        setExpirationSummary(expirationData.data || {});
+      }
       // Don't auto-select - user must choose a warehouse
     } catch (err: any) {
       console.error('Error fetching warehouses:', err);
@@ -323,6 +350,7 @@ export default function WarehouseSpecificInventoryPage() {
             const warehouseStats = summary && selectedWarehouse === warehouse.code
               ? { stockCount: summary.total_stock, productCount: summary.total_products }
               : undefined;
+            const expStats = expirationSummary[warehouse.code];
 
             return (
               <WarehouseCard
@@ -335,6 +363,13 @@ export default function WarehouseSpecificInventoryPage() {
                 onClick={() => setSelectedWarehouse(warehouse.code)}
                 stockCount={warehouseStats?.stockCount}
                 productCount={warehouseStats?.productCount}
+                expirationSummary={expStats ? {
+                  expired_lots: expStats.expired_lots,
+                  expired_units: expStats.expired_units,
+                  expiring_soon_lots: expStats.expiring_soon_lots,
+                  expiring_soon_units: expStats.expiring_soon_units,
+                  earliest_expiration: expStats.earliest_expiration
+                } : undefined}
               />
             );
           })}
@@ -344,6 +379,7 @@ export default function WarehouseSpecificInventoryPage() {
             const warehouseStats = summary && selectedWarehouse === warehouse.code
               ? { stockCount: summary.total_stock, productCount: summary.total_products }
               : undefined;
+            const expStats = expirationSummary[warehouse.code];
 
             return (
               <WarehouseCard
@@ -356,6 +392,13 @@ export default function WarehouseSpecificInventoryPage() {
                 onClick={() => setSelectedWarehouse(warehouse.code)}
                 stockCount={warehouseStats?.stockCount}
                 productCount={warehouseStats?.productCount}
+                expirationSummary={expStats ? {
+                  expired_lots: expStats.expired_lots,
+                  expired_units: expStats.expired_units,
+                  expiring_soon_lots: expStats.expiring_soon_lots,
+                  expiring_soon_units: expStats.expiring_soon_units,
+                  earliest_expiration: expStats.earliest_expiration
+                } : undefined}
               />
             );
           })}
