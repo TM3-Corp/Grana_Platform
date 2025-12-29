@@ -29,6 +29,18 @@ async function getAuthHeaders() {
   };
 }
 
+async function safeJsonParse(response: Response) {
+  const text = await response.text();
+  if (!text) {
+    return null;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 // GET /api/users/[id] - Get a specific user
 export async function GET(
   request: NextRequest,
@@ -47,8 +59,8 @@ export async function GET(
       headers,
     });
 
-    const data = await response.json();
-    return NextResponse.json(data, { status: response.status });
+    const data = await safeJsonParse(response);
+    return NextResponse.json(data || { detail: 'No data' }, { status: response.status });
   } catch (error) {
     console.error('Error fetching user:', error);
     return NextResponse.json({ detail: 'Failed to fetch user' }, { status: 500 });
@@ -77,8 +89,8 @@ export async function PATCH(
       body: JSON.stringify(body),
     });
 
-    const data = await response.json();
-    return NextResponse.json(data, { status: response.status });
+    const data = await safeJsonParse(response);
+    return NextResponse.json(data || { success: true }, { status: response.status });
   } catch (error) {
     console.error('Error updating user:', error);
     return NextResponse.json({ detail: 'Failed to update user' }, { status: 500 });
@@ -104,8 +116,8 @@ export async function DELETE(
       headers,
     });
 
-    const data = await response.json();
-    return NextResponse.json(data, { status: response.status });
+    const data = await safeJsonParse(response);
+    return NextResponse.json(data || { success: true }, { status: response.status });
   } catch (error) {
     console.error('Error deleting user:', error);
     return NextResponse.json({ detail: 'Failed to delete user' }, { status: 500 });

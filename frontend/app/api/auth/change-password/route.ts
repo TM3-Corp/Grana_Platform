@@ -29,6 +29,18 @@ async function getAuthHeaders() {
   };
 }
 
+async function safeJsonParse(response: Response) {
+  const text = await response.text();
+  if (!text) {
+    return null;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 // POST /api/auth/change-password - Change current user's password
 export async function POST(request: NextRequest) {
   const headers = await getAuthHeaders();
@@ -46,8 +58,8 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(body),
     });
 
-    const data = await response.json();
-    return NextResponse.json(data, { status: response.status });
+    const data = await safeJsonParse(response);
+    return NextResponse.json(data || { success: true }, { status: response.status });
   } catch (error) {
     console.error('Error changing password:', error);
     return NextResponse.json({ detail: 'Failed to change password' }, { status: 500 });

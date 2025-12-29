@@ -29,6 +29,18 @@ async function getAuthHeaders() {
   };
 }
 
+async function safeJsonParse(response: Response) {
+  const text = await response.text();
+  if (!text) {
+    return null;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 // POST /api/users/[id]/reset-password - Reset a user's password (admin only)
 export async function POST(
   request: NextRequest,
@@ -51,8 +63,8 @@ export async function POST(
       body: JSON.stringify(body),
     });
 
-    const data = await response.json();
-    return NextResponse.json(data, { status: response.status });
+    const data = await safeJsonParse(response);
+    return NextResponse.json(data || { success: true }, { status: response.status });
   } catch (error) {
     console.error('Error resetting password:', error);
     return NextResponse.json({ detail: 'Failed to reset password' }, { status: 500 });

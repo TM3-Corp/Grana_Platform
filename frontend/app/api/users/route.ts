@@ -29,6 +29,18 @@ async function getAuthHeaders() {
   };
 }
 
+async function safeJsonParse(response: Response) {
+  const text = await response.text();
+  if (!text) {
+    return null;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 // GET /api/users - List all users
 export async function GET() {
   const headers = await getAuthHeaders();
@@ -42,8 +54,8 @@ export async function GET() {
       headers,
     });
 
-    const data = await response.json();
-    return NextResponse.json(data, { status: response.status });
+    const data = await safeJsonParse(response);
+    return NextResponse.json(data || [], { status: response.status });
   } catch (error) {
     console.error('Error fetching users:', error);
     return NextResponse.json({ detail: 'Failed to fetch users' }, { status: 500 });
@@ -67,8 +79,8 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(body),
     });
 
-    const data = await response.json();
-    return NextResponse.json(data, { status: response.status });
+    const data = await safeJsonParse(response);
+    return NextResponse.json(data || { success: true }, { status: response.status });
   } catch (error) {
     console.error('Error creating user:', error);
     return NextResponse.json({ detail: 'Failed to create user' }, { status: 500 });
