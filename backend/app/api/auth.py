@@ -298,6 +298,60 @@ async def delete_user(
 
 
 # =============================================================================
+# Admin Password Reset
+# =============================================================================
+
+class PasswordReset(BaseModel):
+    new_password: str
+
+
+@router.post("/users/{user_id}/reset-password", status_code=status.HTTP_200_OK)
+async def reset_user_password(
+    user_id: int,
+    password_data: PasswordReset,
+    current_user: TokenUser = Depends(require_admin)
+):
+    """Reset a user's password (admin only)"""
+    # Prevent resetting own password via this endpoint
+    if str(user_id) == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Use /me/change-password to change your own password"
+        )
+
+    conn, cursor = get_db_cursor()
+    try:
+        # Check if user exists
+        cursor.execute("SELECT id FROM users WHERE id = %s", (user_id,))
+        if not cursor.fetchone():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        # Hash and set new password
+        new_hash = pwd_context.hash(password_data.new_password)
+        cursor.execute("""
+            UPDATE users SET password_hash = %s, updated_at = NOW()
+            WHERE id = %s
+        """, (new_hash, user_id))
+
+        conn.commit()
+        return {"message": "Password reset successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to reset password: {str(e)}"
+        )
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# =============================================================================
 # Current User Endpoints
 # =============================================================================
 

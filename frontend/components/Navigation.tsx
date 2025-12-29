@@ -3,14 +3,39 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { signOut, useSession } from 'next-auth/react';
+
+// Helper function to get initials from name or email
+function getInitials(nameOrEmail: string | null | undefined): string {
+  if (!nameOrEmail) return '?';
+  const parts = nameOrEmail.split(/[@\s]+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return nameOrEmail.substring(0, 2).toUpperCase();
+}
 
 export default function Navigation() {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
   const { data: session } = useSession();
+
+  // Close user menu when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setUserMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const userRole = (session?.user as { role?: string })?.role;
 
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: '📊' },
@@ -157,20 +182,93 @@ export default function Navigation() {
               );
             })}
 
-            {/* User Menu */}
+            {/* User Menu Dropdown */}
             {session && (
-              <div className="flex items-center gap-3 ml-4 pl-4 border-l border-gray-200">
-                <span className="text-sm text-gray-600">{session.user?.email}</span>
+              <div
+                ref={userMenuRef}
+                className="relative ml-4 pl-4 border-l border-gray-200"
+              >
                 <button
-                  onClick={() => {
-                    // Use window.location.origin to get the correct host (works in both dev and prod)
-                    const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
-                    signOut({ callbackUrl: `${baseUrl}/login` });
-                  }}
-                  className="px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                  onClick={() => setUserMenuOpen(!userMenuOpen)}
+                  className="flex items-center gap-2 hover:bg-gray-50 rounded-lg px-2 py-1 transition-all"
                 >
-                  Cerrar Sesión
+                  {/* Avatar with initials */}
+                  <div className="w-8 h-8 rounded-full bg-green-600 flex items-center justify-center text-white text-sm font-medium">
+                    {getInitials(session.user?.name || session.user?.email)}
+                  </div>
+                  <span className="text-sm text-gray-700 hidden lg:block max-w-32 truncate">
+                    {session.user?.name || session.user?.email}
+                  </span>
+                  <svg
+                    className={`w-4 h-4 text-gray-500 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`}
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
                 </button>
+
+                {/* Dropdown Menu */}
+                {userMenuOpen && (
+                  <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                    {/* User Info Header */}
+                    <div className="px-4 py-3 border-b border-gray-100">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {session.user?.name || 'Usuario'}
+                      </p>
+                      <p className="text-xs text-gray-500 truncate">{session.user?.email}</p>
+                    </div>
+
+                    {/* Menu Items */}
+                    <div className="py-1">
+                      <Link
+                        href="/dashboard/profile"
+                        onClick={() => setUserMenuOpen(false)}
+                        className="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      >
+                        <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                        Perfil
+                      </Link>
+
+                      {/* Admin Only - User Management */}
+                      {userRole === 'admin' && (
+                        <Link
+                          href="/dashboard/users"
+                          onClick={() => setUserMenuOpen(false)}
+                          className="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                        >
+                          <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                          </svg>
+                          Gestión de Usuarios
+                        </Link>
+                      )}
+                    </div>
+
+                    {/* Divider */}
+                    <div className="border-t border-gray-100 my-1"></div>
+
+                    {/* Logout */}
+                    <div className="py-1">
+                      <button
+                        onClick={() => {
+                          setUserMenuOpen(false);
+                          const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+                          signOut({ callbackUrl: `${baseUrl}/login` });
+                        }}
+                        className="flex items-center gap-3 px-4 py-2 text-sm text-red-600 hover:bg-red-50 w-full transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                        </svg>
+                        Cerrar Sesión
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -253,6 +351,70 @@ export default function Navigation() {
                 </Link>
               );
             })}
+
+            {/* Mobile User Section */}
+            {session && (
+              <>
+                <div className="border-t border-gray-200 my-2"></div>
+                <div className="px-3 py-2 text-sm font-semibold text-gray-500 flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-green-600 flex items-center justify-center text-white text-xs font-medium">
+                    {getInitials(session.user?.name || session.user?.email)}
+                  </div>
+                  <span className="truncate">{session.user?.name || session.user?.email}</span>
+                </div>
+                <Link
+                  href="/dashboard/profile"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`
+                    block px-6 py-2 rounded-md text-base font-medium
+                    flex items-center gap-2
+                    ${
+                      isActive('/dashboard/profile')
+                        ? 'bg-green-50 text-green-700'
+                        : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                    }
+                  `}
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  <span>Perfil</span>
+                </Link>
+                {userRole === 'admin' && (
+                  <Link
+                    href="/dashboard/users"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={`
+                      block px-6 py-2 rounded-md text-base font-medium
+                      flex items-center gap-2
+                      ${
+                        isActive('/dashboard/users')
+                          ? 'bg-green-50 text-green-700'
+                          : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                      }
+                    `}
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                    </svg>
+                    <span>Gestión de Usuarios</span>
+                  </Link>
+                )}
+                <button
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+                    signOut({ callbackUrl: `${baseUrl}/login` });
+                  }}
+                  className="block w-full text-left px-6 py-2 rounded-md text-base font-medium text-red-600 hover:bg-red-50 flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  </svg>
+                  <span>Cerrar Sesión</span>
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
