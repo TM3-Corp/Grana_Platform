@@ -4,8 +4,6 @@ import { useState } from 'react';
 import { useSession } from 'next-auth/react';
 import Navigation from '@/components/Navigation';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
 function getRoleName(role: string | undefined): string {
   switch (role) {
     case 'admin': return 'Administrador';
@@ -58,7 +56,7 @@ export default function ProfilePage() {
     setPasswordLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}/api/v1/auth/me/change-password`, {
+      const response = await fetch('/api/auth/change-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

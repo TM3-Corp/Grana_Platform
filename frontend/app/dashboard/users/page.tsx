@@ -6,8 +6,6 @@ import { useRouter } from 'next/navigation';
 import Navigation from '@/components/Navigation';
 import type { User, CreateUserRequest, UpdateUserRequest, ResetPasswordRequest } from '@/types/auth';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
 // Role badge component
 function RoleBadge({ role }: { role: string }) {
   const config: Record<string, { bg: string; text: string; label: string }> = {
@@ -117,7 +115,7 @@ export default function UsersPage() {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch(`${API_URL}/api/v1/auth/users`);
+      const response = await fetch('/api/users');
       if (!response.ok) {
         const data = await response.json();
         throw new Error(data.detail || 'Error al cargar usuarios');
@@ -149,7 +147,7 @@ export default function UsersPage() {
 
     setFormLoading(true);
     try {
-      const response = await fetch(`${API_URL}/api/v1/auth/users`, {
+      const response = await fetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(createForm),
@@ -181,7 +179,7 @@ export default function UsersPage() {
     setFormLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}/api/v1/auth/users/${editingUser.id}`, {
+      const response = await fetch(`/api/users/${editingUser.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editForm),
@@ -224,7 +222,7 @@ export default function UsersPage() {
     setFormLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}/api/v1/auth/users/${editingUser.id}/reset-password`, {
+      const response = await fetch(`/api/users/${editingUser.id}/reset-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ new_password: resetPasswordForm.newPassword }),
@@ -256,7 +254,7 @@ export default function UsersPage() {
     }
 
     try {
-      const response = await fetch(`${API_URL}/api/v1/auth/users/${user.id}`, {
+      const response = await fetch(`/api/users/${user.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ is_active: !user.is_active }),
