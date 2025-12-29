@@ -315,7 +315,7 @@ async def get_inventory_general(
                 GROUP BY sku
             ),
             final AS (
-                -- Step 5: Join with product_catalog for enrichment
+                -- Step 5: Join with product_catalog for enrichment + inventory planning data
                 SELECT
                     at.sku,
                     at.original_skus,
@@ -343,14 +343,51 @@ async def get_inventory_general(
                         (SELECT min_stock FROM products WHERE sku = at.sku AND is_active = true LIMIT 1),
                         0
                     ) as min_stock,
-                    -- Get recommended_min_stock based on 6-month monthly sales average from sales_facts_mv
+                    -- Get per-product estimation period (1, 3, or 6 months - default 6)
+                    COALESCE(pis.estimation_months, 6) as estimation_months,
+                    -- Get recommended_min_stock based on configurable monthly sales average
+                    -- Uses per-product estimation_months from product_inventory_settings
                     COALESCE(
-                        (SELECT ROUND(SUM(units_sold)::NUMERIC / 6)::INTEGER
-                         FROM sales_facts_mv
-                         WHERE sku_primario = at.sku
-                           AND order_date >= CURRENT_DATE - INTERVAL '6 months'),
+                        (SELECT ROUND(SUM(sfm.units_sold)::NUMERIC / COALESCE(pis.estimation_months, 6))::INTEGER
+                         FROM sales_facts_mv sfm
+                         WHERE sfm.original_sku = at.sku
+                           AND sfm.order_date >= CURRENT_DATE - MAKE_INTERVAL(months => COALESCE(pis.estimation_months, 6))),
                         0
                     ) as recommended_min_stock,
+                    -- Expiration-aware stock from inventory_planning_facts view
+                    COALESCE(ipf.stock_usable, at.stock_total, 0) as stock_usable,
+                    COALESCE(ipf.stock_expiring_30d, 0) as stock_expiring_30d,
+                    COALESCE(ipf.stock_expired, 0) as stock_expired,
+                    ipf.earliest_expiration,
+                    ipf.days_to_earliest_expiration,
+                    -- Days of coverage: how many days will stock_usable last at current sales rate
+                    -- Formula: stock_usable / (recommended_min_stock / 30) = stock_usable * 30 / avg_monthly_sales
+                    CASE
+                        WHEN COALESCE(
+                            (SELECT ROUND(SUM(sfm.units_sold)::NUMERIC / COALESCE(pis.estimation_months, 6))::INTEGER
+                             FROM sales_facts_mv sfm
+                             WHERE sfm.original_sku = at.sku
+                               AND sfm.order_date >= CURRENT_DATE - MAKE_INTERVAL(months => COALESCE(pis.estimation_months, 6))),
+                            0
+                        ) > 0 THEN
+                            ROUND(COALESCE(ipf.stock_usable, at.stock_total, 0)::NUMERIC * 30 /
+                                  (SELECT ROUND(SUM(sfm.units_sold)::NUMERIC / COALESCE(pis.estimation_months, 6))::INTEGER
+                                   FROM sales_facts_mv sfm
+                                   WHERE sfm.original_sku = at.sku
+                                     AND sfm.order_date >= CURRENT_DATE - MAKE_INTERVAL(months => COALESCE(pis.estimation_months, 6))))::INTEGER
+                        ELSE 999  -- No sales = infinite coverage
+                    END as days_of_coverage,
+                    -- Production needed: target_stock (with 20%% safety buffer) - stock_usable
+                    -- Formula: max(0, recommended_min_stock * 1.2 - stock_usable)
+                    GREATEST(0,
+                        ROUND(COALESCE(
+                            (SELECT ROUND(SUM(sfm.units_sold)::NUMERIC / COALESCE(pis.estimation_months, 6))::INTEGER
+                             FROM sales_facts_mv sfm
+                             WHERE sfm.original_sku = at.sku
+                               AND sfm.order_date >= CURRENT_DATE - MAKE_INTERVAL(months => COALESCE(pis.estimation_months, 6))),
+                            0
+                        ) * 1.2 - COALESCE(ipf.stock_usable, at.stock_total, 0))::INTEGER
+                    ) as production_needed,
                     -- in_catalog: TRUE if SKU found in product_catalog (sku or sku_master)
                     CASE WHEN pc.sku IS NOT NULL OR pc_master.sku IS NOT NULL THEN true ELSE false END as in_catalog,
                     -- is_inventory_active: NULL means active (default), FALSE means hidden
@@ -365,6 +402,12 @@ async def get_inventory_general(
                     ON pc_master.sku_master = at.sku
                     AND pc_master.is_active = TRUE
                     AND pc.sku IS NULL
+                -- Join inventory planning settings (per-product estimation period)
+                LEFT JOIN product_inventory_settings pis
+                    ON pis.sku = at.sku
+                -- Join inventory planning facts (expiration-aware stock)
+                LEFT JOIN inventory_planning_facts ipf
+                    ON ipf.sku = at.sku
             )
             SELECT *
             FROM final
@@ -373,7 +416,11 @@ async def get_inventory_general(
             ORDER BY category NULLS LAST, name
         """
 
-        cursor.execute(query, params)
+        # Only pass params if there are any, to avoid psycopg2 parsing % in comments
+        if params:
+            cursor.execute(query, params)
+        else:
+            cursor.execute(query)
         products = cursor.fetchall()
 
         # Get summary stats with the new mapping logic

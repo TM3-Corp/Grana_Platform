@@ -14,7 +14,7 @@ env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(env_path)
 
 # Import API routers
-from app.api import conversion, shopify, products, orders, mercadolibre, product_mapping, relbase, audit, inventory, sales_analytics, sales_analytics_realtime, admin, warehouses, chat, sync, sku_mappings, analytics, auth, product_catalog
+from app.api import conversion, shopify, products, orders, mercadolibre, product_mapping, relbase, audit, inventory, sales_analytics, sales_analytics_realtime, admin, warehouses, chat, sync, sku_mappings, analytics, auth, product_catalog, inventory_planning
 
 # Import centralized database connection with retry logic
 from app.core.database import get_db_connection_with_retry, CONNECTION_TIMEOUT
@@ -141,6 +141,9 @@ app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["Analytic
 
 # Authentication API (user management, API keys)
 app.include_router(auth.router)
+
+# Inventory Planning API (production recommendations)
+app.include_router(inventory_planning.router)
 
 @app.get("/")
 async def root():

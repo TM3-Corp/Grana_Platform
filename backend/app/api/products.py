@@ -365,3 +365,68 @@ async def update_product_inventory_active(sku: str, update: InventoryActiveUpdat
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error updating inventory active status: {str(e)}")
+
+
+# Request model for estimation method update
+class EstimationMethodUpdate(BaseModel):
+    estimation_months: int
+
+
+@router.put("/{sku}/estimation-method")
+async def update_estimation_method(sku: str, update: EstimationMethodUpdate):
+    """
+    Update the estimation method (period) for a product's inventory planning.
+
+    The estimation_months value determines how many months of sales history
+    are used to calculate the recommended minimum stock:
+    - 1 = "Último Mes" (last month's sales average)
+    - 3 = "Últimos 3 Meses" (last 3 months average)
+    - 6 = "Últimos 6 Meses" (last 6 months average, default)
+
+    Args:
+        sku: Product SKU
+        update: EstimationMethodUpdate model with estimation_months value (1, 3, or 6)
+
+    Returns:
+        Updated estimation settings
+    """
+    # Validate estimation_months
+    if update.estimation_months not in (1, 3, 6):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid estimation_months value: {update.estimation_months}. Must be 1, 3, or 6."
+        )
+
+    try:
+        conn = get_db_connection_dict_with_retry()
+        cursor = conn.cursor()
+
+        # Upsert into product_inventory_settings
+        cursor.execute(
+            """
+            INSERT INTO product_inventory_settings (sku, estimation_months, updated_at)
+            VALUES (%s, %s, NOW())
+            ON CONFLICT (sku)
+            DO UPDATE SET
+                estimation_months = EXCLUDED.estimation_months,
+                updated_at = NOW()
+            RETURNING sku, estimation_months, safety_buffer_pct, lead_time_days, updated_at
+            """,
+            (sku, update.estimation_months)
+        )
+
+        result = cursor.fetchone()
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {
+            "status": "success",
+            "message": f"Estimation method updated for {sku}",
+            "data": result
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating estimation method: {str(e)}")

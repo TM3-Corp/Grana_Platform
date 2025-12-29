@@ -520,7 +520,8 @@ async def get_sales_analytics(
 async def get_sku_sales_timeline(
     sku: str,
     months: int = Query(12, ge=6, le=24, description="Number of months to include (6-24)"),
-    source: str = Query('relbase', description="Data source filter")
+    source: str = Query('relbase', description="Data source filter"),
+    for_inventory: bool = Query(True, description="If true, query by specific SKU (for inventory tracking). If false, aggregate by product family.")
 ):
     """
     Get monthly sales timeline for a specific SKU.
@@ -529,34 +530,74 @@ async def get_sku_sales_timeline(
     - Monthly units sold over the specified period
     - Statistics: min, max, average, standard deviation
     - Used to help determine appropriate min_stock levels
+
+    Parameters:
+    - for_inventory (default True): Controls query behavior
+      - True: Query by specific SKU, return display units (for inventory planning)
+        e.g., BAKC_U64010 (x16 pack) returns how many x16 packs were sold
+      - False: Query by sku_primario, return individual units (for sales analytics)
+        e.g., BAKC_U64010 aggregates with all variants and converts to base units
     """
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
 
-        # Query monthly sales for the SKU from sales_facts_mv
-        # Note: months is validated to be 6-24, safe to use f-string for interval
-        query = f"""
-            WITH monthly_sales AS (
-                SELECT
-                    DATE_TRUNC('month', order_date) as month,
-                    -- Calculate individual units (applying package conversion factors)
-                    -- units_sold already includes quantity_multiplier from sku_mappings
-                    -- Now we also apply units_per_display (for x5, x16) or items_per_master_box (for caja master)
-                    SUM(
-                        CASE
-                            WHEN is_caja_master THEN units_sold * COALESCE(items_per_master_box, 1)
-                            ELSE units_sold * COALESCE(units_per_display, 1)
-                        END
-                    ) as units_sold,
-                    SUM(revenue) as revenue
-                FROM sales_facts_mv
-                WHERE sku_primario = %s
-                  AND source = %s
-                  AND order_date >= CURRENT_DATE - INTERVAL '{months} months'
-                GROUP BY DATE_TRUNC('month', order_date)
-                ORDER BY month
-            ),
+        # Determine which SKU to query and how to calculate units
+        if for_inventory:
+            # For inventory: query by specific SKU, return raw display units
+            # This tells us how many x16 packs (or x5 packs, etc.) were sold
+            query_sku = sku.upper()
+            sku_primario = None  # Not used for inventory queries
+
+            query = f"""
+                WITH monthly_sales AS (
+                    SELECT
+                        DATE_TRUNC('month', order_date) as month,
+                        -- Raw units_sold (display quantities, not converted to individual units)
+                        -- This is what we need for inventory planning of this specific display format
+                        SUM(units_sold) as units_sold,
+                        SUM(revenue) as revenue
+                    FROM sales_facts_mv
+                    WHERE original_sku = %s
+                      AND source = %s
+                      AND order_date >= CURRENT_DATE - INTERVAL '{months} months'
+                    GROUP BY DATE_TRUNC('month', order_date)
+                    ORDER BY month
+                ),"""
+        else:
+            # For sales analytics: resolve to sku_primario and convert to individual units
+            cursor.execute("""
+                SELECT sku_primario FROM product_catalog
+                WHERE sku = %s AND is_active = TRUE
+            """, (sku.upper(),))
+            primario_result = cursor.fetchone()
+            sku_primario = primario_result[0] if primario_result and primario_result[0] else sku.upper()
+            query_sku = sku_primario
+
+            query = f"""
+                WITH monthly_sales AS (
+                    SELECT
+                        DATE_TRUNC('month', order_date) as month,
+                        -- Calculate individual units (applying package conversion factors)
+                        -- units_sold already includes quantity_multiplier from sku_mappings
+                        -- Now we also apply units_per_display (for x5, x16) or items_per_master_box (for caja master)
+                        SUM(
+                            CASE
+                                WHEN is_caja_master THEN units_sold * COALESCE(items_per_master_box, 1)
+                                ELSE units_sold * COALESCE(units_per_display, 1)
+                            END
+                        ) as units_sold,
+                        SUM(revenue) as revenue
+                    FROM sales_facts_mv
+                    WHERE sku_primario = %s
+                      AND source = %s
+                      AND order_date >= CURRENT_DATE - INTERVAL '{months} months'
+                    GROUP BY DATE_TRUNC('month', order_date)
+                    ORDER BY month
+                ),"""
+
+        # Common part of the query (stats and JSON building)
+        query += """
             stats AS (
                 SELECT
                     COALESCE(MIN(units_sold), 0) as min_units,
@@ -585,7 +626,7 @@ async def get_sku_sales_timeline(
                 )
         """
 
-        cursor.execute(query, (sku.upper(), source))
+        cursor.execute(query, (query_sku, source))
         result = cursor.fetchone()
 
         cursor.close()
@@ -595,6 +636,9 @@ async def get_sku_sales_timeline(
             return {
                 "status": "success",
                 "sku": sku,
+                "query_sku": query_sku,
+                "sku_primario": sku_primario,
+                "for_inventory": for_inventory,
                 "months_requested": months,
                 "source": source,
                 "data": {
@@ -616,6 +660,9 @@ async def get_sku_sales_timeline(
         return {
             "status": "success",
             "sku": sku,
+            "query_sku": query_sku,
+            "sku_primario": sku_primario,
+            "for_inventory": for_inventory,
             "months_requested": months,
             "source": source,
             "data": {

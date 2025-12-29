@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import Navigation from '@/components/Navigation';
 import DynamicWarehouseInventoryTable from '@/components/inventory/DynamicWarehouseInventoryTable';
-import EnhancedSummaryCard from '@/components/inventory/EnhancedSummaryCard';
 
 interface InventoryProduct {
   sku: string;
@@ -242,71 +241,88 @@ export default function WarehouseInventoryPage() {
         </div>
       </div>
 
-      {/* Enhanced Summary Cards */}
+      {/* Simplified Summary - 4 Key Metrics */}
       {summary && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-6 mb-8">
-          <EnhancedSummaryCard
-            title="Bodegas Activas"
-            value={summary.active_warehouses}
-            icon="🏢"
-            color="blue"
-            subtitle="De Relbase"
-          />
-          <EnhancedSummaryCard
-            title="Total Productos"
-            value={summary.total_products}
-            icon="📦"
-            color="purple"
-            subtitle="En el sistema"
-          />
-          <EnhancedSummaryCard
-            title="Stock Total"
-            value={summary.total_stock}
-            icon="📊"
-            color="amber"
-            subtitle="Unidades disponibles"
-          />
-          <EnhancedSummaryCard
-            title="Con Stock"
-            value={summary.products_with_stock}
-            icon="✅"
-            color="green"
-            subtitle={`${summary.total_products > 0 ? ((summary.products_with_stock / summary.total_products) * 100).toFixed(1) : 0}% del total`}
-          />
-          <EnhancedSummaryCard
-            title="Sin Stock"
-            value={summary.products_without_stock}
-            icon="⚠️"
-            color="gray"
-            subtitle={`${summary.total_products > 0 ? ((summary.products_without_stock / summary.total_products) * 100).toFixed(1) : 0}% del total`}
-          />
-          {summary.total_valor !== undefined && Number(summary.total_valor) > 0 && (
-            <EnhancedSummaryCard
-              title="Valor Total Inventario"
-              value={`$${Math.round(Number(summary.total_valor)).toLocaleString('es-CL')}`}
-              icon="💰"
-              color="green"
-              subtitle="Valorización total"
-            />
-          )}
-          {summary.expiration && (
-            <>
-              <EnhancedSummaryCard
-                title="Próximos a Vencer"
-                value={summary.expiration.expiring_soon_lots}
-                icon="⏰"
-                color="amber"
-                subtitle={`${summary.expiration.expiring_soon_units.toLocaleString()} unidades (30 días)`}
-              />
-              <EnhancedSummaryCard
-                title="Vencidos"
-                value={summary.expiration.expired_lots}
-                icon="❌"
-                color="red"
-                subtitle={`${summary.expiration.expired_units.toLocaleString()} unidades`}
-              />
-            </>
-          )}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          {/* Metric 1: Products with context */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-gray-500">Productos</span>
+              <span className="text-lg">📦</span>
+            </div>
+            <div className="text-2xl font-bold text-gray-900">{summary.products_with_stock.toLocaleString()}</div>
+            <div className="text-xs text-gray-500 mt-1">
+              {summary.products_without_stock > 0 && (
+                <span className="text-amber-600">{summary.products_without_stock} sin stock</span>
+              )}
+              {summary.products_without_stock === 0 && 'Todos con stock'}
+            </div>
+          </div>
+
+          {/* Metric 2: Total Units */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-gray-500">Stock Total</span>
+              <span className="text-lg">📊</span>
+            </div>
+            <div className="text-2xl font-bold text-gray-900">{summary.total_stock.toLocaleString()}</div>
+            <div className="text-xs text-gray-500 mt-1">
+              {summary.active_warehouses} {summary.active_warehouses === 1 ? 'bodega' : 'bodegas'}
+            </div>
+          </div>
+
+          {/* Metric 3: Total Value */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-gray-500">Valor Inventario</span>
+              <span className="text-lg">💰</span>
+            </div>
+            <div className="text-2xl font-bold text-emerald-600">
+              {summary.total_valor !== undefined && Number(summary.total_valor) > 0
+                ? `$${(Number(summary.total_valor) / 1000000).toFixed(1)}M`
+                : '-'}
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              {summary.total_valor !== undefined && Number(summary.total_valor) > 0
+                ? `$${Math.round(Number(summary.total_valor)).toLocaleString('es-CL')} CLP`
+                : 'Sin valorizar'}
+            </div>
+          </div>
+
+          {/* Metric 4: Alerts */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-gray-500">Alertas</span>
+              <span className="text-lg">⚠️</span>
+            </div>
+            {summary.expiration ? (
+              <>
+                <div className={`text-2xl font-bold ${
+                  (summary.expiration.expired_lots + summary.expiration.expiring_soon_lots) > 0
+                    ? 'text-amber-600'
+                    : 'text-green-600'
+                }`}>
+                  {summary.expiration.expired_lots + summary.expiration.expiring_soon_lots}
+                </div>
+                <div className="text-xs text-gray-500 mt-1 space-y-0.5">
+                  {summary.expiration.expired_lots > 0 && (
+                    <div className="text-red-600">{summary.expiration.expired_lots} vencidos</div>
+                  )}
+                  {summary.expiration.expiring_soon_lots > 0 && (
+                    <div className="text-amber-600">{summary.expiration.expiring_soon_lots} por vencer</div>
+                  )}
+                  {summary.expiration.expired_lots === 0 && summary.expiration.expiring_soon_lots === 0 && (
+                    <div className="text-green-600">Sin alertas</div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-2xl font-bold text-green-600">0</div>
+                <div className="text-xs text-green-600 mt-1">Sin alertas</div>
+              </>
+            )}
+          </div>
         </div>
       )}
 

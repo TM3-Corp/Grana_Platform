@@ -30,6 +30,7 @@ export default function Navigation() {
       subItems: [
         { name: 'General', href: '/dashboard/warehouse-inventory', icon: '📦' },
         { name: 'Por Bodega', href: '/dashboard/warehouse-inventory/by-warehouse', icon: '🏢' },
+        { name: 'Planificación', href: '/dashboard/production-planning', icon: '🏭' },
       ]
     },
     {

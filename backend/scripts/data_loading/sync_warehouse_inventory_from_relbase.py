@@ -10,31 +10,40 @@ Strategy:
 - Fetch all warehouses from Relbase
 - Fetch all products with external_id (Relbase products only)
 - For each warehouse × product combination:
-  - Fetch lot/serial numbers from Relbase
+  - Fetch lot/serial numbers from Relbase (with retry on failure)
   - Store in warehouse_stock with lot_number and expiration_date
+
+Features:
+- Retry logic with exponential backoff for failed requests
+- Periodic DB commits to prevent connection timeout
+- Failed request tracking with retry at end
+- Pagination handling for API responses
 
 Usage:
     python3 sync_warehouse_inventory_from_relbase.py [--dry-run] [--verbose]
 
 Author: Claude Code
 Date: 2025-11-18
+Updated: 2025-12-28 (added retry logic)
 """
 import os
 import sys
 import json
 import time
 import argparse
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 
 # Add parent directory to path for imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 # Load environment variables from .env file (override system vars)
 from dotenv import load_dotenv
 load_dotenv(override=True)
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from app.core.database import get_db_connection_dict
 
 # ============================================================================
@@ -45,8 +54,16 @@ RELBASE_BASE_URL = "https://api.relbase.cl"
 RELBASE_COMPANY_TOKEN = os.getenv('RELBASE_COMPANY_TOKEN')
 RELBASE_USER_TOKEN = os.getenv('RELBASE_USER_TOKEN')
 
-# Rate limiting: ~6 requests/second
-RATE_LIMIT_DELAY = 0.17
+# Rate limiting: ~4 requests/second (slightly slower for reliability)
+RATE_LIMIT_DELAY = 0.25
+
+# Retry configuration
+MAX_RETRIES = 5
+RETRY_BACKOFF_FACTOR = 2  # Exponential backoff: 1s, 2s, 4s, 8s, 16s
+INITIAL_RETRY_DELAY = 1.0
+
+# DB commit frequency (every N products)
+COMMIT_FREQUENCY = 20
 
 # ============================================================================
 # Relbase API Functions
@@ -93,39 +110,89 @@ def fetch_products() -> List[Dict]:
     return products
 
 
-def fetch_lot_serial_numbers(product_id: int, warehouse_id: int, verbose: bool = False) -> List[Dict]:
+def fetch_lot_serial_numbers_with_retry(
+    product_id: int,
+    warehouse_id: int,
+    verbose: bool = False,
+    max_retries: int = MAX_RETRIES
+) -> Tuple[List[Dict], bool]:
     """
     Fetch lot/serial numbers for a specific product in a specific warehouse
+    WITH retry logic and exponential backoff.
 
     Args:
         product_id: Relbase product ID
         warehouse_id: Relbase warehouse ID
         verbose: Print detailed progress
+        max_retries: Maximum number of retry attempts
 
     Returns:
-        List of lot/serial number records
+        Tuple of (list of lot/serial number records, success boolean)
     """
     url = f"{RELBASE_BASE_URL}/api/v1/productos/{product_id}/lotes_series/{warehouse_id}"
     headers = get_relbase_headers()
 
-    try:
-        response = requests.get(url, headers=headers, timeout=30)
-        response.raise_for_status()
+    last_error = None
 
-        data = response.json()
-        lots = data.get('data', {}).get('lot_serial_numbers', [])
+    for attempt in range(max_retries + 1):
+        try:
+            # Increase timeout with each retry
+            timeout = 30 + (attempt * 10)  # 30s, 40s, 50s, 60s, 70s, 80s
 
-        if verbose and lots:
-            print(f"   └─ Product {product_id} @ Warehouse {warehouse_id}: {len(lots)} lots")
+            response = requests.get(url, headers=headers, timeout=timeout)
+            response.raise_for_status()
 
-        return lots
+            data = response.json()
+            lots = data.get('data', {}).get('lot_serial_numbers', [])
 
-    except requests.exceptions.HTTPError as e:
-        if e.response.status_code == 404:
-            # No lots found for this combination (common, not an error)
-            return []
-        else:
-            raise
+            # Check for pagination (in case API paginates results)
+            pagination = data.get('data', {}).get('pagination', {})
+            if pagination:
+                total_pages = pagination.get('total_pages', 1)
+                current_page = pagination.get('current_page', 1)
+                if total_pages > 1:
+                    print(f"   ⚠️  Pagination detected: page {current_page}/{total_pages}")
+                    # Fetch remaining pages
+                    all_lots = lots.copy()
+                    for page in range(2, total_pages + 1):
+                        page_url = f"{url}?page={page}"
+                        page_response = requests.get(page_url, headers=headers, timeout=timeout)
+                        page_response.raise_for_status()
+                        page_data = page_response.json()
+                        page_lots = page_data.get('data', {}).get('lot_serial_numbers', [])
+                        all_lots.extend(page_lots)
+                        time.sleep(RATE_LIMIT_DELAY)
+                    lots = all_lots
+
+            if verbose and lots:
+                print(f"   └─ Product {product_id} @ Warehouse {warehouse_id}: {len(lots)} lots")
+
+            return lots, True
+
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                # No lots found for this combination (common, not an error)
+                return [], True
+            else:
+                last_error = e
+
+        except (requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+                requests.exceptions.RequestException) as e:
+            last_error = e
+
+            if attempt < max_retries:
+                # Exponential backoff
+                delay = INITIAL_RETRY_DELAY * (RETRY_BACKOFF_FACTOR ** attempt)
+                if verbose or attempt >= 2:
+                    print(f"   🔄 Retry {attempt + 1}/{max_retries} in {delay:.1f}s... ({type(e).__name__})")
+                time.sleep(delay)
+            else:
+                # All retries exhausted
+                return [], False
+
+    # Should not reach here, but just in case
+    return [], False
 
 
 # ============================================================================
@@ -232,6 +299,7 @@ def get_warehouses_from_db(cursor) -> List[Dict]:
 
 
 def sync_warehouse_stock(
+    conn,
     cursor,
     products: List[Dict],
     warehouses: List[Dict],
@@ -240,8 +308,10 @@ def sync_warehouse_stock(
 ) -> Dict:
     """
     Sync warehouse stock with lot tracking from Relbase API
+    WITH retry logic and periodic commits.
 
     Args:
+        conn: Database connection (for commits)
         cursor: Database cursor
         products: List of products with external_id
         warehouses: List of warehouses with external_id
@@ -254,14 +324,20 @@ def sync_warehouse_stock(
     print("\n" + "=" * 80)
     print("📦 PHASE 2: Sync Warehouse Stock with Lot Tracking")
     print("=" * 80)
+    print(f"🔄 Retry config: {MAX_RETRIES} retries with exponential backoff")
+    print(f"💾 DB commit every {COMMIT_FREQUENCY} products")
 
     stats = {
         'combinations_checked': 0,
         'lots_found': 0,
         'lots_inserted': 0,
-        'errors': 0,
+        'retries_succeeded': 0,
+        'permanent_failures': 0,
         'start_time': time.time()
     }
+
+    # Track failed combinations for final retry pass
+    failed_combinations = []
 
     total_combinations = len(products) * len(warehouses)
     print(f"\n🔍 Checking {total_combinations} combinations ({len(products)} products × {len(warehouses)} warehouses)")
@@ -284,13 +360,130 @@ def sync_warehouse_stock(
 
             stats['combinations_checked'] += 1
 
-            try:
-                # Fetch lots from Relbase API
-                lots = fetch_lot_serial_numbers(
-                    product_id=int(product_external_id),
-                    warehouse_id=int(warehouse_external_id),
-                    verbose=verbose
-                )
+            # Fetch lots from Relbase API WITH RETRY
+            lots, success = fetch_lot_serial_numbers_with_retry(
+                product_id=int(product_external_id),
+                warehouse_id=int(warehouse_external_id),
+                verbose=verbose
+            )
+
+            if not success:
+                # Track for later retry
+                failed_combinations.append({
+                    'product': product,
+                    'warehouse': warehouse
+                })
+                print(f"   ❌ Failed after {MAX_RETRIES} retries: {product_sku} @ {warehouse_name}")
+                continue
+
+            if lots:
+                stats['lots_found'] += len(lots)
+
+                for lot in lots:
+                    lot_data = {
+                        'product_id_db': product_id_db,
+                        'product_external_id': product_external_id,
+                        'product_sku': product_sku,
+                        'warehouse_id_db': warehouse_id_db,
+                        'warehouse_external_id': warehouse_external_id,
+                        'warehouse_name': warehouse_name,
+                        'lot_id': lot['id'],
+                        'lot_number': lot['lot_serial_number'],
+                        'stock': lot['stock'],
+                        'expiration_date': lot.get('expiration_date')
+                    }
+
+                    all_lots.append(lot_data)
+
+                    if not dry_run:
+                        # Insert/update warehouse_stock
+                        cursor.execute("""
+                            INSERT INTO warehouse_stock (
+                                product_id,
+                                warehouse_id,
+                                quantity,
+                                lot_number,
+                                expiration_date,
+                                last_updated,
+                                updated_by
+                            )
+                            VALUES (%s, %s, %s, %s, %s, NOW(), 'relbase_api')
+                            ON CONFLICT (product_id, warehouse_id, lot_number)
+                            DO UPDATE SET
+                                quantity = EXCLUDED.quantity,
+                                expiration_date = EXCLUDED.expiration_date,
+                                last_updated = NOW(),
+                                updated_by = 'relbase_api'
+                        """, (
+                            product_id_db,
+                            warehouse_id_db,
+                            lot['stock'],
+                            lot['lot_serial_number'],
+                            lot.get('expiration_date')
+                        ))
+
+                        stats['lots_inserted'] += 1
+
+            # Rate limiting
+            time.sleep(RATE_LIMIT_DELAY)
+
+        # Periodic commit to prevent connection timeout
+        if i % COMMIT_FREQUENCY == 0 and not dry_run:
+            conn.commit()
+            print(f"   💾 Committed changes (checkpoint at product {i})")
+
+        # Progress update every 10 products
+        if i % 10 == 0:
+            elapsed = time.time() - stats['start_time']
+            rate = stats['combinations_checked'] / elapsed if elapsed > 0 else 1
+            remaining = (total_combinations - stats['combinations_checked']) / rate if rate > 0 else 0
+            print(f"\n⏱️  Progress: {i}/{len(products)} products | {stats['combinations_checked']}/{total_combinations} combinations")
+            print(f"   Lots found: {stats['lots_found']} | Failed: {len(failed_combinations)} | ETA: {remaining/60:.1f} min")
+
+    # Final commit before retry phase
+    if not dry_run:
+        conn.commit()
+        print("\n💾 Committed all changes before retry phase")
+
+    # =========================================================================
+    # RETRY PHASE: Re-attempt failed combinations with extended timeouts
+    # =========================================================================
+    if failed_combinations:
+        print("\n" + "=" * 80)
+        print(f"🔄 PHASE 2b: Retrying {len(failed_combinations)} failed combinations")
+        print("=" * 80)
+        print("   (Using extended timeouts and longer delays)")
+
+        # Wait a bit before retry phase to let API recover
+        print("   ⏳ Waiting 30 seconds before retry phase...")
+        time.sleep(30)
+
+        still_failed = []
+
+        for idx, combo in enumerate(failed_combinations, 1):
+            product = combo['product']
+            warehouse = combo['warehouse']
+
+            product_id_db = product['id']
+            product_external_id = product['external_id']
+            product_sku = product['sku']
+            warehouse_id_db = warehouse['id']
+            warehouse_external_id = warehouse['external_id']
+            warehouse_name = warehouse['name']
+
+            print(f"\n   [{idx}/{len(failed_combinations)}] Retrying: {product_sku} @ {warehouse_name}")
+
+            # Retry with more attempts and longer delays
+            lots, success = fetch_lot_serial_numbers_with_retry(
+                product_id=int(product_external_id),
+                warehouse_id=int(warehouse_external_id),
+                verbose=True,
+                max_retries=MAX_RETRIES + 3  # Extra retries for failed ones
+            )
+
+            if success:
+                stats['retries_succeeded'] += 1
+                print(f"   ✅ Retry succeeded!")
 
                 if lots:
                     stats['lots_found'] += len(lots)
@@ -312,7 +505,6 @@ def sync_warehouse_stock(
                         all_lots.append(lot_data)
 
                         if not dry_run:
-                            # Insert/update warehouse_stock
                             cursor.execute("""
                                 INSERT INTO warehouse_stock (
                                     product_id,
@@ -337,23 +529,26 @@ def sync_warehouse_stock(
                                 lot['lot_serial_number'],
                                 lot.get('expiration_date')
                             ))
-
                             stats['lots_inserted'] += 1
+            else:
+                still_failed.append(combo)
+                stats['permanent_failures'] += 1
+                print(f"   ❌ Permanently failed")
 
-                # Rate limiting
-                time.sleep(RATE_LIMIT_DELAY)
+            # Longer delay between retries
+            time.sleep(RATE_LIMIT_DELAY * 2)
 
-            except Exception as e:
-                stats['errors'] += 1
-                print(f"   ⚠️  Error fetching product {product_external_id} @ warehouse {warehouse_external_id}: {e}")
+        # Final commit after retries
+        if not dry_run:
+            conn.commit()
 
-        # Progress update every 10 products
-        if i % 10 == 0:
-            elapsed = time.time() - stats['start_time']
-            rate = stats['combinations_checked'] / elapsed
-            remaining = (total_combinations - stats['combinations_checked']) / rate
-            print(f"\n⏱️  Progress: {i}/{len(products)} products | {stats['combinations_checked']}/{total_combinations} combinations")
-            print(f"   Lots found: {stats['lots_found']} | ETA: {remaining/60:.1f} min")
+        # Report on permanent failures
+        if still_failed:
+            print(f"\n⚠️  {len(still_failed)} combinations permanently failed:")
+            for combo in still_failed[:10]:  # Show first 10
+                print(f"   - {combo['product']['sku']} @ {combo['warehouse']['name']}")
+            if len(still_failed) > 10:
+                print(f"   ... and {len(still_failed) - 10} more")
 
     # Save all lots to JSON file
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -368,8 +563,10 @@ def sync_warehouse_stock(
     print(f"\n📊 Sync Stats:")
     print(f"   Combinations checked: {stats['combinations_checked']}")
     print(f"   Lots found: {stats['lots_found']}")
-    print(f"   Lots inserted: {stats['lots_inserted']}")
-    print(f"   Errors: {stats['errors']}")
+    print(f"   Lots inserted/updated: {stats['lots_inserted']}")
+    print(f"   Retries succeeded: {stats['retries_succeeded']}")
+    print(f"   Permanent failures: {stats['permanent_failures']}")
+    print(f"   Success rate: {((stats['combinations_checked'] - stats['permanent_failures']) / stats['combinations_checked'] * 100):.1f}%")
     print(f"   Time elapsed: {elapsed_time/60:.1f} minutes")
 
     return stats
@@ -424,8 +621,9 @@ def main():
         products_db = get_products_with_external_id(cursor)
         print(f"✅ {len(products_db)} products with external_id ready")
 
-        # PHASE 2: Sync Stock with Lots
+        # PHASE 2: Sync Stock with Lots (with retry logic)
         stock_stats = sync_warehouse_stock(
+            conn,  # Pass connection for periodic commits
             cursor,
             products_db,
             warehouses_db,
@@ -433,9 +631,8 @@ def main():
             verbose=args.verbose
         )
 
-        if not args.dry_run:
-            conn.commit()
-            print("\n✅ Changes committed to database")
+        # Final commit handled inside sync_warehouse_stock
+        print("\n✅ All changes committed to database")
 
         cursor.close()
         conn.close()

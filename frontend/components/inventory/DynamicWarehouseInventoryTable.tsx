@@ -64,7 +64,15 @@ interface DynamicInventoryProduct {
   lot_count: number;
   last_updated: string | null;
   min_stock?: number; // User-editable minimum stock level
-  recommended_min_stock?: number; // System-calculated recommendation (based on 6-month sales avg)
+  recommended_min_stock?: number; // System-calculated recommendation (based on configurable estimation period)
+  estimation_months?: number; // Estimation period: 1, 3, or 6 months (default 6)
+  stock_usable?: number; // Stock excluding expired and expiring soon
+  stock_expiring_30d?: number; // Stock expiring within 30 days
+  stock_expired?: number; // Already expired stock
+  days_of_coverage?: number; // Days of stock remaining at current sales rate
+  production_needed?: number; // Units needed to produce to meet target
+  earliest_expiration?: string | null; // Earliest expiration date
+  days_to_earliest_expiration?: number | null; // Days to earliest expiration
   sku_value?: number; // Unit cost from product_catalog
   valor?: number; // Total value (stock_total × sku_value)
   in_catalog?: boolean; // Whether SKU is in product_catalog (false = show warning)
@@ -91,6 +99,7 @@ export default function DynamicWarehouseInventoryTable({
   const [editingSku, setEditingSku] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState<number>(0);
   const [saving, setSaving] = useState(false);
+  const [savingEstimation, setSavingEstimation] = useState<string | null>(null); // SKU being updated
 
   // Hover tooltip state for SKU consolidation details
   const [hoveredSku, setHoveredSku] = useState<string | null>(null);
@@ -192,6 +201,35 @@ export default function DynamicWarehouseInventoryTable({
     }
   };
 
+  // Update estimation period for a SKU
+  const updateEstimationPeriod = async (sku: string, estimationMonths: number) => {
+    setSavingEstimation(sku);
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${apiUrl}/api/v1/products/${sku}/estimation-method`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ estimation_months: estimationMonths }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update estimation period');
+      }
+
+      // Trigger parent to refetch data so new value is displayed
+      if (onDataChanged) {
+        onDataChanged();
+      }
+    } catch (error) {
+      console.error('Error updating estimation period:', error);
+      alert('Error al actualizar el período de estimación');
+    } finally {
+      setSavingEstimation(null);
+    }
+  };
+
   // Open sales timeline modal for a SKU
   const openTimelineModal = async (sku: string, name: string) => {
     setTimelineModalSku(sku);
@@ -252,6 +290,28 @@ export default function DynamicWarehouseInventoryTable({
       } else if (sortField === 'valor') {
         aVal = Number(a.valor) || 0;
         bVal = Number(b.valor) || 0;
+      } else if (sortField === 'days_of_coverage') {
+        aVal = Number(a.days_of_coverage) || 999;
+        bVal = Number(b.days_of_coverage) || 999;
+      } else if (sortField === 'production_needed') {
+        aVal = Number(a.production_needed) || 0;
+        bVal = Number(b.production_needed) || 0;
+      } else if (sortField === 'earliest_expiration') {
+        // Sort by days to expiration (null values at the end)
+        aVal = a.days_to_earliest_expiration ?? 9999;
+        bVal = b.days_to_earliest_expiration ?? 9999;
+      } else if (sortField === 'stock_status') {
+        // Sort by stock status: over-stocked first (most urgent), then balanced, then ok
+        const getStatusPriority = (p: DynamicInventoryProduct) => {
+          const coverage = Number(p.days_of_coverage) || 999;
+          const daysToExp = p.days_to_earliest_expiration;
+          if (!daysToExp) return 3; // No expiration - lowest priority
+          if (coverage > daysToExp) return 0; // Over-stocked (expires before selling) - highest priority
+          if (coverage >= daysToExp * 0.8) return 1; // At risk
+          return 2; // OK
+        };
+        aVal = getStatusPriority(a);
+        bVal = getStatusPriority(b);
       } else if (warehouseCodes.includes(sortField)) {
         // Warehouse stock values - ensure numeric sorting
         aVal = Number(a.warehouses?.[sortField]) || 0;
@@ -294,15 +354,15 @@ export default function DynamicWarehouseInventoryTable({
     );
   };
 
-  // Header cell
+  // Header cell - clean executive style
   const HeaderCell = ({ label, field, sticky = false }: { label: string; field: string; sticky?: boolean }) => (
     <th
       onClick={() => handleSort(field)}
       className={`${
-        sticky ? 'sticky left-0 z-10 bg-gradient-to-r from-gray-100 to-gray-50' : 'bg-gradient-to-br from-gray-50 to-blue-50'
-      } px-4 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-blue-100 transition-colors duration-200 group border-b border-gray-200`}
+        sticky ? 'sticky left-0 z-10 bg-gray-50' : 'bg-gray-50'
+      } px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide cursor-pointer hover:bg-gray-100 transition-colors group border-b border-gray-200`}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
         <span>{label}</span>
         <SortIndicator field={field} />
       </div>
@@ -337,185 +397,362 @@ export default function DynamicWarehouseInventoryTable({
         <table className="min-w-full divide-y divide-gray-200">
           <thead>
             <tr>
-              <HeaderCell label="SKU" field="sku" sticky />
-              <HeaderCell label="Producto" field="name" />
-              <HeaderCell label="Familia" field="category" />
+              {/* Consolidated Producto column (SKU + Name + Category) */}
+              <HeaderCell label="Producto" field="name" sticky />
 
               {/* Dynamic warehouse columns */}
               {warehouseCodes.map((code) => (
                 <HeaderCell key={code} label={formatWarehouseName(code)} field={code} />
               ))}
 
-              <HeaderCell label="Lotes" field="lot_count" />
-              <HeaderCell label="Total" field="stock_total" />
+              <HeaderCell label="Stock" field="stock_total" />
               <HeaderCell label="Valor" field="valor" />
               <HeaderCell label="Stock Mínimo" field="min_stock" />
+              <HeaderCell label="Cobertura" field="days_of_coverage" />
+              <HeaderCell label="Vence" field="earliest_expiration" />
+              <HeaderCell label="Estado" field="stock_status" />
+              <HeaderCell label="Producir" field="production_needed" />
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-100">
             {sortedProducts.map((product, index) => (
-              <tr key={product.sku} className="hover:bg-blue-50 transition-colors duration-150">
-                {/* Sticky SKU column with warning indicator and consolidation info */}
-                <td className="sticky left-0 z-20 bg-white px-4 py-3 whitespace-nowrap border-r border-gray-200">
-                  <div className="flex flex-col relative">
+              <tr key={product.sku} className="hover:bg-blue-50/50 transition-colors duration-150">
+                {/* Consolidated Producto column: SKU + Name + Category */}
+                <td className="sticky left-0 z-20 bg-white px-4 py-3 border-r border-gray-100 min-w-[280px] max-w-[360px]">
+                  <div className="flex flex-col gap-0.5">
+                    {/* Row 1: SKU code + Category badge */}
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-mono font-semibold text-blue-600">
+                      <code className="text-xs font-mono font-medium text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
                         {product.sku}
-                      </span>
+                      </code>
+                      {product.category && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">
+                          {toTitleCase(product.category)}
+                        </span>
+                      )}
                       {product.in_catalog === false && (
                         <span
-                          title="Este SKU no está en el catálogo de productos. Agregar mapeo en SKU Mappings."
-                          className="text-amber-500 cursor-help"
+                          title="SKU no está en catálogo"
+                          className="text-amber-500 cursor-help text-sm"
                         >
                           ⚠️
                         </span>
                       )}
-                    </div>
-                    {product.original_skus && product.original_skus.length > 1 && (
-                      <div className="relative inline-block">
+                      {/* Expiration warning badge */}
+                      {Number(product.stock_expiring_30d) > 0 && (
                         <span
-                          className="text-xs text-blue-600 mt-0.5 cursor-pointer hover:text-blue-800 hover:underline"
-                          onMouseEnter={(e) => {
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            setTooltipPosition({ top: rect.bottom + 4, left: rect.left });
-                            setHoveredSku(product.sku);
-                            setHoveredSkuDetail(product.original_skus_detail || null);
-                          }}
-                          onMouseLeave={() => setHoveredSku(null)}
+                          title={`${Number(product.stock_expiring_30d).toLocaleString()} unidades vencen en los próximos 30 días`}
+                          className="text-xs text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded cursor-help"
                         >
-                          ({product.original_skus.length} SKUs consolidados)
+                          {Number(product.stock_expiring_30d).toLocaleString()} venciendo
                         </span>
-                      </div>
+                      )}
+                    </div>
+                    {/* Row 2: Product name */}
+                    <span className="text-sm font-medium text-gray-900 truncate" title={toTitleCase(product.name)}>
+                      {toTitleCase(product.name)}
+                    </span>
+                    {/* Row 3: Consolidated SKUs info (if applicable) */}
+                    {product.original_skus && product.original_skus.length > 1 && (
+                      <span
+                        className="text-xs text-blue-600 cursor-pointer hover:text-blue-800 hover:underline"
+                        onMouseEnter={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          setTooltipPosition({ top: rect.bottom + 4, left: rect.left });
+                          setHoveredSku(product.sku);
+                          setHoveredSkuDetail(product.original_skus_detail || null);
+                        }}
+                        onMouseLeave={() => setHoveredSku(null)}
+                      >
+                        {product.original_skus.length} SKUs consolidados
+                      </span>
                     )}
                   </div>
                 </td>
 
-                {/* Product name */}
-                <td className="px-4 py-3 text-sm text-gray-900 max-w-xs truncate" title={toTitleCase(product.name)}>
-                  {toTitleCase(product.name)}
-                </td>
-
-                {/* Category */}
-                <td className="px-4 py-3 whitespace-nowrap">
-                  {product.category && (
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                      {toTitleCase(product.category)}
-                    </span>
-                  )}
-                </td>
-
-                {/* Dynamic warehouse stock columns */}
+                {/* Dynamic warehouse stock columns - cleaner numeric display */}
                 {warehouseCodes.map((code) => {
                   const stock = product.warehouses?.[code] || 0;
                   return (
-                    <td key={code} className="px-4 py-3 whitespace-nowrap text-sm text-center">
-                      <span
-                        className={`inline-flex items-center justify-center min-w-[60px] px-3 py-1 rounded-md font-semibold ${
-                          stock > 0
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-gray-100 text-gray-400'
-                        }`}
-                      >
-                        {stock.toLocaleString()}
-                      </span>
+                    <td key={code} className="px-3 py-3 whitespace-nowrap text-sm text-right tabular-nums">
+                      {stock > 0 ? (
+                        <span className="text-gray-900 font-medium">{stock.toLocaleString()}</span>
+                      ) : (
+                        <span className="text-gray-300">-</span>
+                      )}
                     </td>
                   );
                 })}
 
-                {/* Lot count */}
-                <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
-                  {product.lot_count > 0 ? (
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                      {product.lot_count} {product.lot_count === 1 ? 'lote' : 'lotes'}
+                {/* Total stock - prominent display */}
+                <td className="px-3 py-3 whitespace-nowrap text-right">
+                  <div className="flex flex-col items-end">
+                    <span className="text-base font-bold text-gray-900 tabular-nums">
+                      {product.stock_total.toLocaleString()}
                     </span>
-                  ) : (
-                    <span className="text-gray-400">-</span>
-                  )}
+                    {product.lot_count > 0 && (
+                      <span className="text-xs text-gray-500">
+                        {product.lot_count} {product.lot_count === 1 ? 'lote' : 'lotes'}
+                      </span>
+                    )}
+                  </div>
                 </td>
 
-                {/* Total stock */}
-                <td className="px-4 py-3 whitespace-nowrap text-sm font-bold text-right">
-                  <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent text-base">
-                    {product.stock_total.toLocaleString()}
-                  </span>
-                </td>
-
-                {/* Valor (value) */}
-                <td className="px-4 py-3 whitespace-nowrap text-sm text-right">
+                {/* Valor - compact currency display */}
+                <td className="px-3 py-3 whitespace-nowrap text-right tabular-nums">
                   {product.valor && Number(product.valor) > 0 ? (
-                    <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-100 text-emerald-800">
+                    <span className="text-sm font-medium text-emerald-700">
                       ${Math.round(Number(product.valor)).toLocaleString('es-CL')}
                     </span>
                   ) : (
-                    <span className="text-gray-400">-</span>
+                    <span className="text-gray-300">-</span>
                   )}
                 </td>
 
-                {/* Minimum stock (editable) with recommended value */}
-                <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
-                  <div className="flex flex-col items-center gap-1">
+                {/* Minimum stock - professional editable field design */}
+                <td className="px-3 py-2.5 whitespace-nowrap">
+                  <div className="flex flex-col gap-2">
+                    {/* Editable field with proper visual affordance */}
                     {editingSku === product.sku ? (
-                      // Editing mode: show input
-                      <input
-                        type="number"
-                        min="0"
-                        value={editingValue || ''}
-                        onChange={(e) => setEditingValue(parseInt(e.target.value) || 0)}
-                        onFocus={handleInputFocus}
-                        onBlur={() => saveMinStock(product.sku, editingValue)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            saveMinStock(product.sku, editingValue);
-                          } else if (e.key === 'Escape') {
-                            cancelEditing();
-                          }
-                        }}
-                        disabled={saving}
-                        autoFocus
-                        className="w-24 px-2 py-1 text-center border-2 border-blue-400 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                      />
+                      /* Edit mode: focused input */
+                      <div className="relative">
+                        <input
+                          type="number"
+                          min="0"
+                          value={editingValue || ''}
+                          onChange={(e) => setEditingValue(parseInt(e.target.value) || 0)}
+                          onFocus={handleInputFocus}
+                          onBlur={() => saveMinStock(product.sku, editingValue)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              saveMinStock(product.sku, editingValue);
+                            } else if (e.key === 'Escape') {
+                              cancelEditing();
+                            }
+                          }}
+                          disabled={saving}
+                          autoFocus
+                          className="w-full px-3 py-2 text-sm text-right tabular-nums border-2 border-blue-500 rounded-lg bg-white focus:ring-2 focus:ring-blue-200 focus:outline-none shadow-sm"
+                        />
+                        <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                          {saving && (
+                            <svg className="w-4 h-4 animate-spin text-blue-500" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                            </svg>
+                          )}
+                        </div>
+                      </div>
                     ) : (
-                      // View mode: show clickable span with current value
-                      <span
-                        onClick={() => startEditing(product.sku, Number(product.min_stock) || Number(product.recommended_min_stock) || 0)}
-                        className={`inline-flex items-center justify-center min-w-[80px] px-3 py-1 rounded-md font-medium cursor-pointer transition-all hover:ring-2 hover:ring-blue-400 ${
-                          Number(product.stock_total) < (Number(product.min_stock) || Number(product.recommended_min_stock) || 0)
-                            ? 'bg-red-100 text-red-800 ring-2 ring-red-300'
-                            : Number(product.min_stock) > 0
-                              ? 'bg-blue-100 text-blue-800'  // User-edited value
-                              : 'bg-gray-100 text-gray-700'
-                        }`}
-                        title={`Click para editar.${Number(product.min_stock) > 0 ? ` Valor actual: ${Number(product.min_stock).toLocaleString()}` : ''} Recomendado: ${Number(product.recommended_min_stock || 0).toLocaleString()}`}
-                      >
-                        {Number(product.min_stock) > 0
-                          ? Number(product.min_stock).toLocaleString()
-                          : (Number(product.recommended_min_stock) > 0
-                              ? Number(product.recommended_min_stock).toLocaleString()
-                              : '-')}
-                      </span>
-                    )}
-                    {/* Show recommended value below ONLY if user edited to a different value AND recommended > 0 */}
-                    {Number(product.recommended_min_stock) > 0 &&
-                     Number(product.min_stock) > 0 &&
-                     Number(product.min_stock) !== Number(product.recommended_min_stock) && (
+                      /* View mode: styled editable field */
                       <button
-                        onClick={() => saveMinStock(product.sku, Number(product.recommended_min_stock))}
-                        className="text-xs text-amber-600 hover:text-amber-800 font-medium hover:underline cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                        title={`Click para usar ${Number(product.recommended_min_stock).toLocaleString()} como stock mínimo (basado en promedio de ventas de 6 meses)`}
-                        disabled={saving}
+                        onClick={() => startEditing(product.sku, Number(product.min_stock) || Number(product.recommended_min_stock) || 0)}
+                        className={`group relative flex items-center justify-between gap-2 w-full px-3 py-2 rounded-lg border transition-all ${
+                          Number(product.stock_total) < (Number(product.min_stock) || Number(product.recommended_min_stock) || 0)
+                            ? 'bg-red-50 border-red-200 hover:border-red-400 hover:bg-red-100'
+                            : 'bg-gray-50 border-gray-200 hover:border-blue-400 hover:bg-blue-50'
+                        }`}
+                        title="Click para editar stock mínimo"
                       >
-                        📊 Rec: {Number(product.recommended_min_stock).toLocaleString()}
+                        <span className={`text-sm font-semibold tabular-nums ${
+                          Number(product.stock_total) < (Number(product.min_stock) || Number(product.recommended_min_stock) || 0)
+                            ? 'text-red-700'
+                            : 'text-gray-700'
+                        }`}>
+                          {Number(product.min_stock) > 0
+                            ? Number(product.min_stock).toLocaleString()
+                            : (Number(product.recommended_min_stock) > 0
+                                ? Number(product.recommended_min_stock).toLocaleString()
+                                : '—')}
+                        </span>
+                        {/* Edit icon - appears on hover */}
+                        <svg
+                          className="w-4 h-4 text-gray-400 group-hover:text-blue-500 transition-colors"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
                       </button>
                     )}
-                    {/* Detalles button to show sales timeline */}
-                    <button
-                      onClick={() => openTimelineModal(product.sku, product.name)}
-                      className="text-xs text-blue-600 hover:text-blue-800 font-medium hover:underline mt-1"
-                      title="Ver historial de ventas de los últimos 12 meses"
-                    >
-                      📈 Detalles
-                    </button>
+
+                    {/* Action buttons row - properly styled */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {/* Estimation period dropdown */}
+                      <div className="relative">
+                        <select
+                          value={product.estimation_months || 6}
+                          onChange={(e) => updateEstimationPeriod(product.sku, parseInt(e.target.value))}
+                          disabled={savingEstimation === product.sku}
+                          className={`text-xs px-2 py-1 rounded border bg-white cursor-pointer transition-colors ${
+                            savingEstimation === product.sku
+                              ? 'opacity-50 cursor-wait'
+                              : 'border-gray-200 hover:border-blue-400'
+                          }`}
+                          title="Período de estimación para cálculo de stock mínimo"
+                        >
+                          <option value={1}>Último Mes</option>
+                          <option value={3}>Últimos 3 Meses</option>
+                          <option value={6}>Últimos 6 Meses</option>
+                        </select>
+                        {savingEstimation === product.sku && (
+                          <div className="absolute right-1 top-1/2 -translate-y-1/2">
+                            <svg className="w-3 h-3 animate-spin text-blue-500" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                            </svg>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Recommended value button - shows when user has custom value different from recommended */}
+                      {Number(product.recommended_min_stock) > 0 &&
+                       Number(product.min_stock) > 0 &&
+                       Number(product.min_stock) !== Number(product.recommended_min_stock) && (
+                        <button
+                          onClick={() => saveMinStock(product.sku, Number(product.recommended_min_stock))}
+                          disabled={saving}
+                          className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 rounded-md transition-colors disabled:opacity-50"
+                          title={`Restablecer al valor recomendado: ${Number(product.recommended_min_stock).toLocaleString()}`}
+                        >
+                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                          <span>{Number(product.recommended_min_stock).toLocaleString()}</span>
+                        </button>
+                      )}
+
+                      {/* Sales history button */}
+                      <button
+                        onClick={() => openTimelineModal(product.sku, product.name)}
+                        className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-700 bg-blue-100 hover:bg-blue-200 rounded-md transition-colors"
+                        title="Ver historial de ventas (últimos 12 meses)"
+                      >
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                        </svg>
+                        <span>Ventas</span>
+                      </button>
+                    </div>
                   </div>
+                </td>
+
+                {/* Days of Coverage (Cobertura) - color coded */}
+                <td className="px-3 py-3 whitespace-nowrap text-center">
+                  {Number(product.days_of_coverage) >= 0 && Number(product.days_of_coverage) < 999 ? (
+                    <span
+                      className={`inline-flex items-center px-2.5 py-1 rounded-full text-sm font-semibold ${
+                        Number(product.days_of_coverage) < 15
+                          ? 'bg-red-100 text-red-800'
+                          : Number(product.days_of_coverage) < 30
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-green-100 text-green-800'
+                      }`}
+                      title={`${Number(product.days_of_coverage)} días de cobertura basado en ventas promedio`}
+                    >
+                      {Number(product.days_of_coverage)}d
+                    </span>
+                  ) : (
+                    <span className="text-gray-400 text-sm" title="Sin ventas registradas">
+                      —
+                    </span>
+                  )}
+                </td>
+
+                {/* Earliest Expiration (Vence) - DD/MM/YYYY format, sorted by days numerically */}
+                <td className="px-3 py-3 whitespace-nowrap text-center">
+                  {product.earliest_expiration ? (
+                    <div className="flex flex-col items-center">
+                      <span className={`text-sm font-medium ${
+                        (product.days_to_earliest_expiration ?? 999) < 30
+                          ? 'text-red-700'
+                          : (product.days_to_earliest_expiration ?? 999) < 60
+                          ? 'text-amber-700'
+                          : 'text-gray-700'
+                      }`}>
+                        {new Date(product.earliest_expiration).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        ({product.days_to_earliest_expiration}d)
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="text-gray-400 text-sm" title="Sin fecha de vencimiento">—</span>
+                  )}
+                </td>
+
+                {/* Stock Status (Estado) - Over-stocked vs OK */}
+                <td className="px-3 py-3 whitespace-nowrap text-center">
+                  {(() => {
+                    const coverage = Number(product.days_of_coverage) || 999;
+                    const daysToExp = product.days_to_earliest_expiration;
+
+                    if (!daysToExp || coverage >= 999) {
+                      return <span className="text-gray-400 text-sm">—</span>;
+                    }
+
+                    // Over-stocked: coverage > days to expiration (will expire before selling)
+                    if (coverage > daysToExp) {
+                      const excessDays = coverage - daysToExp;
+                      return (
+                        <span
+                          className="inline-flex items-center px-2 py-1 rounded-lg bg-red-100 text-red-800 text-xs font-semibold"
+                          title={`Stock excede vencimiento por ${excessDays} días. Riesgo de merma.`}
+                        >
+                          <svg className="w-3 h-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                          Exceso
+                        </span>
+                      );
+                    }
+
+                    // At risk: coverage is close to expiration (within 20%)
+                    if (coverage >= daysToExp * 0.8) {
+                      return (
+                        <span
+                          className="inline-flex items-center px-2 py-1 rounded-lg bg-amber-100 text-amber-800 text-xs font-semibold"
+                          title={`Stock se venderá ${daysToExp - coverage} días antes del vencimiento. Monitorear.`}
+                        >
+                          <svg className="w-3 h-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          Ajustado
+                        </span>
+                      );
+                    }
+
+                    // OK: coverage < 80% of expiration (will sell well before expiration)
+                    return (
+                      <span
+                        className="inline-flex items-center px-2 py-1 rounded-lg bg-green-100 text-green-800 text-xs font-semibold"
+                        title={`Stock se venderá ${daysToExp - coverage} días antes del vencimiento. OK.`}
+                      >
+                        <svg className="w-3 h-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        OK
+                      </span>
+                    );
+                  })()}
+                </td>
+
+                {/* Production Needed (Producir) */}
+                <td className="px-3 py-3 whitespace-nowrap text-right">
+                  {Number(product.production_needed) > 0 ? (
+                    <span
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-100 text-blue-800 font-semibold text-sm"
+                      title={`Producir ${Number(product.production_needed).toLocaleString()} unidades para alcanzar stock objetivo`}
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                      </svg>
+                      {Number(product.production_needed).toLocaleString()}
+                    </span>
+                  ) : (
+                    <span className="text-gray-400 text-sm">—</span>
+                  )}
                 </td>
               </tr>
             ))}
