@@ -229,9 +229,16 @@ class SyncService:
             response.raise_for_status()
             data = response.json()
             return data.get('data', {}).get('lot_serial_numbers', [])
-        except Exception as e:
-            if hasattr(e, 'response') and e.response.status_code == 404:
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
                 return []  # No lots found (normal case)
+            elif e.response.status_code == 401:
+                # Don't log every 401 - it floods the logs
+                # Return special marker to indicate auth failure
+                return [{'_auth_error': True}]
+            logger.error(f"Error fetching lots for product {product_id}: {e}")
+            return []
+        except Exception as e:
             logger.error(f"Error fetching lots for product {product_id}: {e}")
             return []
 
@@ -971,10 +978,22 @@ class SyncService:
             # For each product-warehouse combination, fetch stock
             # Sync ALL products for complete inventory data
             logger.info(f"Syncing stock for {len(products)} products across {len(db_warehouses)} warehouses...")
+
+            # Track auth errors - if we get too many 401s, skip lot sync entirely
+            auth_error_count = 0
+            auth_error_threshold = 5  # Skip lot sync after 5 consecutive auth errors
+            skip_lot_sync = False
+
             for product in products:
+                if skip_lot_sync:
+                    break  # Stop trying if auth is failing
+
                 product_id_db, product_external_id, product_sku, product_name = product
 
                 for warehouse in db_warehouses:
+                    if skip_lot_sync:
+                        break
+
                     warehouse_id_db, warehouse_external_id, warehouse_code = warehouse
 
                     try:
@@ -982,6 +1001,18 @@ class SyncService:
                             int(product_external_id),
                             int(warehouse_external_id)
                         )
+
+                        # Check for auth error marker
+                        if lots and len(lots) == 1 and lots[0].get('_auth_error'):
+                            auth_error_count += 1
+                            if auth_error_count >= auth_error_threshold:
+                                logger.warning(f"Lot/serial API returning 401 Unauthorized - skipping lot sync (permissions issue)")
+                                errors.append("RelBase lot/serial API returned 401 Unauthorized - check API permissions")
+                                skip_lot_sync = True
+                            continue
+
+                        # Reset auth error count on success
+                        auth_error_count = 0
 
                         for lot in lots:
                             cursor.execute("""
