@@ -1425,6 +1425,9 @@ export default function AuditView() {
                                       </td>
                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-right">
                                         <span className="font-semibold text-green-600">
+                                          {item.conversion_factor && item.conversion_factor > 1 && (
+                                            <span className="text-gray-400 text-xs">(x{item.conversion_factor}) </span>
+                                          )}
                                           {item.unidades ? item.unidades.toLocaleString('es-CL') : '-'}
                                         </span>
                                       </td>
@@ -1540,6 +1543,9 @@ export default function AuditView() {
                           </td>
                           <td className="px-2 py-2 whitespace-nowrap text-xs text-right">
                             <span className="font-semibold text-green-600">
+                              {item.conversion_factor && item.conversion_factor > 1 && (
+                                <span className="text-gray-400 text-xs">(x{item.conversion_factor}) </span>
+                              )}
                               {item.unidades ? item.unidades.toLocaleString('es-CL') : '-'}
                             </span>
                           </td>

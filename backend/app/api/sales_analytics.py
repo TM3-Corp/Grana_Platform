@@ -185,6 +185,7 @@ async def get_sales_analytics(
                         ELSE mv.units_sold * COALESCE(mv.units_per_display, 1)
                     END
                 ) as total_units,
+                SUM(mv.units_sold) as total_items,
                 COUNT(DISTINCT mv.order_id) as total_orders,
                 CASE
                     WHEN COUNT(DISTINCT mv.order_id) > 0 THEN SUM(mv.revenue) / COUNT(DISTINCT mv.order_id)
@@ -200,8 +201,9 @@ async def get_sales_analytics(
         summary = {
             "total_revenue": float(summary_row[0] or 0),
             "total_units": int(summary_row[1] or 0),
-            "total_orders": int(summary_row[2] or 0),
-            "avg_ticket": float(summary_row[3] or 0),
+            "total_items": int(summary_row[2] or 0),
+            "total_orders": int(summary_row[3] or 0),
+            "avg_ticket": float(summary_row[4] or 0),
             "growth_rate": 0  # TODO: Calculate growth vs previous period
         }
 
@@ -214,6 +216,8 @@ async def get_sales_analytics(
                         ELSE mv.units_sold * COALESCE(mv.units_per_display, 1)
                     END
                 )"""
+        # Helper expression for raw items (no conversion)
+        items_expr = "SUM(mv.units_sold)"
 
         if group_by and stack_by and stack_field:
             # DOUBLE GROUPING: period + group + stack
@@ -224,6 +228,7 @@ async def get_sales_analytics(
                     {stack_field} as stack_value,
                     SUM(mv.revenue) as revenue,
                     {units_expr} as units,
+                    {items_expr} as items,
                     COUNT(DISTINCT mv.order_id) as orders
                 FROM sales_facts_mv mv
                 WHERE {where_clause}
@@ -238,6 +243,7 @@ async def get_sales_analytics(
                     {stack_field} as stack_value,
                     SUM(mv.revenue) as revenue,
                     {units_expr} as units,
+                    {items_expr} as items,
                     COUNT(DISTINCT mv.order_id) as orders
                 FROM sales_facts_mv mv
                 WHERE {where_clause}
@@ -252,6 +258,7 @@ async def get_sales_analytics(
                     {group_field} as group_value,
                     SUM(mv.revenue) as revenue,
                     {units_expr} as units,
+                    {items_expr} as items,
                     COUNT(DISTINCT mv.order_id) as orders
                 FROM sales_facts_mv mv
                 WHERE {where_clause}
@@ -265,6 +272,7 @@ async def get_sales_analytics(
                     {period_expr} as period,
                     SUM(mv.revenue) as revenue,
                     {units_expr} as units,
+                    {items_expr} as items,
                     COUNT(DISTINCT mv.order_id) as orders
                 FROM sales_facts_mv mv
                 WHERE {where_clause}
@@ -281,13 +289,14 @@ async def get_sales_analytics(
         if group_by and stack_by and stack_field:
             # DOUBLE GROUPING: period → group → stack
             for row in timeline_rows:
-                period, group_value, stack_value, revenue, units, orders = row
+                period, group_value, stack_value, revenue, units, items, orders = row
 
                 if period not in timeline_dict:
                     timeline_dict[period] = {
                         "period": period,
                         "total_revenue": 0,
                         "total_units": 0,
+                        "total_items": 0,
                         "total_orders": 0,
                         "by_group": {}
                     }
@@ -297,22 +306,26 @@ async def get_sales_analytics(
                         "group_value": group_value,
                         "revenue": 0,
                         "units": 0,
+                        "items": 0,
                         "orders": 0,
                         "by_stack": []
                     }
 
                 timeline_dict[period]["by_group"][group_value]["revenue"] += float(revenue or 0)
                 timeline_dict[period]["by_group"][group_value]["units"] += int(units or 0)
+                timeline_dict[period]["by_group"][group_value]["items"] += int(items or 0)
                 timeline_dict[period]["by_group"][group_value]["orders"] += int(orders or 0)
                 timeline_dict[period]["by_group"][group_value]["by_stack"].append({
                     "stack_value": stack_value,
                     "revenue": float(revenue or 0),
                     "units": int(units or 0),
+                    "items": int(items or 0),
                     "orders": int(orders or 0)
                 })
 
                 timeline_dict[period]["total_revenue"] += float(revenue or 0)
                 timeline_dict[period]["total_units"] += int(units or 0)
+                timeline_dict[period]["total_items"] += int(items or 0)
                 timeline_dict[period]["total_orders"] += int(orders or 0)
 
             # Convert group dict to list
@@ -325,18 +338,20 @@ async def get_sales_analytics(
             # STACK ONLY: period → stack values (no primary grouping)
             # Structure: create a single "Total" group per period with by_stack data
             for row in timeline_rows:
-                period, stack_value, revenue, units, orders = row
+                period, stack_value, revenue, units, items, orders = row
 
                 if period not in timeline_dict:
                     timeline_dict[period] = {
                         "period": period,
                         "total_revenue": 0,
                         "total_units": 0,
+                        "total_items": 0,
                         "total_orders": 0,
                         "by_group": [{
                             "group_value": "Total",
                             "revenue": 0,
                             "units": 0,
+                            "items": 0,
                             "orders": 0,
                             "by_stack": []
                         }]
@@ -347,17 +362,20 @@ async def get_sales_analytics(
                     "stack_value": stack_value,
                     "revenue": float(revenue or 0),
                     "units": int(units or 0),
+                    "items": int(items or 0),
                     "orders": int(orders or 0)
                 })
 
                 # Update group totals
                 timeline_dict[period]["by_group"][0]["revenue"] += float(revenue or 0)
                 timeline_dict[period]["by_group"][0]["units"] += int(units or 0)
+                timeline_dict[period]["by_group"][0]["items"] += int(items or 0)
                 timeline_dict[period]["by_group"][0]["orders"] += int(orders or 0)
 
                 # Update period totals
                 timeline_dict[period]["total_revenue"] += float(revenue or 0)
                 timeline_dict[period]["total_units"] += int(units or 0)
+                timeline_dict[period]["total_items"] += int(items or 0)
                 timeline_dict[period]["total_orders"] += int(orders or 0)
 
             timeline = list(timeline_dict.values())
@@ -365,22 +383,25 @@ async def get_sales_analytics(
         elif group_by:
             # SINGLE GROUPING: period → group
             for row in timeline_rows:
-                period, group_value, revenue, units, orders = row
+                period, group_value, revenue, units, items, orders = row
                 if period not in timeline_dict:
                     timeline_dict[period] = {
                         "period": period,
                         "total_revenue": 0,
                         "total_units": 0,
+                        "total_items": 0,
                         "total_orders": 0,
                         "by_group": []
                     }
                 timeline_dict[period]["total_revenue"] += float(revenue or 0)
                 timeline_dict[period]["total_units"] += int(units or 0)
+                timeline_dict[period]["total_items"] += int(items or 0)
                 timeline_dict[period]["total_orders"] += int(orders or 0)
                 timeline_dict[period]["by_group"].append({
                     "group_value": group_value,
                     "revenue": float(revenue or 0),
                     "units": int(units or 0),
+                    "items": int(items or 0),
                     "orders": int(orders or 0)
                 })
 
@@ -389,11 +410,12 @@ async def get_sales_analytics(
         else:
             # NO GROUPING: period only
             for row in timeline_rows:
-                period, revenue, units, orders = row
+                period, revenue, units, items, orders = row
                 timeline_dict[period] = {
                     "period": period,
                     "total_revenue": float(revenue or 0),
                     "total_units": int(units or 0),
+                    "total_items": int(items or 0),
                     "total_orders": int(orders or 0)
                 }
 
@@ -405,6 +427,7 @@ async def get_sales_analytics(
                 {group_field} as group_value,
                 SUM(mv.revenue) as revenue,
                 {units_expr} as units,
+                {items_expr} as items,
                 COUNT(DISTINCT mv.order_id) as orders
             FROM sales_facts_mv mv
             WHERE {where_clause}
@@ -419,12 +442,13 @@ async def get_sales_analytics(
 
         top_items = []
         for row in top_rows:
-            group_value, revenue, units, orders = row
+            group_value, revenue, units, items, orders = row
             percentage = (float(revenue) / summary["total_revenue"] * 100) if summary["total_revenue"] > 0 else 0
             top_items.append({
                 "group_value": group_value,
                 "revenue": float(revenue or 0),
                 "units": int(units or 0),
+                "items": int(items or 0),
                 "orders": int(orders or 0),
                 "percentage": round(percentage, 2)
             })
@@ -437,6 +461,7 @@ async def get_sales_analytics(
                 {group_field} as group_value,
                 SUM(mv.revenue) as revenue,
                 {units_expr} as units,
+                {items_expr} as items,
                 COUNT(DISTINCT mv.order_id) as orders,
                 CASE
                     WHEN COUNT(DISTINCT mv.order_id) > 0 THEN SUM(mv.revenue) / COUNT(DISTINCT mv.order_id)
@@ -455,11 +480,12 @@ async def get_sales_analytics(
 
         grouped_data = []
         for row in grouped_rows:
-            group_value, revenue, units, orders, avg_ticket = row
+            group_value, revenue, units, items, orders, avg_ticket = row
             grouped_data.append({
                 "group_value": group_value,
                 "revenue": float(revenue or 0),
                 "units": int(units or 0),
+                "items": int(items or 0),
                 "orders": int(orders or 0),
                 "avg_ticket": float(avg_ticket or 0)
             })

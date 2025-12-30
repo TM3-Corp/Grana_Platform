@@ -7,16 +7,19 @@ interface TimelineDataPoint {
   period: string
   total_revenue: number
   total_units: number
+  total_items: number
   total_orders: number
   by_group?: Array<{
     group_value: string
     revenue: number
     units: number
+    items: number
     orders: number
     by_stack?: Array<{
       stack_value: string
       revenue: number
       units: number
+      items: number
       orders: number
     }>
   }>
@@ -31,7 +34,7 @@ interface TimelineChartProps {
   loading?: boolean
 }
 
-type MetricType = 'revenue' | 'units' | 'orders'
+type MetricType = 'revenue' | 'units' | 'items' | 'orders'
 
 export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTimePeriodChange, loading }: TimelineChartProps) {
   const [selectedMetric, setSelectedMetric] = useState<MetricType>('revenue')
@@ -106,6 +109,7 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
       period: label,
       total_revenue: d.total_revenue,
       total_units: d.total_units,
+      total_items: d.total_items,
       total_orders: d.total_orders,
       by_group: d.by_group
     }
@@ -126,6 +130,7 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
     switch (metricType) {
       case 'revenue': return 'total_revenue'
       case 'units': return 'total_units'
+      case 'items': return 'total_items'
       case 'orders': return 'total_orders'
     }
   }
@@ -134,6 +139,7 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
     switch (metricType) {
       case 'revenue': return 'Ingresos'
       case 'units': return 'Unidades'
+      case 'items': return 'Items'
       case 'orders': return 'Órdenes'
     }
   }
@@ -197,7 +203,7 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
             // Skip null/empty group values
             if (!g.group_value || g.group_value.trim() === '') return;
 
-            const value = selectedMetric === 'revenue' ? g.revenue : selectedMetric === 'units' ? g.units : g.orders;
+            const value = selectedMetric === 'revenue' ? g.revenue : selectedMetric === 'units' ? g.units : selectedMetric === 'items' ? g.items : g.orders;
             groupTotals.set(g.group_value, (groupTotals.get(g.group_value) || 0) + value);
           });
         });
@@ -268,7 +274,7 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
             // Skip null/empty stack values
             if (!s.stack_value || s.stack_value.trim() === '') return
 
-            const value = selectedMetric === 'revenue' ? s.revenue : selectedMetric === 'units' ? s.units : s.orders
+            const value = selectedMetric === 'revenue' ? s.revenue : selectedMetric === 'units' ? s.units : selectedMetric === 'items' ? s.items : s.orders
             stackTotals.set(s.stack_value, (stackTotals.get(s.stack_value) || 0) + value)
           })
         })
@@ -296,7 +302,7 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
             if (!s.stack_value || s.stack_value.trim() === '') return
 
             const key = `${g.group_value}_${s.stack_value}`
-            const value = selectedMetric === 'revenue' ? s.revenue : selectedMetric === 'units' ? s.units : s.orders
+            const value = selectedMetric === 'revenue' ? s.revenue : selectedMetric === 'units' ? s.units : selectedMetric === 'items' ? s.items : s.orders
             point[key] = value
           })
         })
@@ -307,7 +313,7 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
     ? formattedData.map(d => {
         const point: any = {
           period: d.period,
-          total: selectedMetric === 'revenue' ? d.total_revenue : selectedMetric === 'units' ? d.total_units : d.total_orders
+          total: selectedMetric === 'revenue' ? d.total_revenue : selectedMetric === 'units' ? d.total_units : selectedMetric === 'items' ? d.total_items : d.total_orders
         }
 
         // Add each group as a separate line (only if in top 20)
@@ -315,7 +321,7 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
           // Skip null/empty group values
           if (!g.group_value || !groupValues.includes(g.group_value)) return
 
-          const value = selectedMetric === 'revenue' ? g.revenue : selectedMetric === 'units' ? g.units : g.orders
+          const value = selectedMetric === 'revenue' ? g.revenue : selectedMetric === 'units' ? g.units : selectedMetric === 'items' ? g.items : g.orders
           point[g.group_value] = value
         })
 
@@ -323,7 +329,7 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
       })
     : formattedData.map(d => ({
         period: d.period,
-        total: selectedMetric === 'revenue' ? d.total_revenue : selectedMetric === 'units' ? d.total_units : d.total_orders
+        total: selectedMetric === 'revenue' ? d.total_revenue : selectedMetric === 'units' ? d.total_units : selectedMetric === 'items' ? d.total_items : d.total_orders
       }))
 
   return (
@@ -360,6 +366,18 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
               `}
             >
               Unidades
+            </button>
+            <button
+              onClick={() => setSelectedMetric('items')}
+              className={`
+                px-4 py-2 rounded-lg text-sm font-medium transition-colors
+                ${selectedMetric === 'items'
+                  ? 'bg-orange-500 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }
+              `}
+            >
+              Items
             </button>
             <button
               onClick={() => setSelectedMetric('orders')}
