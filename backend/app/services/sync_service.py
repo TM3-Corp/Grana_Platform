@@ -889,7 +889,7 @@ class SyncService:
     # Inventory Sync Logic
     # =========================================================================
 
-    async def sync_inventory(self) -> InventorySyncResult:
+    async def sync_inventory(self, max_products: int = 50) -> InventorySyncResult:
         """
         Sync inventory from RelBase and MercadoLibre
 
@@ -897,6 +897,9 @@ class SyncService:
         1. Fetch warehouses from RelBase and sync to database
         2. For products with external_id, fetch lot/serial stock from RelBase
         3. Fetch active listings from MercadoLibre and update stock
+
+        Args:
+            max_products: Maximum products to sync per run (default 50 to avoid timeout)
 
         Returns:
             InventorySyncResult with statistics
@@ -976,15 +979,16 @@ class SyncService:
             db_warehouses = cursor.fetchall()
 
             # For each product-warehouse combination, fetch stock
-            # Sync ALL products for complete inventory data
-            logger.info(f"Syncing stock for {len(products)} products across {len(db_warehouses)} warehouses...")
+            # Limit products per run to avoid timeout (controlled by max_products parameter)
+            products_to_sync = products[:max_products]
+            logger.info(f"Syncing stock for {len(products_to_sync)} of {len(products)} products across {len(db_warehouses)} warehouses...")
 
             # Track auth errors - if we get too many 401s, skip lot sync entirely
             auth_error_count = 0
             auth_error_threshold = 5  # Skip lot sync after 5 consecutive auth errors
             skip_lot_sync = False
 
-            for product in products:
+            for product in products_to_sync:
                 if skip_lot_sync:
                     break  # Stop trying if auth is failing
 
@@ -1041,7 +1045,9 @@ class SyncService:
                     except Exception as e:
                         errors.append(f"Error syncing stock for {product_sku}: {str(e)}")
 
-            conn.commit()
+                # Commit after each product to prevent connection timeout
+                conn.commit()
+
             logger.info(f"Updated {relbase_products_updated} stock records from RelBase")
 
             # ================================================================
