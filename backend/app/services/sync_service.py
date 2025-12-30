@@ -235,6 +235,25 @@ class SyncService:
             logger.error(f"Error fetching lots for product {product_id}: {e}")
             return []
 
+    def _fetch_relbase_channels(self) -> List[Dict]:
+        """
+        Fetch all sales channels from RelBase API
+
+        Returns:
+            List of channel dictionaries with id and name
+        """
+        url = f"{self.relbase_base_url}/api/v1/canal_ventas"
+        headers = self._get_relbase_headers()
+
+        try:
+            response = requests.get(url, headers=headers, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+            return data.get('data', {}).get('channels', [])
+        except Exception as e:
+            logger.error(f"Error fetching RelBase channels: {e}")
+            return []
+
     def _fetch_relbase_customer(self, customer_id: int, retries: int = 3) -> Optional[Dict]:
         """
         Fetch customer details from RelBase API with retry logic
@@ -543,10 +562,16 @@ class SyncService:
 
             logger.info(f"Syncing RelBase DTEs from {date_from} to {date_to}")
 
-            # Get fallback channel ID for orders without channel_id in RelBase
-            cursor.execute("SELECT id FROM channels WHERE code = 'relbase'")
-            fallback_channel_result = cursor.fetchone()
-            fallback_channel_id = fallback_channel_result[0] if fallback_channel_result else None
+            # Pre-fetch all channels from RelBase API for efficient lookup
+            # This allows us to create missing channels on-demand
+            relbase_channels_cache = {}
+            try:
+                relbase_channels = self._fetch_relbase_channels()
+                for ch in relbase_channels:
+                    relbase_channels_cache[ch['id']] = ch.get('name', f'Canal {ch["id"]}')
+                logger.info(f"Cached {len(relbase_channels_cache)} channels from RelBase API")
+            except Exception as e:
+                logger.warning(f"Could not pre-fetch RelBase channels: {e}")
 
             # Fetch DTEs from RelBase for both Facturas (33) and Boletas (39)
             total_dtes = 0
@@ -621,15 +646,41 @@ class SyncService:
                             sii_status = dte_data.get('sii_status', 'accepted')
 
                             # Map RelBase channel_id to internal channel via external_id
-                            channel_id = fallback_channel_id  # Default to "Relbase" channel
+                            # Logic: 1) Check DB, 2) Fetch from RelBase API cache and create, 3) Use NULL
+                            channel_id = None  # Default to NULL (Sin Mapear)
                             if channel_id_relbase:
+                                # Step 1: Check if channel exists in our database
                                 cursor.execute("""
                                     SELECT id FROM channels
                                     WHERE external_id = %s AND source = 'relbase'
                                 """, (str(channel_id_relbase),))
                                 channel_result = cursor.fetchone()
+
                                 if channel_result:
                                     channel_id = channel_result[0]
+                                else:
+                                    # Step 2: Channel not in DB - check RelBase API cache and create
+                                    channel_name = relbase_channels_cache.get(channel_id_relbase)
+                                    if channel_name:
+                                        # Create the channel in our database
+                                        channel_code = channel_name.lower().replace(' ', '_').replace('-', '_')
+                                        channel_code = ''.join(c for c in channel_code if c.isalnum() or c == '_')
+
+                                        cursor.execute("""
+                                            INSERT INTO channels (code, name, external_id, source, is_active, created_at)
+                                            VALUES (%s, %s, %s, 'relbase', true, NOW())
+                                            ON CONFLICT (code) DO UPDATE SET
+                                                external_id = EXCLUDED.external_id,
+                                                name = EXCLUDED.name,
+                                                source = EXCLUDED.source,
+                                                updated_at = NOW()
+                                            RETURNING id
+                                        """, (channel_code, channel_name, str(channel_id_relbase)))
+                                        channel_id = cursor.fetchone()[0]
+                                        logger.info(f"Created new channel from RelBase: {channel_name} (ID: {channel_id}, external: {channel_id_relbase})")
+                                    else:
+                                        # Step 3: Channel not found in RelBase API either - use NULL
+                                        logger.warning(f"Channel {channel_id_relbase} not found in RelBase API - order will have NULL channel")
 
                             # Map RelBase customer_id to internal customer via external_id
                             # If not found, fetch from API and create
@@ -918,8 +969,9 @@ class SyncService:
             db_warehouses = cursor.fetchall()
 
             # For each product-warehouse combination, fetch stock
-            # (Limited to first 20 products for performance in scheduled sync)
-            for product in products[:20]:
+            # Sync ALL products for complete inventory data
+            logger.info(f"Syncing stock for {len(products)} products across {len(db_warehouses)} warehouses...")
+            for product in products:
                 product_id_db, product_external_id, product_sku, product_name = product
 
                 for warehouse in db_warehouses:

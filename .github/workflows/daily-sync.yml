@@ -1,0 +1,94 @@
+name: Daily Platform Sync
+
+on:
+  schedule:
+    # Run daily at 6 AM Chile time (UTC-3 = 9 AM UTC)
+    - cron: '0 9 * * *'
+
+  # Allow manual trigger with options
+  workflow_dispatch:
+    inputs:
+      days_back:
+        description: 'Days to look back for sales sync'
+        required: false
+        default: '7'
+        type: string
+      sync_type:
+        description: 'Type of sync to run'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - sales
+          - inventory
+
+jobs:
+  sync-platform:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger Platform Sync
+        id: sync
+        run: |
+          SYNC_TYPE="${{ github.event.inputs.sync_type || 'all' }}"
+          DAYS_BACK="${{ github.event.inputs.days_back || '7' }}"
+
+          echo "🔄 Running $SYNC_TYPE sync with days_back=$DAYS_BACK"
+
+          # Build the endpoint URL
+          if [ "$SYNC_TYPE" = "all" ]; then
+            ENDPOINT="https://granaplatform-production.up.railway.app/api/v1/sync/all?days_back=$DAYS_BACK"
+          elif [ "$SYNC_TYPE" = "sales" ]; then
+            ENDPOINT="https://granaplatform-production.up.railway.app/api/v1/sync/sales?days_back=$DAYS_BACK"
+          else
+            ENDPOINT="https://granaplatform-production.up.railway.app/api/v1/sync/inventory"
+          fi
+
+          echo "Calling: $ENDPOINT"
+
+          # Make the API call with timeout (sync can take a while)
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -X POST "$ENDPOINT" \
+            -H "Content-Type: application/json" \
+            -H "X-Sync-Key: ${{ secrets.SYNC_API_KEY }}" \
+            --max-time 300)
+
+          # Extract HTTP status code (last line)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          # Extract response body (all but last line)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+
+          # Check if successful
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "✅ Sync completed successfully"
+            echo "response=$BODY" >> $GITHUB_OUTPUT
+            exit 0
+          else
+            echo "❌ Sync failed with HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+      - name: Parse and Report Results
+        if: success()
+        run: |
+          echo "## 📊 Sync Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          echo '${{ steps.sync.outputs.response }}' | jq '.' >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo '${{ steps.sync.outputs.response }}' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Report Failure
+        if: failure()
+        run: |
+          echo "## ❌ Sync Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The daily sync failed. Check the logs above for details." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Troubleshooting:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Verify SYNC_API_KEY secret is set in repository" >> $GITHUB_STEP_SUMMARY
+          echo "- Check Railway service health: https://granaplatform-production.up.railway.app/api/v1/sync/health" >> $GITHUB_STEP_SUMMARY
+          echo "- Run manual sync to test: /api/v1/sync/debug-relbase" >> $GITHUB_STEP_SUMMARY
