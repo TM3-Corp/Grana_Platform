@@ -28,18 +28,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Trigger Platform Sync
-        id: sync
+      - name: Trigger Platform Sync (Background)
+        id: trigger
         run: |
           SYNC_TYPE="${{ github.event.inputs.sync_type || 'all' }}"
           DAYS_BACK="${{ github.event.inputs.days_back || '7' }}"
 
-          echo "🔄 Running $SYNC_TYPE sync with days_back=$DAYS_BACK"
+          echo "🔄 Triggering $SYNC_TYPE sync with days_back=$DAYS_BACK (background mode)"
 
-          # Build the endpoint URL
+          # Build the endpoint URL - use run_in_background=true to avoid timeout
           if [ "$SYNC_TYPE" = "all" ]; then
-            ENDPOINT="https://granaplatform-production.up.railway.app/api/v1/sync/all?days_back=$DAYS_BACK"
+            ENDPOINT="https://granaplatform-production.up.railway.app/api/v1/sync/all?days_back=$DAYS_BACK&run_in_background=true"
           elif [ "$SYNC_TYPE" = "sales" ]; then
+            # Sales sync is fast (~10s), run synchronously
             ENDPOINT="https://granaplatform-production.up.railway.app/api/v1/sync/sales?days_back=$DAYS_BACK"
           else
             ENDPOINT="https://granaplatform-production.up.railway.app/api/v1/sync/inventory"
@@ -47,38 +48,72 @@ jobs:
 
           echo "Calling: $ENDPOINT"
 
-          # Make the API call with timeout (sync can take a while)
+          # Make the API call
           RESPONSE=$(curl -s -w "\n%{http_code}" \
             -X POST "$ENDPOINT" \
             -H "Content-Type: application/json" \
             -H "X-Sync-Key: ${{ secrets.SYNC_API_KEY }}" \
-            --max-time 300)
+            --max-time 60)
 
-          # Extract HTTP status code (last line)
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-          # Extract response body (all but last line)
           BODY=$(echo "$RESPONSE" | sed '$d')
 
           echo "HTTP Status: $HTTP_CODE"
           echo "Response: $BODY"
 
-          # Check if successful
           if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-            echo "✅ Sync completed successfully"
-            echo "response=$BODY" >> $GITHUB_OUTPUT
+            echo "✅ Sync triggered successfully"
+            echo "trigger_response=$BODY" >> $GITHUB_OUTPUT
             exit 0
           else
-            echo "❌ Sync failed with HTTP $HTTP_CODE"
+            echo "❌ Failed to trigger sync: HTTP $HTTP_CODE"
             exit 1
           fi
+
+      - name: Wait for Sync Completion
+        if: success() && github.event.inputs.sync_type != 'sales'
+        run: |
+          echo "⏳ Waiting 5 minutes for sync to complete..."
+          echo "   (Sales: ~10s, Inventory: ~4-5 min)"
+          sleep 300
+
+      - name: Verify Sync Status
+        id: verify
+        run: |
+          echo "🔍 Checking sync status..."
+
+          RESPONSE=$(curl -s \
+            "https://granaplatform-production.up.railway.app/api/v1/sync/status" \
+            -H "X-Sync-Key: ${{ secrets.SYNC_API_KEY }}" \
+            --max-time 30)
+
+          echo "Status: $RESPONSE"
+          echo "response=$RESPONSE" >> $GITHUB_OUTPUT
+
+          # Parse timestamps to verify recent sync
+          LAST_SALES=$(echo "$RESPONSE" | jq -r '.last_sales_sync // empty')
+          LAST_INV=$(echo "$RESPONSE" | jq -r '.last_inventory_sync // empty')
+
+          echo ""
+          echo "📊 Last Sales Sync: $LAST_SALES"
+          echo "📦 Last Inventory Sync: $LAST_INV"
+          echo "📋 Orders in DB: $(echo "$RESPONSE" | jq -r '.orders_count')"
+          echo "🏭 Warehouses: $(echo "$RESPONSE" | jq -r '.warehouses_count')"
+          echo "📦 Products with stock: $(echo "$RESPONSE" | jq -r '.products_with_stock')"
 
       - name: Parse and Report Results
         if: success()
         run: |
           echo "## 📊 Sync Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Trigger Response" >> $GITHUB_STEP_SUMMARY
           echo '```json' >> $GITHUB_STEP_SUMMARY
-          echo '${{ steps.sync.outputs.response }}' | jq '.' >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo '${{ steps.sync.outputs.response }}' >> $GITHUB_STEP_SUMMARY
+          echo '${{ steps.trigger.outputs.trigger_response }}' | jq '.' >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo '${{ steps.trigger.outputs.trigger_response }}' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Final Status" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          echo '${{ steps.verify.outputs.response }}' | jq '.' >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo '${{ steps.verify.outputs.response }}' >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
       - name: Report Failure
