@@ -23,9 +23,10 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-ML_APP_ID = os.getenv('ML_APP_ID')
-ML_SECRET = os.getenv('ML_SECRET')
-ML_REFRESH_TOKEN = os.getenv('ML_REFRESH_TOKEN')
+# Support both naming conventions (ML_* and MERCADOLIBRE_*)
+ML_APP_ID = os.getenv('ML_APP_ID') or os.getenv('MERCADOLIBRE_APP_ID')
+ML_SECRET = os.getenv('ML_SECRET') or os.getenv('MERCADOLIBRE_SECRET')
+ML_REFRESH_TOKEN = os.getenv('ML_REFRESH_TOKEN') or os.getenv('MERCADOLIBRE_REFRESH_TOKEN')
 
 logger.info("=" * 80)
 logger.info("MERCADOLIBRE TOKEN REFRESH")
