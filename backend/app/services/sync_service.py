@@ -435,15 +435,120 @@ class SyncService:
     # MercadoLibre API Methods
     # =========================================================================
 
+    def _get_ml_credentials(self) -> tuple:
+        """
+        Get ML credentials, preferring database tokens over env vars.
+        Auto-refreshes token if expired.
+
+        Returns:
+            Tuple of (access_token, refresh_token) or (None, None) if not configured
+        """
+        conn = get_db_connection_with_retry()
+        cursor = conn.cursor()
+
+        try:
+            # Get token from database
+            cursor.execute("""
+                SELECT access_token, refresh_token, expires_at
+                FROM ml_tokens
+                ORDER BY updated_at DESC
+                LIMIT 1
+            """)
+            row = cursor.fetchone()
+
+            if row:
+                access_token, refresh_token, expires_at = row
+
+                # Check if token is expired or will expire in next 30 minutes
+                cursor.execute("SELECT NOW() + INTERVAL '30 minutes' > %s", (expires_at,))
+                is_expired = cursor.fetchone()[0]
+
+                if is_expired:
+                    logger.info("ML token expired or expiring soon, refreshing...")
+                    new_access, new_refresh = self._refresh_ml_token(refresh_token)
+                    if new_access:
+                        return new_access, new_refresh
+                    else:
+                        logger.warning("Token refresh failed, using existing token")
+                        return access_token, refresh_token
+                else:
+                    return access_token, refresh_token
+            else:
+                # No token in DB, try env vars
+                logger.info("No ML token in database, using environment variables")
+                return self.ml_access_token, None
+
+        except Exception as e:
+            logger.error(f"Error getting ML credentials: {e}")
+            return self.ml_access_token, None
+        finally:
+            cursor.close()
+            conn.close()
+
+    def _refresh_ml_token(self, refresh_token: str) -> tuple:
+        """
+        Refresh ML access token using refresh token.
+        Stores new tokens in database.
+
+        Returns:
+            Tuple of (new_access_token, new_refresh_token) or (None, None) on failure
+        """
+        ml_app_id = os.getenv('MERCADOLIBRE_APP_ID') or os.getenv('ML_APP_ID')
+        ml_secret = os.getenv('MERCADOLIBRE_SECRET') or os.getenv('ML_SECRET')
+
+        if not all([ml_app_id, ml_secret, refresh_token]):
+            logger.error("Missing ML credentials for token refresh")
+            return None, None
+
+        try:
+            response = requests.post(
+                "https://api.mercadolibre.com/oauth/token",
+                data={
+                    'grant_type': 'refresh_token',
+                    'client_id': ml_app_id,
+                    'client_secret': ml_secret,
+                    'refresh_token': refresh_token
+                },
+                timeout=30
+            )
+            response.raise_for_status()
+
+            token_data = response.json()
+            new_access = token_data['access_token']
+            new_refresh = token_data.get('refresh_token', refresh_token)
+
+            # Store in database
+            conn = get_db_connection_with_retry()
+            cursor = conn.cursor()
+            try:
+                cursor.execute("""
+                    INSERT INTO ml_tokens (access_token, refresh_token, expires_at)
+                    VALUES (%s, %s, NOW() + INTERVAL '6 hours')
+                """, (new_access, new_refresh))
+                conn.commit()
+                logger.info("✅ ML token refreshed and stored in database")
+            finally:
+                cursor.close()
+                conn.close()
+
+            return new_access, new_refresh
+
+        except Exception as e:
+            logger.error(f"Failed to refresh ML token: {e}")
+            return None, None
+
     async def _fetch_ml_listings(self) -> List[Dict]:
         """Fetch active listings from MercadoLibre"""
-        if not self.ml_access_token or not self.ml_seller_id:
+        # Get fresh token (auto-refreshes if expired)
+        access_token, _ = self._get_ml_credentials()
+
+        if not access_token or not self.ml_seller_id:
             logger.warning("MercadoLibre credentials not configured")
             return []
 
         base_url = "https://api.mercadolibre.com"
         headers = {
-            'Authorization': f'Bearer {self.ml_access_token}',
+            'Authorization': f'Bearer {access_token}',
             'Accept': 'application/json'
         }
 
