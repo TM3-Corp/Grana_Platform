@@ -889,7 +889,7 @@ class SyncService:
     # Inventory Sync Logic
     # =========================================================================
 
-    async def sync_inventory(self, max_products: int = 50) -> InventorySyncResult:
+    async def sync_inventory(self) -> InventorySyncResult:
         """
         Sync inventory from RelBase and MercadoLibre
 
@@ -898,8 +898,9 @@ class SyncService:
         2. For products with external_id, fetch lot/serial stock from RelBase
         3. Fetch active listings from MercadoLibre and update stock
 
-        Args:
-            max_products: Maximum products to sync per run (default 50 to avoid timeout)
+        Note: No product limit - syncs ALL products. Runs in background mode
+        so long sync times are acceptable. Products without lot data return
+        quickly (404/empty), so actual time scales with products WITH data.
 
         Returns:
             InventorySyncResult with statistics
@@ -979,16 +980,15 @@ class SyncService:
             db_warehouses = cursor.fetchall()
 
             # For each product-warehouse combination, fetch stock
-            # Limit products per run to avoid timeout (controlled by max_products parameter)
-            products_to_sync = products[:max_products]
-            logger.info(f"Syncing stock for {len(products_to_sync)} of {len(products)} products across {len(db_warehouses)} warehouses...")
+            # No limit - sync all products (runs in background mode)
+            logger.info(f"Syncing stock for {len(products)} products across {len(db_warehouses)} warehouses...")
 
             # Track auth errors - if we get too many 401s, skip lot sync entirely
             auth_error_count = 0
             auth_error_threshold = 5  # Skip lot sync after 5 consecutive auth errors
             skip_lot_sync = False
 
-            for product in products_to_sync:
+            for product in products:
                 if skip_lot_sync:
                     break  # Stop trying if auth is failing
 
