@@ -538,7 +538,7 @@ class SyncService:
             return None, None
 
     async def _fetch_ml_listings(self) -> List[Dict]:
-        """Fetch active listings from MercadoLibre"""
+        """Fetch active listings from MercadoLibre (with pagination)"""
         # Get fresh token (auto-refreshes if expired)
         access_token, _ = self._get_ml_credentials()
 
@@ -554,21 +554,47 @@ class SyncService:
 
         async with httpx.AsyncClient() as client:
             try:
-                # Get item IDs
+                # Collect all item IDs with pagination
+                all_item_ids = []
+                offset = 0
+                limit = 50  # ML API default page size
+
+                # First request to get total count
                 response = await client.get(
                     f"{base_url}/users/{self.ml_seller_id}/items/search",
                     headers=headers,
-                    params={'status': 'active'},
+                    params={'status': 'active', 'offset': 0, 'limit': limit},
                     timeout=30.0
                 )
                 response.raise_for_status()
                 data = response.json()
 
-                item_ids = data.get('results', [])
+                total_items = data.get('paging', {}).get('total', 0)
+                all_item_ids.extend(data.get('results', []))
+                logger.info(f"MercadoLibre: {total_items} total active listings")
 
-                # Get details for each item (limited to 50 for performance)
+                # Fetch remaining pages
+                while len(all_item_ids) < total_items:
+                    offset += limit
+                    response = await client.get(
+                        f"{base_url}/users/{self.ml_seller_id}/items/search",
+                        headers=headers,
+                        params={'status': 'active', 'offset': offset, 'limit': limit},
+                        timeout=30.0
+                    )
+                    response.raise_for_status()
+                    page_data = response.json()
+                    page_ids = page_data.get('results', [])
+                    if not page_ids:
+                        break
+                    all_item_ids.extend(page_ids)
+                    logger.info(f"  Fetched page {offset // limit + 1}: {len(all_item_ids)}/{total_items} IDs")
+
+                logger.info(f"Fetching details for {len(all_item_ids)} MercadoLibre listings...")
+
+                # Get details for each item
                 listings = []
-                for item_id in item_ids[:50]:
+                for i, item_id in enumerate(all_item_ids):
                     item_response = await client.get(
                         f"{base_url}/items/{item_id}",
                         headers=headers,
@@ -576,14 +602,31 @@ class SyncService:
                     )
                     if item_response.status_code == 200:
                         item_data = item_response.json()
+
+                        # Extract SKU from attributes (SELLER_SKU field)
+                        sku = None
+                        for attr in item_data.get('attributes', []):
+                            if attr.get('id') == 'SELLER_SKU':
+                                sku = attr.get('value_name')
+                                break
+
+                        # Fallback to seller_custom_field if no SELLER_SKU attribute
+                        if not sku:
+                            sku = item_data.get('seller_custom_field', '')
+
                         listings.append({
                             'id': item_data.get('id'),
                             'title': item_data.get('title'),
-                            'sku': item_data.get('seller_custom_field', ''),
+                            'sku': sku,
                             'available_quantity': item_data.get('available_quantity', 0),
                             'status': item_data.get('status')
                         })
 
+                    # Log progress every 50 items
+                    if (i + 1) % 50 == 0:
+                        logger.info(f"  Processed {i + 1}/{len(all_item_ids)} item details")
+
+                logger.info(f"Fetched {len(listings)} ML listings with SKUs")
                 return listings
 
             except Exception as e:
