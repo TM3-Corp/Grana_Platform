@@ -103,8 +103,22 @@ async def get_sales_analytics(
             params.extend(categories)
 
         if formats:
+            # Include both the product AND its caja master (sku_master) in the filter
+            # This ensures master box sales are counted with their base product
             placeholders = ','.join(['%s'] * len(formats))
-            where_clauses.append(f"mv.product_name IN ({placeholders})")
+            # Match on catalog_sku (base product) OR original_sku matches sku_master
+            where_clauses.append(f"""(
+                mv.catalog_sku IN (
+                    SELECT pc.sku FROM product_catalog pc
+                    WHERE pc.product_name IN ({placeholders}) AND pc.is_active = TRUE
+                )
+                OR mv.original_sku IN (
+                    SELECT pc.sku_master FROM product_catalog pc
+                    WHERE pc.product_name IN ({placeholders}) AND pc.is_active = TRUE AND pc.sku_master IS NOT NULL
+                )
+            )""")
+            # Need to pass params twice (for both subqueries)
+            params.extend(formats)
             params.extend(formats)
 
         if sku_primarios:
@@ -185,7 +199,12 @@ async def get_sales_analytics(
                         ELSE mv.units_sold * COALESCE(mv.units_per_display, 1)
                     END
                 ) as total_units,
-                SUM(mv.units_sold) as total_items,
+                SUM(
+                    CASE
+                        WHEN mv.is_caja_master THEN mv.units_sold * COALESCE(mv.items_per_master_box, 1) / NULLIF(COALESCE(mv.units_per_display, 1), 0)
+                        ELSE mv.units_sold
+                    END
+                ) as total_items,
                 COUNT(DISTINCT mv.order_id) as total_orders,
                 CASE
                     WHEN COUNT(DISTINCT mv.order_id) > 0 THEN SUM(mv.revenue) / COUNT(DISTINCT mv.order_id)
@@ -216,8 +235,13 @@ async def get_sales_analytics(
                         ELSE mv.units_sold * COALESCE(mv.units_per_display, 1)
                     END
                 )"""
-        # Helper expression for raw items (no conversion)
-        items_expr = "SUM(mv.units_sold)"
+        # Helper expression for items (displays) - caja masters converted to displays
+        items_expr = """SUM(
+                    CASE
+                        WHEN mv.is_caja_master THEN mv.units_sold * COALESCE(mv.items_per_master_box, 1) / NULLIF(COALESCE(mv.units_per_display, 1), 0)
+                        ELSE mv.units_sold
+                    END
+                )"""
 
         if group_by and stack_by and stack_field:
             # DOUBLE GROUPING: period + group + stack
@@ -735,17 +759,35 @@ async def get_filter_options(
 
         where_clause = " AND ".join(base_where)
 
-        # Query 1: Get unique product names (Formato)
-        formats_query = f"""
-            SELECT DISTINCT product_name
-            FROM sales_facts_mv
-            WHERE {where_clause}
-              AND product_name IS NOT NULL
-              AND product_name != ''
-            ORDER BY product_name
-            LIMIT 200
-        """
-        cur.execute(formats_query, params)
+        # Query 1: Get unique product names (Formato) from product_catalog
+        # Only shows base products (those with sku_master defined), not caja masters
+        # This prevents "CAJA MASTER..." from appearing as a separate format option
+        if categories and len(categories) > 0:
+            cat_placeholders = ','.join(['%s'] * len(categories))
+            formats_query = f"""
+                SELECT DISTINCT pc.product_name
+                FROM product_catalog pc
+                WHERE pc.is_active = TRUE
+                  AND pc.sku_master IS NOT NULL
+                  AND pc.product_name IS NOT NULL
+                  AND pc.product_name != ''
+                  AND pc.category IN ({cat_placeholders})
+                ORDER BY pc.product_name
+                LIMIT 200
+            """
+            cur.execute(formats_query, categories)
+        else:
+            formats_query = """
+                SELECT DISTINCT pc.product_name
+                FROM product_catalog pc
+                WHERE pc.is_active = TRUE
+                  AND pc.sku_master IS NOT NULL
+                  AND pc.product_name IS NOT NULL
+                  AND pc.product_name != ''
+                ORDER BY pc.product_name
+                LIMIT 200
+            """
+            cur.execute(formats_query)
         formats = [row[0] for row in cur.fetchall()]
 
         # Query 2: Get unique SKU Primarios
