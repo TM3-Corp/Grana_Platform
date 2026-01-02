@@ -3,10 +3,16 @@ API endpoint for data auditing
 Provides comprehensive data validation and integrity checking
 """
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from typing import Optional, List
 import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from io import BytesIO
+from datetime import datetime
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 from app.services.product_catalog_service import ProductCatalogService
 
 router = APIRouter()
@@ -1084,6 +1090,37 @@ async def get_audit_data(
                     "total_revenue": float(summary_row['total_revenue'] or 0)
                 }
 
+                # ===== UNITS TOTALS FROM MV =====
+                # Get accurate unit totals from sales_facts_mv (applies conversion factors)
+                # This ensures consistency with Sales Analytics view
+                mv_units_query = """
+                    SELECT
+                        SUM(
+                            CASE
+                                WHEN is_caja_master THEN units_sold * COALESCE(items_per_master_box, 1)
+                                ELSE units_sold * COALESCE(units_per_display, 1)
+                            END
+                        ) as total_units
+                    FROM sales_facts_mv
+                    WHERE order_date >= %s AND order_date <= %s
+                """
+                # Get date params - dates are added LAST to params (before limit/offset)
+                # So we need to extract from the end, not the beginning
+                date_params = []
+                if from_date and to_date:
+                    date_params = [from_date, to_date]
+                elif from_date:
+                    date_params = [from_date, from_date]  # Use same date for range
+                elif to_date:
+                    date_params = [to_date, to_date]  # Use same date for range
+
+                if len(date_params) >= 2:
+                    cursor.execute(mv_units_query, date_params[:2])
+                    mv_row = cursor.fetchone()
+                    filtered_totals["total_unidades_mv"] = int(mv_row['total_units'] or 0) if mv_row else 0
+                else:
+                    filtered_totals["total_unidades_mv"] = 0
+
                 # Enrich with product catalog data using conservative mapping
                 enriched_rows = []
                 for row in rows:
@@ -1129,10 +1166,11 @@ async def get_audit_data(
                         row_dict['format'] = product_info['format'] or row_dict.get('format')
                         row_dict['in_catalog'] = True
 
-                        # Also include conversion factor for reference
-                        # Phase 3: Get from ProductCatalogService
-                        # This properly handles both normal SKUs and master box SKUs
-                        row_dict['conversion_factor'] = service.get_conversion_factor(official_sku)
+                        # Derive effective conversion factor from actual calculation
+                        # This ensures the displayed multiplier matches the units calculation
+                        # Important: Uses unidades/quantity to capture sku_mappings multipliers
+                        # e.g., GRAL_C02010: 13 qty → 130 units → shows (x10)
+                        row_dict['conversion_factor'] = unidades // quantity if quantity > 0 else 1
                     else:
                         # Not mapped
                         row_dict['sku_primario'] = None
@@ -1149,10 +1187,12 @@ async def get_audit_data(
                     enriched_rows.append(row_dict)
 
                 # Calculate totals from enriched data
-                # NOTE: These are calculated from the current page of results
-                # For full dataset totals, a separate aggregation query would be needed
-                filtered_totals["total_unidades"] = sum(row.get('unidades', 0) for row in enriched_rows)
+                # total_unidades: Use MV-based calculation for accuracy (full dataset)
+                # total_peso: Calculated from current page only (acceptable approximation)
+                filtered_totals["total_unidades"] = filtered_totals.get("total_unidades_mv", sum(row.get('unidades', 0) for row in enriched_rows))
                 filtered_totals["total_peso"] = round(sum(row.get('peso_total', 0) for row in enriched_rows), 4)
+                # Also keep page-only units for debugging
+                filtered_totals["page_unidades"] = sum(row.get('unidades', 0) for row in enriched_rows)
 
                 return {
                     "status": "success",
@@ -1384,3 +1424,465 @@ async def get_audit_summary():
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching audit summary: {str(e)}")
+
+
+@router.get("/export")
+async def export_audit_data(
+    source: Optional[List[str]] = Query(None, description="Filter by source"),
+    category: Optional[List[str]] = Query(None, description="Filter by product category/familia"),
+    channel: Optional[List[str]] = Query(None, description="Filter by channel name"),
+    customer: Optional[List[str]] = Query(None, description="Filter by customer name"),
+    sku: Optional[str] = Query(None, description="Search in multiple fields"),
+    sku_primario: Optional[List[str]] = Query(None, description="Filter by SKU Primario"),
+    has_nulls: Optional[bool] = Query(None, description="Show only records with NULL values"),
+    not_in_catalog: Optional[bool] = Query(None, description="Show only SKUs not in catalog"),
+    from_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    to_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    group_by: Optional[str] = Query(None, description="Grouping field for aggregated export")
+):
+    """
+    Export audit data to Excel file.
+
+    Supports both detail mode (no grouping) and aggregated mode (with group_by).
+    Returns an Excel file with properly formatted data matching the current filters.
+    """
+
+    if not DATABASE_URL:
+        raise HTTPException(status_code=500, detail="DATABASE_URL not configured")
+
+    # Load product catalog
+    product_catalog, catalog_skus, catalog_master_skus, conversion_map = load_product_mapping()
+
+    try:
+        with psycopg2.connect(DATABASE_URL) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+
+                # Build WHERE clause (same as /data endpoint)
+                where_clauses = []
+                params = []
+
+                # Base filters
+                where_clauses.append("o.source = 'relbase'")
+                where_clauses.append("o.invoice_status IN ('accepted', 'accepted_objection')")
+
+                if source:
+                    placeholders = ','.join(['%s'] * len(source))
+                    where_clauses.append(f"o.source IN ({placeholders})")
+                    params.extend(source)
+
+                # Category filter with SKU mapping
+                category_filter_skus = None
+                if category:
+                    cursor.execute("""
+                        SELECT DISTINCT oi.product_sku, oi.product_name, o.source
+                        FROM orders o
+                        JOIN order_items oi ON oi.order_id = o.id
+                        WHERE oi.product_sku IS NOT NULL AND oi.product_sku != ''
+                    """)
+                    all_db_skus = cursor.fetchall()
+
+                    category_filter_skus = set()
+                    for row in all_db_skus:
+                        db_sku = row['product_sku']
+                        product_name = row['product_name'] or ''
+                        sku_source = row.get('source', '')
+                        official_sku, _, _, product_info, _ = map_sku_with_quantity(
+                            db_sku, product_name, product_catalog, catalog_skus, catalog_master_skus, sku_source
+                        )
+                        if official_sku and product_info:
+                            sku_category = product_info.get('category', '')
+                            if sku_category in category:
+                                category_filter_skus.add(db_sku)
+
+                    if category_filter_skus:
+                        placeholders = ','.join(['%s'] * len(category_filter_skus))
+                        where_clauses.append(f"oi.product_sku IN ({placeholders})")
+                        params.extend(list(category_filter_skus))
+                    else:
+                        where_clauses.append("1=0")
+
+                if channel:
+                    channel_conditions = ' OR '.join(['ch.name ILIKE %s'] * len(channel))
+                    where_clauses.append(f"({channel_conditions})")
+                    for ch in channel:
+                        params.append(f"%{ch}%")
+
+                if customer:
+                    customer_conditions = ' OR '.join(['(cust_direct.name ILIKE %s OR cust_channel.name ILIKE %s)'] * len(customer))
+                    where_clauses.append(f"({customer_conditions})")
+                    for cust in customer:
+                        params.append(f"%{cust}%")
+                        params.append(f"%{cust}%")
+
+                if sku_primario:
+                    placeholders = ','.join(['%s'] * len(sku_primario))
+                    where_clauses.append(f"oi.sku_primario IN ({placeholders})")
+                    params.extend(sku_primario)
+
+                if sku:
+                    search_conditions = [
+                        "COALESCE(cust_direct.name, cust_channel.name, '') ILIKE %s",
+                        "oi.product_name ILIKE %s",
+                        "o.external_id ILIKE %s",
+                        "ch.name ILIKE %s",
+                        "oi.product_sku ILIKE %s"
+                    ]
+                    where_clauses.append(f"({' OR '.join(search_conditions)})")
+                    for _ in range(len(search_conditions)):
+                        params.append(f"%{sku}%")
+
+                if has_nulls:
+                    where_clauses.append("""(
+                        (cust_direct.id IS NULL AND cust_channel.id IS NULL) OR
+                        o.channel_id IS NULL OR
+                        oi.product_sku IS NULL OR
+                        oi.product_sku = ''
+                    )""")
+
+                if from_date and to_date:
+                    where_clauses.append("o.order_date >= %s AND o.order_date <= %s")
+                    params.append(from_date)
+                    params.append(to_date)
+                elif from_date:
+                    where_clauses.append("o.order_date >= %s")
+                    params.append(from_date)
+                elif to_date:
+                    where_clauses.append("o.order_date <= %s")
+                    params.append(to_date)
+
+                where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+
+                # Create workbook
+                wb = Workbook()
+                ws = wb.active
+
+                # Styles
+                header_font = Font(bold=True, color="FFFFFF")
+                header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+                header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                thin_border = Border(
+                    left=Side(style='thin'),
+                    right=Side(style='thin'),
+                    top=Side(style='thin'),
+                    bottom=Side(style='thin')
+                )
+                number_format_currency = '#,##0'
+                number_format_decimal = '#,##0.00'
+
+                # ===== AGGREGATED MODE EXPORT =====
+                if group_by == 'sku_primario':
+                    ws.title = "Agrupado por SKU Primario"
+
+                    # Headers
+                    headers = ["SKU Primario", "Producto", "Pedidos", "Cantidad", "Unidades", "Revenue"]
+                    for col, header in enumerate(headers, 1):
+                        cell = ws.cell(row=1, column=col, value=header)
+                        cell.font = header_font
+                        cell.fill = header_fill
+                        cell.alignment = header_alignment
+                        cell.border = thin_border
+
+                    # Fetch all data for aggregation
+                    fetch_query = f"""
+                        SELECT
+                            o.external_id as order_external_id,
+                            oi.product_sku,
+                            oi.product_name,
+                            o.source as order_source,
+                            oi.quantity,
+                            oi.subtotal
+                        FROM orders o
+                        LEFT JOIN order_items oi ON oi.order_id = o.id
+                        LEFT JOIN products p ON p.sku = oi.product_sku
+                        LEFT JOIN channels ch ON ch.id = o.channel_id
+                        LEFT JOIN customers cust_direct ON cust_direct.id = o.customer_id AND cust_direct.source = o.source
+                        LEFT JOIN LATERAL (
+                            SELECT customer_external_id FROM customer_channel_rules ccr
+                            WHERE ccr.channel_external_id::text = (
+                                CASE WHEN o.customer_notes ~ '^\\s*\\{{'
+                                THEN o.customer_notes::json->>'channel_id_relbase' ELSE NULL END
+                            ) AND ccr.is_active = TRUE LIMIT 1
+                        ) ccr_match ON true
+                        LEFT JOIN customers cust_channel ON cust_channel.external_id = ccr_match.customer_external_id AND cust_channel.source = 'relbase'
+                        WHERE {where_sql}
+                        LIMIT 100000
+                    """
+
+                    cursor.execute(fetch_query, params)
+                    all_items = cursor.fetchall()
+
+                    # Aggregate in Python
+                    from collections import defaultdict
+                    groups = defaultdict(lambda: {'pedidos': set(), 'cantidad': 0, 'total_unidades': 0, 'total_revenue': 0})
+                    service = get_product_catalog_service()
+
+                    for item in all_items:
+                        item_sku = item['product_sku']
+                        product_name = item['product_name']
+                        order_source = item['order_source']
+                        quantity = item['quantity'] or 0
+
+                        official_sku, _, _, _, _ = map_sku_with_quantity(
+                            item_sku, product_name, product_catalog, catalog_skus, catalog_master_skus, order_source
+                        )
+
+                        sku_prim = get_sku_primario(official_sku, conversion_map) if official_sku else None
+                        group_key = sku_prim if sku_prim else 'SIN CLASIFICAR'
+                        converted_units = service.calculate_units(item_sku, quantity, order_source)
+
+                        groups[group_key]['pedidos'].add(item['order_external_id'])
+                        groups[group_key]['cantidad'] += quantity
+                        groups[group_key]['total_unidades'] += converted_units
+                        groups[group_key]['total_revenue'] += float(item['subtotal'] or 0)
+
+                    # Sort and write data
+                    sorted_groups = sorted(groups.items(), key=lambda x: x[1]['total_revenue'], reverse=True)
+
+                    for row_idx, (group_value, stats) in enumerate(sorted_groups, 2):
+                        sku_primario_name = service.get_product_name_for_sku_primario(group_value) if group_value != 'SIN CLASIFICAR' else None
+
+                        ws.cell(row=row_idx, column=1, value=group_value).border = thin_border
+                        ws.cell(row=row_idx, column=2, value=sku_primario_name or '').border = thin_border
+                        ws.cell(row=row_idx, column=3, value=len(stats['pedidos'])).border = thin_border
+                        ws.cell(row=row_idx, column=4, value=stats['cantidad']).border = thin_border
+                        ws.cell(row=row_idx, column=5, value=stats['total_unidades']).border = thin_border
+                        cell = ws.cell(row=row_idx, column=6, value=stats['total_revenue'])
+                        cell.border = thin_border
+                        cell.number_format = number_format_currency
+
+                    # Column widths
+                    ws.column_dimensions['A'].width = 20
+                    ws.column_dimensions['B'].width = 40
+                    ws.column_dimensions['C'].width = 12
+                    ws.column_dimensions['D'].width = 12
+                    ws.column_dimensions['E'].width = 12
+                    ws.column_dimensions['F'].width = 15
+
+                # ===== OTHER AGGREGATED MODES =====
+                elif group_by and group_by in ['customer_name', 'channel_name', 'order_month', 'family', 'format', 'sku']:
+                    group_field_map = {
+                        'customer_name': ("COALESCE(cust_direct.name, cust_channel.name, 'SIN NOMBRE')", "Cliente"),
+                        'channel_name': ("COALESCE(ch.name, 'SIN CANAL')", "Canal"),
+                        'order_month': ("TO_CHAR(o.order_date, 'YYYY-MM')", "Mes"),
+                        'family': ("COALESCE(p.subfamily, 'SIN FAMILIA')", "Familia"),
+                        'format': ("COALESCE(p.format, 'SIN FORMATO')", "Formato"),
+                        'sku': ("COALESCE(oi.product_sku, 'SIN SKU')", "SKU Original")
+                    }
+
+                    group_field, group_label = group_field_map[group_by]
+                    ws.title = f"Agrupado por {group_label}"
+
+                    # Headers
+                    headers = [group_label, "Pedidos", "Cantidad", "Revenue"]
+                    for col, header in enumerate(headers, 1):
+                        cell = ws.cell(row=1, column=col, value=header)
+                        cell.font = header_font
+                        cell.fill = header_fill
+                        cell.alignment = header_alignment
+                        cell.border = thin_border
+
+                    # Query aggregated data
+                    agg_query = f"""
+                        SELECT
+                            {group_field} as group_value,
+                            COUNT(DISTINCT o.external_id) as pedidos,
+                            SUM(oi.quantity) as cantidad,
+                            SUM(oi.subtotal) as total_revenue
+                        FROM orders o
+                        LEFT JOIN order_items oi ON oi.order_id = o.id
+                        LEFT JOIN products p ON p.sku = oi.product_sku
+                        LEFT JOIN channels ch ON ch.id = o.channel_id
+                        LEFT JOIN customers cust_direct ON cust_direct.id = o.customer_id AND cust_direct.source = o.source
+                        LEFT JOIN LATERAL (
+                            SELECT customer_external_id FROM customer_channel_rules ccr
+                            WHERE ccr.channel_external_id::text = (
+                                CASE WHEN o.customer_notes ~ '^\\s*\\{{'
+                                THEN o.customer_notes::json->>'channel_id_relbase' ELSE NULL END
+                            ) AND ccr.is_active = TRUE LIMIT 1
+                        ) ccr_match ON true
+                        LEFT JOIN customers cust_channel ON cust_channel.external_id = ccr_match.customer_external_id AND cust_channel.source = 'relbase'
+                        WHERE {where_sql}
+                        GROUP BY {group_field}
+                        HAVING {group_field} IS NOT NULL
+                        ORDER BY total_revenue DESC
+                    """
+
+                    cursor.execute(agg_query, params)
+                    rows = cursor.fetchall()
+
+                    for row_idx, row in enumerate(rows, 2):
+                        ws.cell(row=row_idx, column=1, value=row['group_value']).border = thin_border
+                        ws.cell(row=row_idx, column=2, value=row['pedidos']).border = thin_border
+                        ws.cell(row=row_idx, column=3, value=row['cantidad']).border = thin_border
+                        cell = ws.cell(row=row_idx, column=4, value=float(row['total_revenue'] or 0))
+                        cell.border = thin_border
+                        cell.number_format = number_format_currency
+
+                    # Column widths
+                    ws.column_dimensions['A'].width = 40
+                    ws.column_dimensions['B'].width = 12
+                    ws.column_dimensions['C'].width = 12
+                    ws.column_dimensions['D'].width = 15
+
+                # ===== DETAIL MODE EXPORT =====
+                else:
+                    ws.title = "Detalle Pedidos"
+
+                    # Headers
+                    headers = ["Pedido", "Fecha", "Cliente", "Canal", "SKU Original", "SKU Primario",
+                               "Familia", "Producto", "Cantidad", "Unidades", "Precio Unit.", "Total"]
+                    for col, header in enumerate(headers, 1):
+                        cell = ws.cell(row=1, column=col, value=header)
+                        cell.font = header_font
+                        cell.fill = header_fill
+                        cell.alignment = header_alignment
+                        cell.border = thin_border
+
+                    # Handle not_in_catalog filter
+                    if not_in_catalog:
+                        cursor.execute(f"""
+                            SELECT DISTINCT oi.product_sku as sku, oi.product_name, o.source
+                            FROM orders o
+                            LEFT JOIN order_items oi ON oi.order_id = o.id
+                            LEFT JOIN channels ch ON ch.id = o.channel_id
+                            LEFT JOIN customers cust_direct ON cust_direct.id = o.customer_id AND cust_direct.source = o.source
+                            LEFT JOIN LATERAL (
+                                SELECT customer_external_id FROM customer_channel_rules ccr
+                                WHERE ccr.channel_external_id::text = (
+                                    CASE WHEN o.customer_notes ~ '^\\s*\\{{'
+                                    THEN o.customer_notes::json->>'channel_id_relbase' ELSE NULL END
+                                ) AND ccr.is_active = TRUE LIMIT 1
+                            ) ccr_match ON true
+                            LEFT JOIN customers cust_channel ON cust_channel.external_id = ccr_match.customer_external_id AND cust_channel.source = 'relbase'
+                            WHERE {where_sql} AND oi.product_sku IS NOT NULL AND oi.product_sku != ''
+                        """, params)
+                        all_skus = cursor.fetchall()
+
+                        unmapped_skus_set = set()
+                        for row in all_skus:
+                            sku_val = row['sku']
+                            product_name = row['product_name'] or ''
+                            sku_source = row.get('source', '')
+                            official_sku, _, _, _, _ = map_sku_with_quantity(
+                                sku_val, product_name, product_catalog, catalog_skus, catalog_master_skus, sku_source
+                            )
+                            if not official_sku:
+                                unmapped_skus_set.add(sku_val)
+
+                        if unmapped_skus_set:
+                            placeholders = ','.join(['%s'] * len(unmapped_skus_set))
+                            where_clauses.append(f"oi.product_sku IN ({placeholders})")
+                            params.extend(list(unmapped_skus_set))
+                            where_sql = " AND ".join(where_clauses)
+
+                    # Main query (no pagination limit for export)
+                    query = f"""
+                        SELECT
+                            o.external_id as order_external_id,
+                            o.order_date,
+                            o.source as order_source,
+                            COALESCE(cust_direct.name, cust_channel.name, 'SIN NOMBRE') as customer_name,
+                            COALESCE(ch.name, 'SIN CANAL') as channel_name,
+                            oi.product_sku as sku,
+                            oi.product_name,
+                            oi.quantity,
+                            ROUND(oi.subtotal / NULLIF(oi.quantity, 0), 2) as unit_price,
+                            oi.subtotal as item_subtotal,
+                            p.category,
+                            p.subfamily as family
+                        FROM orders o
+                        LEFT JOIN order_items oi ON oi.order_id = o.id
+                        LEFT JOIN products p ON p.sku = oi.product_sku
+                        LEFT JOIN channels ch ON ch.id = o.channel_id
+                        LEFT JOIN customers cust_direct ON cust_direct.id = o.customer_id AND cust_direct.source = o.source
+                        LEFT JOIN LATERAL (
+                            SELECT customer_external_id FROM customer_channel_rules ccr
+                            WHERE ccr.channel_external_id::text = (
+                                CASE WHEN o.customer_notes ~ '^\\s*\\{{'
+                                THEN o.customer_notes::json->>'channel_id_relbase' ELSE NULL END
+                            ) AND ccr.is_active = TRUE LIMIT 1
+                        ) ccr_match ON true
+                        LEFT JOIN customers cust_channel ON cust_channel.external_id = ccr_match.customer_external_id AND cust_channel.source = 'relbase'
+                        WHERE {where_sql}
+                        ORDER BY o.order_date DESC, o.id, oi.id
+                        LIMIT 100000
+                    """
+
+                    cursor.execute(query, params)
+                    rows = cursor.fetchall()
+
+                    service = get_product_catalog_service()
+
+                    for row_idx, row in enumerate(rows, 2):
+                        row_sku = row.get('sku', '')
+                        product_name = row.get('product_name', '')
+                        order_source = row.get('order_source', '')
+                        quantity = row.get('quantity', 0) or 0
+
+                        # Map SKU
+                        official_sku, _, _, product_info, _ = map_sku_with_quantity(
+                            row_sku, product_name, product_catalog, catalog_skus, catalog_master_skus, order_source
+                        )
+
+                        # Get enriched data
+                        if official_sku:
+                            sku_prim = get_sku_primario(official_sku, conversion_map)
+                            unidades = calculate_units(row_sku, quantity, conversion_map, order_source)
+                            familia = product_info.get('category', '') if product_info else row.get('category', '')
+                        else:
+                            sku_prim = None
+                            unidades = quantity
+                            familia = row.get('category', '')
+
+                        # Format date
+                        order_date = row.get('order_date')
+                        date_str = order_date.strftime('%Y-%m-%d') if order_date else ''
+
+                        # Write row
+                        ws.cell(row=row_idx, column=1, value=row.get('order_external_id', '')).border = thin_border
+                        ws.cell(row=row_idx, column=2, value=date_str).border = thin_border
+                        ws.cell(row=row_idx, column=3, value=row.get('customer_name', '')).border = thin_border
+                        ws.cell(row=row_idx, column=4, value=row.get('channel_name', '')).border = thin_border
+                        ws.cell(row=row_idx, column=5, value=row_sku).border = thin_border
+                        ws.cell(row=row_idx, column=6, value=sku_prim or '').border = thin_border
+                        ws.cell(row=row_idx, column=7, value=familia or '').border = thin_border
+                        ws.cell(row=row_idx, column=8, value=product_name).border = thin_border
+                        ws.cell(row=row_idx, column=9, value=quantity).border = thin_border
+                        ws.cell(row=row_idx, column=10, value=unidades).border = thin_border
+
+                        cell_price = ws.cell(row=row_idx, column=11, value=float(row.get('unit_price') or 0))
+                        cell_price.border = thin_border
+                        cell_price.number_format = number_format_decimal
+
+                        cell_total = ws.cell(row=row_idx, column=12, value=float(row.get('item_subtotal') or 0))
+                        cell_total.border = thin_border
+                        cell_total.number_format = number_format_currency
+
+                    # Column widths
+                    col_widths = [15, 12, 30, 20, 18, 18, 15, 35, 10, 10, 12, 12]
+                    for col, width in enumerate(col_widths, 1):
+                        ws.column_dimensions[get_column_letter(col)].width = width
+
+                # Freeze header row
+                ws.freeze_panes = 'A2'
+
+                # Save to BytesIO
+                output = BytesIO()
+                wb.save(output)
+                output.seek(0)
+
+                # Generate filename
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                if group_by:
+                    filename = f"auditoria_agrupado_{group_by}_{timestamp}.xlsx"
+                else:
+                    filename = f"auditoria_detalle_{timestamp}.xlsx"
+
+                return StreamingResponse(
+                    output,
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f"attachment; filename={filename}"}
+                )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error exporting audit data: {str(e)}")
