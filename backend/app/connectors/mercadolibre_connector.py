@@ -4,6 +4,7 @@ Handles all interactions with MercadoLibre REST API
 
 Author: TM3
 Date: 2025-10-04
+Updated: 2026-01-03 - Added database-backed token persistence
 """
 import os
 from typing import Dict, List, Optional, Any
@@ -19,29 +20,59 @@ class MercadoLibreConnector:
     Connector for MercadoLibre REST API
 
     Handles:
-    - OAuth token management and refresh
+    - OAuth token management and refresh (with database persistence)
     - Order retrieval
     - Product listings
     - Sales metrics
+
+    Token Management:
+    - Tokens are stored in the database (api_credentials table)
+    - On 401, automatically refreshes and persists new tokens
+    - Falls back to env vars if database tokens not available
     """
 
     def __init__(self, app_id: str = None, secret_key: str = None,
-                 access_token: str = None, refresh_token: str = None, seller_id: str = None):
+                 access_token: str = None, refresh_token: str = None, seller_id: str = None,
+                 use_db_credentials: bool = True):
         """
         Initialize MercadoLibre connector
 
         Args:
-            app_id: MercadoLibre app ID
-            secret_key: MercadoLibre secret key
-            access_token: OAuth access token
-            refresh_token: OAuth refresh token
-            seller_id: MercadoLibre seller ID
+            app_id: MercadoLibre app ID (optional if using DB credentials)
+            secret_key: MercadoLibre secret key (optional if using DB credentials)
+            access_token: OAuth access token (optional if using DB credentials)
+            refresh_token: OAuth refresh token (optional if using DB credentials)
+            seller_id: MercadoLibre seller ID (optional if using DB credentials)
+            use_db_credentials: If True, load credentials from database (default: True)
         """
-        self.app_id = app_id or os.getenv('ML_APP_ID')
-        self.secret_key = secret_key or os.getenv('ML_SECRET')
-        self.access_token = access_token or os.getenv('ML_ACCESS_TOKEN')
-        self.refresh_token = refresh_token or os.getenv('ML_REFRESH_TOKEN')
-        self.seller_id = seller_id or os.getenv('ML_SELLER_ID')
+        self._credentials_service = None
+
+        if use_db_credentials:
+            try:
+                from app.services.credentials_service import get_credentials_service
+                self._credentials_service = get_credentials_service()
+                creds = self._credentials_service.get_mercadolibre_credentials()
+
+                self.app_id = creds.get('app_id') or app_id or os.getenv('ML_APP_ID')
+                self.secret_key = creds.get('secret') or secret_key or os.getenv('ML_SECRET')
+                self.access_token = creds.get('access_token') or access_token or os.getenv('ML_ACCESS_TOKEN')
+                self.refresh_token = creds.get('refresh_token') or refresh_token or os.getenv('ML_REFRESH_TOKEN')
+                self.seller_id = creds.get('seller_id') or seller_id or os.getenv('ML_SELLER_ID')
+
+                logger.info("MercadoLibre credentials loaded from database")
+            except Exception as e:
+                logger.warning(f"Could not load ML credentials from database: {e}, falling back to env vars")
+                self.app_id = app_id or os.getenv('ML_APP_ID')
+                self.secret_key = secret_key or os.getenv('ML_SECRET')
+                self.access_token = access_token or os.getenv('ML_ACCESS_TOKEN')
+                self.refresh_token = refresh_token or os.getenv('ML_REFRESH_TOKEN')
+                self.seller_id = seller_id or os.getenv('ML_SELLER_ID')
+        else:
+            self.app_id = app_id or os.getenv('ML_APP_ID')
+            self.secret_key = secret_key or os.getenv('ML_SECRET')
+            self.access_token = access_token or os.getenv('ML_ACCESS_TOKEN')
+            self.refresh_token = refresh_token or os.getenv('ML_REFRESH_TOKEN')
+            self.seller_id = seller_id or os.getenv('ML_SELLER_ID')
 
         if not all([self.app_id, self.secret_key, self.access_token, self.seller_id]):
             raise ValueError("MercadoLibre credentials not configured. Set ML_APP_ID, ML_SECRET, ML_ACCESS_TOKEN, and ML_SELLER_ID")
@@ -108,6 +139,9 @@ class MercadoLibreConnector:
         """
         Refresh the OAuth access token using refresh token
 
+        On success, persists the new tokens to the database for durability
+        across container restarts.
+
         Returns:
             True if refresh successful, False otherwise
         """
@@ -129,14 +163,28 @@ class MercadoLibreConnector:
                 response.raise_for_status()
 
                 token_data = response.json()
-                self.access_token = token_data['access_token']
-                self.refresh_token = token_data.get('refresh_token', self.refresh_token)
+                new_access_token = token_data['access_token']
+                new_refresh_token = token_data.get('refresh_token', self.refresh_token)
+                expires_in = token_data.get('expires_in', 21600)  # Default 6 hours
 
+                # Update in-memory tokens
+                self.access_token = new_access_token
+                self.refresh_token = new_refresh_token
                 self.last_refresh = datetime.now()
-                logger.info("Access token refreshed successfully")
 
-                # Note: In production, update environment variables through your secret management system
-                logger.warning("Token refreshed - update ML_ACCESS_TOKEN and ML_REFRESH_TOKEN in environment")
+                # Persist to database if credentials service is available
+                if self._credentials_service:
+                    try:
+                        self._credentials_service.update_mercadolibre_tokens(
+                            access_token=new_access_token,
+                            refresh_token=new_refresh_token,
+                            expires_in_seconds=expires_in
+                        )
+                        logger.info("Access token refreshed and persisted to database")
+                    except Exception as db_error:
+                        logger.warning(f"Token refreshed but failed to persist to database: {db_error}")
+                else:
+                    logger.warning("Token refreshed but credentials service not available - token not persisted")
 
                 return True
 
