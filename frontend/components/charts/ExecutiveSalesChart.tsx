@@ -11,17 +11,22 @@ interface MonthData {
   is_future?: boolean
   is_mtd?: boolean
   mtd_day?: number
-  total_revenue_full_month?: number  // For 2024: full month value when is_mtd=true
-  estimated_full_month?: number      // For 2025: estimated full month for incomplete months
+  total_revenue_full_month?: number  // For previous year: full month value when is_mtd=true
+  estimated_full_month?: number      // For current year: estimated full month for incomplete months
   confidence_lower?: number
   confidence_upper?: number
 }
 
 interface ExecutiveSalesChartProps {
-  sales_2024: MonthData[]
-  sales_2025_actual: MonthData[]
-  sales_2025_projected: MonthData[]
-  sales_2026_projected: MonthData[]
+  // Dynamic year-based props
+  sales_previous_year: MonthData[]
+  sales_current_year: MonthData[]
+  sales_current_year_projected: MonthData[]
+  sales_next_year_projected: MonthData[]
+  // Actual year values for labels
+  previous_year: number
+  current_year: number
+  next_year: number
 }
 
 // Custom label component for data points
@@ -35,36 +40,35 @@ const CustomLabel = ({ x, y, value, color }: { x?: number; y?: number; value?: n
   )
 }
 
-// Custom tooltip showing gaps between years AND projection
-const CustomTooltip = ({ active, payload, label }: any) => {
+// Custom tooltip showing gaps between years AND projection - now receives year values
+const CustomTooltip = ({ active, payload, label, previousYear, currentYear, nextYear }: any) => {
   if (!active || !payload || payload.length === 0) return null
 
-  const revenue2024 = payload.find((p: any) => p.dataKey === 'revenue_2024')?.value
-  const revenue2024Full = payload.find((p: any) => p.dataKey === 'revenue_2024_full')?.value
-  const revenue2025Actual = payload.find((p: any) => p.dataKey === 'revenue_2025_actual')?.value
-  const revenue2025Estimated = payload.find((p: any) => p.dataKey === 'revenue_2025_estimated')?.value
-  const revenue2025Projected = payload.find((p: any) => p.dataKey === 'revenue_2025_projected')?.value
-  const revenue2026Projected = payload.find((p: any) => p.dataKey === 'revenue_2026_projected')?.value
+  const revenuePrevYear = payload.find((p: any) => p.dataKey === 'revenue_previous_year')?.value
+  const revenuePrevYearFull = payload.find((p: any) => p.dataKey === 'revenue_previous_year_full')?.value
+  const revenueCurrYearActual = payload.find((p: any) => p.dataKey === 'revenue_current_year_actual')?.value
+  const revenueCurrYearEstimated = payload.find((p: any) => p.dataKey === 'revenue_current_year_estimated')?.value
+  const revenueNextYearProjected = payload.find((p: any) => p.dataKey === 'revenue_next_year_projected')?.value
 
   // Check if this is an MTD month
   const dataPoint = payload[0]?.payload
   const isMtd = dataPoint?.is_mtd
   const mtdDay = dataPoint?.mtd_day
 
-  // Calculate gap between years (2024 vs 2025)
+  // Calculate gap between years (previous vs current)
   let gapYearsAmount = 0
   let gapYearsPercent = 0
-  if (revenue2024 && revenue2025Actual) {
-    gapYearsAmount = revenue2025Actual - revenue2024
-    gapYearsPercent = ((revenue2025Actual - revenue2024) / revenue2024) * 100
+  if (revenuePrevYear && revenueCurrYearActual) {
+    gapYearsAmount = revenueCurrYearActual - revenuePrevYear
+    gapYearsPercent = ((revenueCurrYearActual - revenuePrevYear) / revenuePrevYear) * 100
   }
 
-  // Calculate gap between 2025 and 2026
-  let gap2026Amount = 0
-  let gap2026Percent = 0
-  if (revenue2025Actual && revenue2026Projected) {
-    gap2026Amount = revenue2026Projected - revenue2025Actual
-    gap2026Percent = ((revenue2026Projected - revenue2025Actual) / revenue2025Actual) * 100
+  // Calculate gap between current and next year
+  let gapNextAmount = 0
+  let gapNextPercent = 0
+  if (revenueCurrYearActual && revenueNextYearProjected) {
+    gapNextAmount = revenueNextYearProjected - revenueCurrYearActual
+    gapNextPercent = ((revenueNextYearProjected - revenueCurrYearActual) / revenueCurrYearActual) * 100
   }
 
   return (
@@ -76,74 +80,74 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
       {/* Values Section */}
       <div className="space-y-2 mb-3">
-        {revenue2024 !== undefined && revenue2024 !== null && (
+        {revenuePrevYear !== undefined && revenuePrevYear !== null && (
           <div className="flex justify-between items-center">
             <span className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full bg-gray-400"></span>
-              <span className="text-gray-600">{isMtd ? '2024 (1-' + mtdDay + '):' : '2024 Real:'}</span>
+              <span className="text-gray-600">{isMtd ? `${previousYear} (1-${mtdDay}):` : `${previousYear} Real:`}</span>
             </span>
             <span className="font-semibold text-gray-800">
-              ${revenue2024.toLocaleString('es-CL')}
+              ${revenuePrevYear.toLocaleString('es-CL')}
             </span>
           </div>
         )}
 
-        {/* Full 2024 month for MTD months */}
-        {revenue2024Full !== undefined && revenue2024Full !== null && (
+        {/* Full previous year month for MTD months */}
+        {revenuePrevYearFull !== undefined && revenuePrevYearFull !== null && (
           <div className="flex justify-between items-center">
             <span className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full bg-gray-500" style={{ border: '2px dashed #6B7280' }}></span>
-              <span className="text-gray-500 text-xs">2024 Mes completo:</span>
+              <span className="text-gray-500 text-xs">{previousYear} Mes completo:</span>
             </span>
             <span className="font-medium text-gray-600 text-sm">
-              ${revenue2024Full.toLocaleString('es-CL')}
+              ${revenuePrevYearFull.toLocaleString('es-CL')}
             </span>
           </div>
         )}
 
-        {revenue2025Actual !== undefined && revenue2025Actual !== null && (
+        {revenueCurrYearActual !== undefined && revenueCurrYearActual !== null && (
           <div className="flex justify-between items-center">
             <span className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full bg-teal-600"></span>
-              <span className="text-gray-600">{isMtd ? '2025 (1-' + mtdDay + '):' : '2025 Real:'}</span>
+              <span className="text-gray-600">{isMtd ? `${currentYear} (1-${mtdDay}):` : `${currentYear} Real:`}</span>
             </span>
             <span className="font-semibold text-teal-700">
-              ${revenue2025Actual.toLocaleString('es-CL')}
+              ${revenueCurrYearActual.toLocaleString('es-CL')}
             </span>
           </div>
         )}
 
-        {/* Estimated full 2025 month for MTD months */}
-        {revenue2025Estimated !== undefined && revenue2025Estimated !== null && (
+        {/* Estimated full current year month for MTD months */}
+        {revenueCurrYearEstimated !== undefined && revenueCurrYearEstimated !== null && (
           <div className="flex justify-between items-center">
             <span className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full bg-emerald-600" style={{ border: '2px dashed #059669' }}></span>
-              <span className="text-gray-500 text-xs">2025 Estimado mes:</span>
+              <span className="text-gray-500 text-xs">{currentYear} Estimado mes:</span>
             </span>
             <span className="font-medium text-emerald-600 text-sm">
-              ${revenue2025Estimated.toLocaleString('es-CL')}
+              ${revenueCurrYearEstimated.toLocaleString('es-CL')}
             </span>
           </div>
         )}
 
-        {revenue2026Projected !== undefined && revenue2026Projected !== null && (
+        {revenueNextYearProjected !== undefined && revenueNextYearProjected !== null && (
           <div className="flex justify-between items-center">
             <span className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full bg-purple-600"></span>
-              <span className="text-gray-600">2026 Proyección:</span>
+              <span className="text-gray-600">{nextYear} Proyección:</span>
             </span>
             <span className="font-semibold text-purple-700">
-              ${revenue2026Projected.toLocaleString('es-CL')}
+              ${revenueNextYearProjected.toLocaleString('es-CL')}
             </span>
           </div>
         )}
       </div>
 
-      {/* Diferencia Años (2024 vs 2025 Real) */}
-      {revenue2024 && revenue2025Actual && (
+      {/* Gap between previous and current year */}
+      {revenuePrevYear && revenueCurrYearActual && (
         <div className="pt-3 border-t border-gray-200">
           <div className="flex justify-between items-center">
-            <span className="text-gray-600 font-medium text-sm">2025 vs 2024:</span>
+            <span className="text-gray-600 font-medium text-sm">{currentYear} vs {previousYear}:</span>
             <div className="text-right">
               <span className={`font-bold ${gapYearsAmount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 {gapYearsAmount >= 0 ? '+' : ''}{gapYearsPercent.toFixed(1)}%
@@ -156,17 +160,17 @@ const CustomTooltip = ({ active, payload, label }: any) => {
         </div>
       )}
 
-      {/* Diferencia 2026 vs 2025 */}
-      {revenue2025Actual && revenue2026Projected && (
+      {/* Gap between current and next year */}
+      {revenueCurrYearActual && revenueNextYearProjected && (
         <div className="pt-2 mt-2 border-t border-gray-100">
           <div className="flex justify-between items-center">
-            <span className="text-gray-600 font-medium text-sm">2026 vs 2025:</span>
+            <span className="text-gray-600 font-medium text-sm">{nextYear} vs {currentYear}:</span>
             <div className="text-right">
-              <span className={`font-bold ${gap2026Amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {gap2026Amount >= 0 ? '+' : ''}{gap2026Percent.toFixed(1)}%
+              <span className={`font-bold ${gapNextAmount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {gapNextAmount >= 0 ? '+' : ''}{gapNextPercent.toFixed(1)}%
               </span>
-              <p className={`text-xs ${gap2026Amount >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                {gap2026Amount >= 0 ? '+' : ''}${Math.round(gap2026Amount).toLocaleString('es-CL')}
+              <p className={`text-xs ${gapNextAmount >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                {gapNextAmount >= 0 ? '+' : ''}${Math.round(gapNextAmount).toLocaleString('es-CL')}
               </p>
             </div>
           </div>
@@ -176,98 +180,109 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   )
 }
 
-export default function ExecutiveSalesChart({ sales_2024, sales_2025_actual, sales_2025_projected, sales_2026_projected }: ExecutiveSalesChartProps) {
-  // Combine all data for the chart
+export default function ExecutiveSalesChart({
+  sales_previous_year,
+  sales_current_year,
+  sales_current_year_projected,
+  sales_next_year_projected,
+  previous_year,
+  current_year,
+  next_year
+}: ExecutiveSalesChartProps) {
+  // Combine all data for the chart with dynamic year labels
   // Note: Backend returns MTD-adjusted values as primary for current month (DRY principle)
-  const chartData = sales_2024.map(m => ({
+  const chartData = sales_previous_year.map(m => ({
     month: m.month_name,
     monthNum: m.month,
-    revenue_2024: m.total_revenue,  // Already MTD-adjusted for current month by backend
-    revenue_2024_full: m.is_mtd ? (m.total_revenue_full_month ?? null) : null,  // Full month for MTD months (striped gray)
-    revenue_2025_actual: null as number | null,
-    revenue_2025_estimated: null as number | null,  // Estimated full month for MTD months (striped green)
-    revenue_2025_projected: null as number | null,
-    revenue_2026_projected: null as number | null,
-    confidence_lower_2026: null as number | null,
-    confidence_upper_2026: null as number | null,
+    revenue_previous_year: m.total_revenue,  // Already MTD-adjusted for current month by backend
+    revenue_previous_year_full: m.is_mtd ? (m.total_revenue_full_month ?? null) : null,  // Full month for MTD months (striped gray)
+    revenue_current_year_actual: null as number | null,
+    revenue_current_year_estimated: null as number | null,  // Estimated full month for MTD months (striped green)
+    revenue_current_year_projected: null as number | null,
+    revenue_next_year_projected: null as number | null,
+    confidence_lower_next: null as number | null,
+    confidence_upper_next: null as number | null,
     gap_years_percent: null as number | null,
     gap_years_amount: null as number | null,
-    gap_2026_percent: null as number | null,
-    gap_2026_amount: null as number | null,
+    gap_next_percent: null as number | null,
+    gap_next_amount: null as number | null,
     is_future: false,
-    is_mtd: m.is_mtd ?? false,  // Get MTD flag from 2024 data
+    is_mtd: m.is_mtd ?? false,  // Get MTD flag from previous year data
     mtd_day: m.mtd_day ?? null
   }))
 
-  // Add 2025 projected data (kept for reference but not displayed prominently)
-  sales_2025_projected.forEach(m => {
+  // Add current year projected data (kept for reference but not displayed prominently)
+  sales_current_year_projected.forEach(m => {
     const index = m.month - 1
     if (chartData[index]) {
-      chartData[index].revenue_2025_projected = m.total_revenue
+      chartData[index].revenue_current_year_projected = m.total_revenue
     }
   })
 
-  // Add 2025 actual data
+  // Add current year actual data
   // Note: Backend returns MTD-adjusted values as primary for current month (DRY principle)
-  sales_2025_actual.forEach(m => {
+  sales_current_year.forEach(m => {
     const index = m.month - 1
     if (chartData[index]) {
-      chartData[index].revenue_2025_actual = m.total_revenue
+      chartData[index].revenue_current_year_actual = m.total_revenue
       chartData[index].is_mtd = m.is_mtd ?? false
       chartData[index].mtd_day = m.mtd_day ?? null
 
       // For incomplete months, add estimated full month (striped green line)
       if (m.is_mtd && m.estimated_full_month) {
-        chartData[index].revenue_2025_estimated = m.estimated_full_month
-        // Extend to November using November's ACTUAL value so line connects properly
-        if (index > 0 && chartData[index - 1].revenue_2025_actual) {
-          chartData[index - 1].revenue_2025_estimated = chartData[index - 1].revenue_2025_actual
+        chartData[index].revenue_current_year_estimated = m.estimated_full_month
+        // Extend to previous month using that month's ACTUAL value so line connects properly
+        if (index > 0 && chartData[index - 1].revenue_current_year_actual) {
+          chartData[index - 1].revenue_current_year_estimated = chartData[index - 1].revenue_current_year_actual
         }
       }
 
-      // Calculate gap vs 2024
-      // Backend already returns MTD-adjusted 2024 value for current month, so just use revenue_2024
-      const rev2024 = chartData[index].revenue_2024
-      if (rev2024) {
-        chartData[index].gap_years_percent = ((m.total_revenue - rev2024) / rev2024) * 100
-        chartData[index].gap_years_amount = m.total_revenue - rev2024
+      // Calculate gap vs previous year
+      // Backend already returns MTD-adjusted previous year value for current month
+      const revPrev = chartData[index].revenue_previous_year
+      if (revPrev) {
+        chartData[index].gap_years_percent = ((m.total_revenue - revPrev) / revPrev) * 100
+        chartData[index].gap_years_amount = m.total_revenue - revPrev
       }
     }
   })
 
-  // Extend 2024 full month values to previous month using November's ACTUAL value
+  // Extend previous year full month values to prior month using that month's ACTUAL value
   chartData.forEach((d, index) => {
-    if (d.is_mtd && d.revenue_2024_full && index > 0) {
-      // Use November's actual 2024 value so line connects from Nov actual to Dec full
-      chartData[index - 1].revenue_2024_full = chartData[index - 1].revenue_2024
+    if (d.is_mtd && d.revenue_previous_year_full && index > 0) {
+      // Use prior month's actual previous year value so line connects properly
+      chartData[index - 1].revenue_previous_year_full = chartData[index - 1].revenue_previous_year
     }
   })
 
-  // Add 2026 projected data and calculate gaps vs 2025
-  sales_2026_projected.forEach(m => {
+  // Add next year projected data and calculate gaps vs current year
+  sales_next_year_projected.forEach(m => {
     const index = m.month - 1
     if (chartData[index]) {
-      chartData[index].revenue_2026_projected = m.total_revenue
-      chartData[index].confidence_lower_2026 = m.confidence_lower ?? null
-      chartData[index].confidence_upper_2026 = m.confidence_upper ?? null
+      chartData[index].revenue_next_year_projected = m.total_revenue
+      chartData[index].confidence_lower_next = m.confidence_lower ?? null
+      chartData[index].confidence_upper_next = m.confidence_upper ?? null
 
-      // Calculate gap vs 2025 actual
-      const rev2025 = chartData[index].revenue_2025_actual
-      if (rev2025) {
-        chartData[index].gap_2026_percent = ((m.total_revenue - rev2025) / rev2025) * 100
-        chartData[index].gap_2026_amount = m.total_revenue - rev2025
+      // Calculate gap vs current year actual
+      const revCurr = chartData[index].revenue_current_year_actual
+      if (revCurr) {
+        chartData[index].gap_next_percent = ((m.total_revenue - revCurr) / revCurr) * 100
+        chartData[index].gap_next_amount = m.total_revenue - revCurr
       }
     }
   })
+
+  // Get current month name for dynamic labels
+  const currentMonthName = chartData.find(d => d.is_mtd)?.month || 'Mes actual'
 
   return (
     <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
       <div className="mb-6">
         <h2 className="text-xl font-bold text-gray-900 mb-2">
-          Comparación de Ventas y Proyección 2026
+          Comparación de Ventas y Proyección {next_year}
         </h2>
         <p className="text-sm text-gray-600">
-          Datos reales de 2024 y 2025, con proyección 2026 basada en crecimiento YoY. Hover sobre cada punto para ver las diferencias.
+          Datos reales de {previous_year} y {current_year}, con proyección {next_year} basada en crecimiento YoY. Hover sobre cada punto para ver las diferencias.
         </p>
       </div>
 
@@ -285,108 +300,108 @@ export default function ExecutiveSalesChart({ sales_2024, sales_2025_actual, sal
             stroke="#6B7280"
             domain={['auto', 'auto']}
           />
-          <Tooltip content={<CustomTooltip />} />
+          <Tooltip content={<CustomTooltip previousYear={previous_year} currentYear={current_year} nextYear={next_year} />} />
           <Legend
             wrapperStyle={{ paddingTop: '20px' }}
             iconType="line"
           />
 
-          {/* Confidence interval area for 2026 projections - light purple */}
+          {/* Confidence interval area for next year projections - light purple */}
           <Area
             type="monotone"
-            dataKey="confidence_upper_2026"
+            dataKey="confidence_upper_next"
             stroke="none"
             fill="#9333EA"
             fillOpacity={0.1}
-            name="Rango de confianza 2026"
+            name={`Rango de confianza ${next_year}`}
             legendType="none"
           />
           <Area
             type="monotone"
-            dataKey="confidence_lower_2026"
+            dataKey="confidence_lower_next"
             stroke="none"
             fill="white"
             fillOpacity={1}
             legendType="none"
           />
 
-          {/* 2024 actual line - GRAY solid */}
+          {/* Previous year actual line - GRAY solid */}
           <Line
             type="monotone"
-            dataKey="revenue_2024"
+            dataKey="revenue_previous_year"
             stroke="#9CA3AF"
             strokeWidth={2}
-            name="2024 (Real)"
+            name={`${previous_year} (Real)`}
             dot={{ r: 4, fill: '#9CA3AF', strokeWidth: 1, stroke: '#6B7280' }}
             activeDot={{ r: 7, fill: '#6B7280' }}
           />
 
-          {/* 2025 actual line - TEAL solid */}
+          {/* Current year actual line - TEAL solid */}
           <Line
             type="monotone"
-            dataKey="revenue_2025_actual"
+            dataKey="revenue_current_year_actual"
             stroke="#0D9488"
             strokeWidth={3}
-            name="2025 (Real)"
+            name={`${current_year} (Real)`}
             dot={{ r: 5, fill: '#0D9488', strokeWidth: 2, stroke: '#115E59' }}
             activeDot={{ r: 8, fill: '#115E59' }}
             label={<CustomLabel color="#0D9488" />}
           />
 
-          {/* 2026 projected line - PURPLE dashed */}
+          {/* Next year projected line - PURPLE dashed */}
           <Line
             type="monotone"
-            dataKey="revenue_2026_projected"
+            dataKey="revenue_next_year_projected"
             stroke="#9333EA"
             strokeWidth={3}
             strokeDasharray="8 4"
-            name="2026 (Proyección)"
+            name={`${next_year} (Proyección)`}
             dot={{ r: 5, fill: '#9333EA', strokeWidth: 2, stroke: '#7C3AED' }}
             activeDot={{ r: 8, fill: '#7C3AED' }}
             label={<CustomLabel color="#9333EA" />}
           />
 
-          {/* Striped gray line for full 2024 month (incomplete months only) */}
+          {/* Striped gray line for full previous year month (incomplete months only) */}
           <Line
             type="monotone"
-            dataKey="revenue_2024_full"
+            dataKey="revenue_previous_year_full"
             stroke="#6B7280"
             strokeWidth={2}
             strokeDasharray="5 5"
-            name="2024 Mes completo"
+            name={`${previous_year} Mes completo`}
             dot={(props: any) => {
-              // Only show dot at December (MTD month), not at November
+              // Only show dot at MTD month
               if (!props.payload?.is_mtd) return null
-              return <circle key={`dot-2024-full-${props.index}`} cx={props.cx} cy={props.cy} r={5} fill="#6B7280" stroke="#4B5563" strokeWidth={2} />
+              return <circle key={`dot-prev-full-${props.index}`} cx={props.cx} cy={props.cy} r={5} fill="#6B7280" stroke="#4B5563" strokeWidth={2} />
             }}
             connectNulls={false}
             legendType="none"
             label={(props: any) => {
-              // Only show label at December (MTD month)
+              // Only show label at MTD month
               if (!props.payload?.is_mtd) return null
-              return <CustomLabel key={`label-2024-full-${props.index}`} {...props} color="#6B7280" />
+              return <CustomLabel key={`label-prev-full-${props.index}`} {...props} color="#6B7280" />
             }}
           />
 
-          {/* Striped green line for estimated 2025 full month (incomplete months only) */}
+          {/* Striped green line for estimated current year full month (incomplete months only) */}
           <Line
             type="monotone"
-            dataKey="revenue_2025_estimated"
+            dataKey="revenue_current_year_estimated"
             stroke="#059669"
             strokeWidth={2}
             strokeDasharray="5 5"
-            name="2025 Estimado"
+            name={`${current_year} Estimado`}
             dot={(props: any) => {
-              // Only show dot at December (MTD month), not at November
+              // Only show dot at MTD month
               if (!props.payload?.is_mtd) return null
-              return <circle key={`dot-2025-est-${props.index}`} cx={props.cx} cy={props.cy} r={5} fill="#059669" stroke="#047857" strokeWidth={2} />
+              return <circle key={`dot-curr-est-${props.index}`} cx={props.cx} cy={props.cy} r={5} fill="#059669" stroke="#047857" strokeWidth={2} />
             }}
             connectNulls={false}
             legendType="none"
             label={(props: any) => {
-              // Only show label at December (MTD month)
+              // Only show label at MTD month
               if (!props.payload?.is_mtd) return null
-              return <CustomLabel key={`label-2025-est-${props.index}`} {...props} color="#059669" />
+              return <CustomLabel key={`label-curr-est-${props.index}`} {...props} color="#059669" />
             }}
           />
         </ComposedChart>
@@ -398,17 +413,17 @@ export default function ExecutiveSalesChart({ sales_2024, sales_2025_actual, sal
           <div className="flex items-center gap-2">
             <div className="w-10 h-1 bg-gray-400 rounded"></div>
             <div className="w-3 h-3 rounded-full bg-gray-400 -ml-2"></div>
-            <span className="text-gray-700 font-medium">2024 Real</span>
+            <span className="text-gray-700 font-medium">{previous_year} Real</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-10 h-1 bg-teal-600 rounded"></div>
             <div className="w-3 h-3 rounded-full bg-teal-600 -ml-2"></div>
-            <span className="text-gray-700 font-medium">2025 Real</span>
+            <span className="text-gray-700 font-medium">{current_year} Real</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-10 h-1 bg-purple-600 rounded" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #9333EA 0px, #9333EA 6px, transparent 6px, transparent 10px)' }}></div>
             <div className="w-3 h-3 rounded-full bg-purple-600 -ml-2"></div>
-            <span className="text-gray-700 font-medium">2026 Proyección</span>
+            <span className="text-gray-700 font-medium">{next_year} Proyección</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-8 h-4 bg-purple-100 rounded border border-purple-200"></div>
@@ -418,27 +433,27 @@ export default function ExecutiveSalesChart({ sales_2024, sales_2025_actual, sal
         {/* Striped lines legend for incomplete months */}
         {chartData.some(d => d.is_mtd) && (
           <div className="flex flex-wrap items-center justify-center gap-6 text-sm mt-3 pt-3 border-t border-gray-100">
-            <span className="text-xs text-gray-500 font-medium">Mes en curso (Diciembre):</span>
+            <span className="text-xs text-gray-500 font-medium">Mes en curso ({currentMonthName}):</span>
             <div className="flex items-center gap-2">
               <div className="w-8 h-0.5 rounded" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #6B7280 0px, #6B7280 4px, transparent 4px, transparent 8px)' }}></div>
               <div className="w-2.5 h-2.5 rounded-full bg-gray-500 -ml-1"></div>
-              <span className="text-gray-600 text-xs">2024 Mes completo</span>
+              <span className="text-gray-600 text-xs">{previous_year} Mes completo</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-8 h-0.5 rounded" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #059669 0px, #059669 4px, transparent 4px, transparent 8px)' }}></div>
               <div className="w-2.5 h-2.5 rounded-full bg-emerald-600 -ml-1"></div>
-              <span className="text-gray-600 text-xs">2025 Estimado mes completo</span>
+              <span className="text-gray-600 text-xs">{current_year} Estimado mes completo</span>
             </div>
           </div>
         )}
       </div>
 
-      {/* Diferencia Años - 2024 vs 2025 Real */}
+      {/* Gap between previous and current year */}
       <div className="mt-6 pt-4 border-t border-gray-200">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">Diferencia Años (2025 Real vs 2024):</h3>
+        <h3 className="text-sm font-semibold text-gray-700 mb-3">Diferencia Años ({current_year} Real vs {previous_year}):</h3>
         <div className="grid grid-cols-6 md:grid-cols-12 gap-2 text-xs">
           {chartData.map((d, idx) => {
-            const hasData = d.revenue_2025_actual !== null
+            const hasData = d.revenue_current_year_actual !== null
             const formatAmount = (amount: number) => {
               const absAmount = Math.abs(amount)
               if (absAmount >= 1000000) {
@@ -479,14 +494,14 @@ export default function ExecutiveSalesChart({ sales_2024, sales_2025_actual, sal
         </div>
       </div>
 
-      {/* Diferencia Proyección 2026 - 2026 Proyección vs 2025 Real */}
+      {/* Gap between current and next year projections */}
       <div className="mt-4 pt-4 border-t border-gray-200">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">Crecimiento Proyectado 2026 (vs 2025 Real):</h3>
+        <h3 className="text-sm font-semibold text-gray-700 mb-3">Crecimiento Proyectado {next_year} (vs {current_year} Real):</h3>
         <div className="grid grid-cols-6 md:grid-cols-12 gap-2 text-xs">
           {chartData.map((d, idx) => {
-            const has2025 = d.revenue_2025_actual !== null
-            const has2026 = d.revenue_2026_projected !== null
-            const hasComparison = has2025 && has2026
+            const hasCurr = d.revenue_current_year_actual !== null
+            const hasNext = d.revenue_next_year_projected !== null
+            const hasComparison = hasCurr && hasNext
             const formatAmount = (amount: number) => {
               const absAmount = Math.abs(amount)
               if (absAmount >= 1000000) {
@@ -504,13 +519,13 @@ export default function ExecutiveSalesChart({ sales_2024, sales_2025_actual, sal
                 }`}
               >
                 <div className="font-medium text-gray-600">{d.month.substring(0, 3)}</div>
-                {hasComparison && d.gap_2026_percent !== null && d.gap_2026_amount !== null ? (
+                {hasComparison && d.gap_next_percent !== null && d.gap_next_amount !== null ? (
                   <>
-                    <div className={`font-bold ${d.gap_2026_percent >= 0 ? 'text-purple-600' : 'text-red-600'}`}>
-                      {d.gap_2026_percent >= 0 ? '+' : ''}{d.gap_2026_percent.toFixed(0)}%
+                    <div className={`font-bold ${d.gap_next_percent >= 0 ? 'text-purple-600' : 'text-red-600'}`}>
+                      {d.gap_next_percent >= 0 ? '+' : ''}{d.gap_next_percent.toFixed(0)}%
                     </div>
-                    <div className={`text-[10px] ${d.gap_2026_amount >= 0 ? 'text-purple-500' : 'text-red-500'}`}>
-                      {formatAmount(d.gap_2026_amount)}
+                    <div className={`text-[10px] ${d.gap_next_amount >= 0 ? 'text-purple-500' : 'text-red-500'}`}>
+                      {formatAmount(d.gap_next_amount)}
                     </div>
                   </>
                 ) : (

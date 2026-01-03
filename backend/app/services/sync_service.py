@@ -843,7 +843,7 @@ class SyncService:
                                 cursor.execute("""
                                     SELECT c.id, ccr.channel_name
                                     FROM customer_channel_rules ccr
-                                    JOIN channels c ON c.external_id = ccr.channel_external_id
+                                    JOIN channels c ON c.external_id = ccr.channel_external_id::text
                                     WHERE ccr.customer_external_id = %s AND ccr.is_active = true
                                 """, (str(customer_id_relbase),))
                                 rule_result = cursor.fetchone()

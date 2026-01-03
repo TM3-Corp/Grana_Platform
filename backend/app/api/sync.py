@@ -367,7 +367,9 @@ async def debug_relbase_connectivity():
             "error": str(e)
         })
 
-    # Test 2: DTEs endpoint (what sync uses)
+    # Test 2: DTEs endpoint - check RECENT data (last 7 days dynamically)
+    today = datetime.now().date()
+    week_ago = today - timedelta(days=7)
     try:
         start = time.time()
         response = requests.get(
@@ -375,26 +377,36 @@ async def debug_relbase_connectivity():
             headers=headers,
             params={
                 'type_document': 33,
-                'start_date': '2025-12-20',
-                'end_date': '2025-12-22',
+                'start_date': week_ago.isoformat(),
+                'end_date': today.isoformat(),
                 'page': 1,
-                'per_page': 5
+                'per_page': 50
             },
             timeout=60
         )
         elapsed = round(time.time() - start, 2)
         data = response.json() if response.status_code == 200 else {}
-        dtes_count = len(data.get('data', {}).get('dtes', []))
+        dtes = data.get('data', {}).get('dtes', [])
+        dtes_count = len(dtes)
+
+        # Group DTEs by date
+        dates_summary = {}
+        for dte in dtes:
+            created = dte.get('created_at', '')[:10] if dte.get('created_at') else 'unknown'
+            dates_summary[created] = dates_summary.get(created, 0) + 1
+
         results["tests"].append({
-            "test": "dtes_endpoint",
+            "test": "dtes_endpoint_recent",
             "status_code": response.status_code,
             "elapsed_seconds": elapsed,
             "success": response.status_code == 200,
-            "dtes_returned": dtes_count
+            "date_range": f"{week_ago} to {today}",
+            "dtes_returned": dtes_count,
+            "dtes_by_date": dates_summary
         })
     except Exception as e:
         results["tests"].append({
-            "test": "dtes_endpoint",
+            "test": "dtes_endpoint_recent",
             "success": False,
             "error": str(e)
         })

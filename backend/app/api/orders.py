@@ -132,11 +132,15 @@ async def get_executive_kpis(
     Get executive dashboard KPIs with sales projections
 
     Returns:
-    - Monthly data for 2024 (all 12 months)
-    - Monthly data for 2025 (up to current month)
-    - Projected data for remaining 2025 months
+    - Monthly data for previous year (all 12 months) - "baseline year"
+    - Monthly data for current year (up to current month) - "comparison year"
+    - Projected data for next year
     - KPIs with YoY comparisons
     - Supports product family filtering
+
+    DYNAMIC YEARS: Automatically adjusts based on current date
+    - If current year is 2026: compares 2025 vs 2026, projects 2027
+    - If current year is 2025: compares 2024 vs 2025, projects 2026
 
     Uses exponential smoothing with seasonal adjustment for projections.
 
@@ -151,82 +155,105 @@ async def get_executive_kpis(
         conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
-        # Build WHERE clause for product family filter
-        # Uses sales_facts_mv which has proper category from product_catalog + sku_mappings
-        family_filter = ""
-        params_2024 = []
-        params_2025 = []
-
-        if product_family and product_family.upper() != "TODAS":
-            family_filter = "AND category = %s"
-            params_2024 = [product_family.upper()]
-            params_2025 = [product_family.upper()]
-
-        # Get 2024 monthly data from sales_facts_mv
-        query_2024 = f"""
-            SELECT
-                DATE_TRUNC('month', order_date)::date as month,
-                COUNT(DISTINCT order_id) as total_orders,
-                COALESCE(SUM(revenue), 0) as total_revenue
-            FROM sales_facts_mv
-            WHERE EXTRACT(YEAR FROM order_date) = 2024
-            AND source = 'relbase'
-            {family_filter}
-            GROUP BY DATE_TRUNC('month', order_date)
-            ORDER BY month
-        """
-
-        cursor.execute(query_2024, params_2024)
-        data_2024 = cursor.fetchall()
-
-        # Get 2025 monthly data from sales_facts_mv
-        query_2025 = f"""
-            SELECT
-                DATE_TRUNC('month', order_date)::date as month,
-                COUNT(DISTINCT order_id) as total_orders,
-                COALESCE(SUM(revenue), 0) as total_revenue
-            FROM sales_facts_mv
-            WHERE EXTRACT(YEAR FROM order_date) = 2025
-            AND source = 'relbase'
-            {family_filter}
-            GROUP BY DATE_TRUNC('month', order_date)
-            ORDER BY month
-        """
-
-        cursor.execute(query_2025, params_2025)
-        data_2025 = cursor.fetchall()
-
-        # Process data
+        # Process data - DYNAMIC YEAR CALCULATION
         current_date = datetime.now()
         current_month = current_date.month
         current_day = current_date.day
         current_year = current_date.year
 
-        # Create lookup dictionaries
-        monthly_2024 = {row['month'].month: row for row in data_2024}
-        monthly_2025 = {row['month'].month: row for row in data_2025}
+        # Dynamic year assignments
+        previous_year = current_year - 1  # e.g., 2025 when current is 2026
+        next_year = current_year + 1      # e.g., 2027 when current is 2026
 
-        # FAIR COMPARISON FIX: For the current month, get 2024 data only up to the same day
-        # This ensures we compare Dec 1-17, 2024 with Dec 1-17, 2025 (not full Dec 2024 vs partial Dec 2025)
-        monthly_2024_mtd = {}  # Month-to-date adjusted data for current month
-        if current_month in monthly_2024:
-            # Query 2024 current month with same date range (day 1 to current_day) from sales_facts_mv
-            query_2024_mtd = f"""
+        # Build WHERE clause for product family filter
+        # Uses sales_facts_mv which has proper category from product_catalog + sku_mappings
+        family_filter = ""
+        params_prev = []
+        params_curr = []
+
+        if product_family and product_family.upper() != "TODAS":
+            family_filter = "AND category = %s"
+            params_prev = [product_family.upper()]
+            params_curr = [product_family.upper()]
+
+        # Get PREVIOUS YEAR monthly data from sales_facts_mv (e.g., 2025)
+        query_prev_year = f"""
+            SELECT
+                DATE_TRUNC('month', order_date)::date as month,
+                COUNT(DISTINCT order_id) as total_orders,
+                COALESCE(SUM(revenue), 0) as total_revenue
+            FROM sales_facts_mv
+            WHERE EXTRACT(YEAR FROM order_date) = %s
+            AND source = 'relbase'
+            {family_filter}
+            GROUP BY DATE_TRUNC('month', order_date)
+            ORDER BY month
+        """
+
+        cursor.execute(query_prev_year, [previous_year] + params_prev)
+        data_prev_year = cursor.fetchall()
+
+        # Get CURRENT YEAR monthly data from sales_facts_mv (e.g., 2026)
+        query_curr_year = f"""
+            SELECT
+                DATE_TRUNC('month', order_date)::date as month,
+                COUNT(DISTINCT order_id) as total_orders,
+                COALESCE(SUM(revenue), 0) as total_revenue
+            FROM sales_facts_mv
+            WHERE EXTRACT(YEAR FROM order_date) = %s
+            AND source = 'relbase'
+            {family_filter}
+            GROUP BY DATE_TRUNC('month', order_date)
+            ORDER BY month
+        """
+
+        cursor.execute(query_curr_year, [current_year] + params_curr)
+        data_curr_year = cursor.fetchall()
+
+        # Get YEAR BEFORE PREVIOUS (e.g., 2024) for historical growth calculation
+        # This is needed when current year has no data (beginning of year edge case)
+        year_before_previous = previous_year - 1
+        query_ybp = f"""
+            SELECT
+                DATE_TRUNC('month', order_date)::date as month,
+                COUNT(DISTINCT order_id) as total_orders,
+                COALESCE(SUM(revenue), 0) as total_revenue
+            FROM sales_facts_mv
+            WHERE EXTRACT(YEAR FROM order_date) = %s
+            AND source = 'relbase'
+            {family_filter}
+            GROUP BY DATE_TRUNC('month', order_date)
+            ORDER BY month
+        """
+        cursor.execute(query_ybp, [year_before_previous] + params_prev)
+        data_ybp = cursor.fetchall()
+        monthly_ybp = {row['month'].month: row for row in data_ybp}
+
+        # Create lookup dictionaries
+        monthly_prev = {row['month'].month: row for row in data_prev_year}
+        monthly_curr = {row['month'].month: row for row in data_curr_year}
+
+        # FAIR COMPARISON FIX: For the current month, get previous year data only up to the same day
+        # This ensures we compare Jan 1-3, 2025 with Jan 1-3, 2026 (not full Jan 2025 vs partial Jan 2026)
+        monthly_prev_mtd = {}  # Month-to-date adjusted data for current month
+        if current_month in monthly_prev:
+            # Query previous year current month with same date range (day 1 to current_day) from sales_facts_mv
+            query_prev_mtd = f"""
                 SELECT
                     COUNT(DISTINCT order_id) as total_orders,
                     COALESCE(SUM(revenue), 0) as total_revenue
                 FROM sales_facts_mv
-                WHERE EXTRACT(YEAR FROM order_date) = 2024
+                WHERE EXTRACT(YEAR FROM order_date) = %s
                 AND EXTRACT(MONTH FROM order_date) = %s
                 AND EXTRACT(DAY FROM order_date) <= %s
                 AND source = 'relbase'
                 {family_filter}
             """
-            mtd_params = [current_month, current_day] + params_2024
-            cursor.execute(query_2024_mtd, mtd_params)
+            mtd_params = [previous_year, current_month, current_day] + params_prev
+            cursor.execute(query_prev_mtd, mtd_params)
             mtd_result = cursor.fetchone()
             if mtd_result:
-                monthly_2024_mtd[current_month] = {
+                monthly_prev_mtd[current_month] = {
                     'total_orders': mtd_result['total_orders'],
                     'total_revenue': mtd_result['total_revenue']
                 }
@@ -235,43 +262,63 @@ async def get_executive_kpis(
         # Use MTD-adjusted data for the current month to ensure fair comparison
         growth_rates = []
         for month in range(1, min(current_month + 1, 13)):
-            if month in monthly_2024 and month in monthly_2025:
-                # For current month, use MTD-adjusted 2024 data for fair comparison
-                if month == current_month and month in monthly_2024_mtd:
-                    rev_2024 = float(monthly_2024_mtd[month]['total_revenue'])
+            if month in monthly_prev and month in monthly_curr:
+                # For current month, use MTD-adjusted previous year data for fair comparison
+                if month == current_month and month in monthly_prev_mtd:
+                    rev_prev = float(monthly_prev_mtd[month]['total_revenue'])
                 else:
-                    rev_2024 = float(monthly_2024[month]['total_revenue'])
-                rev_2025 = float(monthly_2025[month]['total_revenue'])
-                if rev_2024 > 0:
-                    growth_rate = ((rev_2025 - rev_2024) / rev_2024) * 100
+                    rev_prev = float(monthly_prev[month]['total_revenue'])
+                rev_curr = float(monthly_curr[month]['total_revenue'])
+                if rev_prev > 0:
+                    growth_rate = ((rev_curr - rev_prev) / rev_prev) * 100
                     growth_rates.append(growth_rate)
 
+        # Check if current year has meaningful data
+        current_year_total = sum([float(row['total_revenue']) for row in monthly_curr.values()])
+
+        # FALLBACK: If current year has no meaningful data (start of year edge case),
+        # calculate historical growth from year_before_previous to previous_year (e.g., 2024→2025)
+        historical_growth_rates = []
+        if current_year_total < 1000:  # Less than $1000 = essentially no data
+            for month in range(1, 13):
+                if month in monthly_ybp and month in monthly_prev:
+                    rev_ybp = float(monthly_ybp[month]['total_revenue'])
+                    rev_prev = float(monthly_prev[month]['total_revenue'])
+                    if rev_ybp > 0:
+                        growth_rate = ((rev_prev - rev_ybp) / rev_ybp) * 100
+                        historical_growth_rates.append(growth_rate)
+
         # Calculate average growth rate and std dev for projections
-        avg_growth_rate = statistics.mean(growth_rates) if growth_rates else 0
-        std_dev = statistics.stdev(growth_rates) if len(growth_rates) > 1 else 10
+        # Use historical growth rates when current year has no data
+        if historical_growth_rates and not growth_rates:
+            avg_growth_rate = statistics.mean(historical_growth_rates)
+            std_dev = statistics.stdev(historical_growth_rates) if len(historical_growth_rates) > 1 else 10
+        else:
+            avg_growth_rate = statistics.mean(growth_rates) if growth_rates else 0
+            std_dev = statistics.stdev(growth_rates) if len(growth_rates) > 1 else 10
 
         # Build response data
-        sales_by_month_2024 = []
-        sales_by_month_2025 = []
-        projections_2025 = []
+        sales_by_month_prev = []
+        sales_by_month_curr = []
+        projections_curr = []
 
-        # 2024 data (all 12 months)
+        # PREVIOUS YEAR data (all 12 months) - e.g., 2025 when current year is 2026
         # FAIR COMPARISON: For current month, use MTD value as primary (chart shows this directly)
         for month in range(1, 13):
-            month_name = datetime(2024, month, 1).strftime('%b')
+            month_name = datetime(previous_year, month, 1).strftime('%b')
             is_current_month = (month == current_month)
 
-            if month in monthly_2024:
+            if month in monthly_prev:
                 # For current month, use MTD-adjusted value as primary so chart shows fair comparison
-                if is_current_month and month in monthly_2024_mtd:
+                if is_current_month and month in monthly_prev_mtd:
                     entry = {
                         'month': month,
                         'month_name': month_name,
-                        'year': 2024,
-                        'total_orders': monthly_2024_mtd[month]['total_orders'],
-                        'total_revenue': float(monthly_2024_mtd[month]['total_revenue']),  # MTD value as primary
-                        'total_revenue_full_month': float(monthly_2024[month]['total_revenue']),  # Keep full month for reference
-                        'total_orders_full_month': monthly_2024[month]['total_orders'],
+                        'year': previous_year,
+                        'total_orders': monthly_prev_mtd[month]['total_orders'],
+                        'total_revenue': float(monthly_prev_mtd[month]['total_revenue']),  # MTD value as primary
+                        'total_revenue_full_month': float(monthly_prev[month]['total_revenue']),  # Keep full month for reference
+                        'total_orders_full_month': monthly_prev[month]['total_orders'],
                         'is_mtd': True,
                         'mtd_day': current_day,
                     }
@@ -279,66 +326,66 @@ async def get_executive_kpis(
                     entry = {
                         'month': month,
                         'month_name': month_name,
-                        'year': 2024,
-                        'total_orders': monthly_2024[month]['total_orders'],
-                        'total_revenue': float(monthly_2024[month]['total_revenue']),
+                        'year': previous_year,
+                        'total_orders': monthly_prev[month]['total_orders'],
+                        'total_revenue': float(monthly_prev[month]['total_revenue']),
                     }
-                sales_by_month_2024.append(entry)
+                sales_by_month_prev.append(entry)
             else:
-                sales_by_month_2024.append({
+                sales_by_month_prev.append({
                     'month': month,
                     'month_name': month_name,
-                    'year': 2024,
+                    'year': previous_year,
                     'total_orders': 0,
                     'total_revenue': 0,
                 })
 
-        # 2025 actual data (up to current month)
+        # CURRENT YEAR actual data (up to current month) - e.g., 2026
         for month in range(1, current_month + 1):
-            month_name = datetime(2025, month, 1).strftime('%b')
-            is_current_month = (month == current_month)
+            month_name = datetime(current_year, month, 1).strftime('%b')
+            is_current_month_flag = (month == current_month)
 
-            if month in monthly_2025:
+            if month in monthly_curr:
                 entry = {
                     'month': month,
                     'month_name': month_name,
-                    'year': 2025,
-                    'total_orders': monthly_2025[month]['total_orders'],
-                    'total_revenue': float(monthly_2025[month]['total_revenue']),
+                    'year': current_year,
+                    'total_orders': monthly_curr[month]['total_orders'],
+                    'total_revenue': float(monthly_curr[month]['total_revenue']),
                     'is_actual': True,
-                    'is_mtd': is_current_month,  # Mark current month as month-to-date
+                    'is_mtd': is_current_month_flag,  # Mark current month as month-to-date
                 }
-                if is_current_month:
+                if is_current_month_flag:
                     entry['mtd_day'] = current_day
-                    # For incomplete month, estimate full month based on 2024 pattern
-                    if month in monthly_2024 and month in monthly_2024_mtd:
-                        mtd_2024 = float(monthly_2024_mtd[month]['total_revenue'])
-                        full_2024 = float(monthly_2024[month]['total_revenue'])
-                        if mtd_2024 > 0:
-                            mtd_ratio = mtd_2024 / full_2024
-                            entry['estimated_full_month'] = float(monthly_2025[month]['total_revenue']) / mtd_ratio
-                sales_by_month_2025.append(entry)
+                    # For incomplete month, estimate full month based on previous year pattern
+                    if month in monthly_prev and month in monthly_prev_mtd:
+                        mtd_prev = float(monthly_prev_mtd[month]['total_revenue'])
+                        full_prev = float(monthly_prev[month]['total_revenue'])
+                        if mtd_prev > 0:
+                            mtd_ratio = mtd_prev / full_prev
+                            entry['estimated_full_month'] = float(monthly_curr[month]['total_revenue']) / mtd_ratio
+                sales_by_month_curr.append(entry)
             else:
-                sales_by_month_2025.append({
+                sales_by_month_curr.append({
                     'month': month,
                     'month_name': month_name,
-                    'year': 2025,
+                    'year': current_year,
                     'total_orders': 0,
                     'total_revenue': 0,
                     'is_actual': True,
-                    'is_mtd': is_current_month,
+                    'is_mtd': is_current_month_flag,
                 })
 
-        # 2025 projected data for ALL 12 months (based on 2024 + growth rate)
+        # CURRENT YEAR projected data for ALL 12 months (based on previous year + growth rate)
         # This allows comparison of actual vs projected for past months too
         for month in range(1, 13):
-            month_name = datetime(2025, month, 1).strftime('%b')
-            is_future_month = month > current_month if current_year == 2025 else False
+            month_name = datetime(current_year, month, 1).strftime('%b')
+            is_future_month = month > current_month
 
-            # Use same month from 2024 as baseline
-            if month in monthly_2024:
-                baseline_revenue = float(monthly_2024[month]['total_revenue'])
-                baseline_orders = monthly_2024[month]['total_orders']
+            # Use same month from previous year as baseline
+            if month in monthly_prev:
+                baseline_revenue = float(monthly_prev[month]['total_revenue'])
+                baseline_orders = monthly_prev[month]['total_orders']
 
                 # Apply growth rate
                 projected_revenue = baseline_revenue * (1 + avg_growth_rate / 100)
@@ -348,10 +395,10 @@ async def get_executive_kpis(
                 confidence_lower = projected_revenue * (1 - std_dev / 100)
                 confidence_upper = projected_revenue * (1 + std_dev / 100)
 
-                projections_2025.append({
+                projections_curr.append({
                     'month': month,
                     'month_name': month_name,
-                    'year': 2025,
+                    'year': current_year,
                     'total_orders': projected_orders,
                     'total_revenue': projected_revenue,
                     'is_actual': False,
@@ -362,18 +409,18 @@ async def get_executive_kpis(
                     'growth_rate_applied': avg_growth_rate
                 })
             else:
-                # No baseline data, use average from 2025 so far
-                if monthly_2025:
-                    avg_revenue = statistics.mean([float(row['total_revenue']) for row in monthly_2025.values()])
-                    avg_orders = int(statistics.mean([row['total_orders'] for row in monthly_2025.values()]))
+                # No baseline data, use average from current year so far
+                if monthly_curr:
+                    avg_revenue = statistics.mean([float(row['total_revenue']) for row in monthly_curr.values()])
+                    avg_orders = int(statistics.mean([row['total_orders'] for row in monthly_curr.values()]))
                 else:
                     avg_revenue = 0
                     avg_orders = 0
 
-                projections_2025.append({
+                projections_curr.append({
                     'month': month,
                     'month_name': month_name,
-                    'year': 2025,
+                    'year': current_year,
                     'total_orders': avg_orders,
                     'total_revenue': float(avg_revenue),
                     'is_actual': False,
@@ -384,70 +431,56 @@ async def get_executive_kpis(
                     'growth_rate_applied': 0
                 })
 
-        # 2026 projected data (NEXT YEAR projections based on 2025 actual + growth rate)
-        # Calculate 2025 vs 2024 growth rate for next year projection
-        # Use MTD-adjusted data for current month to ensure fair comparison
-        growth_rates_2025 = []
+        # NEXT YEAR projected data (projections based on current year actual + growth rate)
+        # Calculate MONTH-SPECIFIC growth rates (current vs previous year) for more accurate projections
+        # Each month uses its own YoY growth rate instead of a uniform average
+        growth_rates_by_month = {}  # {month: growth_rate}
+        growth_rates_list = []  # For calculating average fallback
         for month in range(1, 13):
-            if month in monthly_2024 and month in monthly_2025:
-                # For current month, use MTD-adjusted 2024 data for fair comparison
-                if month == current_month and month in monthly_2024_mtd:
-                    rev_2024 = float(monthly_2024_mtd[month]['total_revenue'])
+            if month in monthly_prev and month in monthly_curr:
+                # For current month, use MTD-adjusted previous year data for fair comparison
+                if month == current_month and month in monthly_prev_mtd:
+                    rev_prev = float(monthly_prev_mtd[month]['total_revenue'])
                 else:
-                    rev_2024 = float(monthly_2024[month]['total_revenue'])
-                rev_2025 = float(monthly_2025[month]['total_revenue'])
-                if rev_2024 > 0:
-                    growth_rate = ((rev_2025 - rev_2024) / rev_2024) * 100
-                    growth_rates_2025.append(growth_rate)
+                    rev_prev = float(monthly_prev[month]['total_revenue'])
+                rev_curr = float(monthly_curr[month]['total_revenue'])
+                if rev_prev > 0:
+                    growth_rate = ((rev_curr - rev_prev) / rev_prev) * 100
+                    growth_rates_by_month[month] = growth_rate
+                    growth_rates_list.append(growth_rate)
 
-        avg_growth_rate_2026 = statistics.mean(growth_rates_2025) if growth_rates_2025 else avg_growth_rate
-        std_dev_2026 = statistics.stdev(growth_rates_2025) if len(growth_rates_2025) > 1 else std_dev
+        # Calculate average as fallback for months without specific data
+        avg_growth_rate_next = statistics.mean(growth_rates_list) if growth_rates_list else avg_growth_rate
+        std_dev_next = statistics.stdev(growth_rates_list) if len(growth_rates_list) > 1 else std_dev
 
-        projections_2026 = []
+        # Check if current year has meaningful data - if not, use previous year as baseline
+        current_year_total_revenue = sum([float(row['total_revenue']) for row in monthly_curr.values()])
+        use_previous_year_as_baseline = current_year_total_revenue < 1000  # Less than $1000 = essentially no data
+
+        projections_next = []
         for month in range(1, 13):
-            month_name = datetime(2026, month, 1).strftime('%b')
+            month_name = datetime(next_year, month, 1).strftime('%b')
 
-            # Use same month from 2025 as baseline for 2026 projections
-            if month in monthly_2025:
-                # For the current incomplete month, estimate full month based on 2024 pattern
-                # This answers: "How am I doing until this date vs last year?" and projects the full month
-                is_incomplete_month = (month == current_month and current_year == 2025)
+            # EDGE CASE: Beginning of new year with no current year data
+            # Use previous year as baseline with historical growth rate
+            if use_previous_year_as_baseline and month in monthly_prev:
+                prev_revenue = float(monthly_prev[month]['total_revenue'])
+                prev_orders = monthly_prev[month]['total_orders']
 
-                if is_incomplete_month and month in monthly_2024 and month in monthly_2024_mtd:
-                    # Calculate MTD ratio from 2024: what % of the month is days 1-current_day?
-                    mtd_2024 = float(monthly_2024_mtd[month]['total_revenue'])
-                    full_2024 = float(monthly_2024[month]['total_revenue'])
+                # Apply historical growth rate to project from previous year to next year (2 years forward)
+                # If avg_growth_rate is 10%, then 2 years = (1.10)^2 - 1 = 21%
+                two_year_growth = ((1 + avg_growth_rate / 100) ** 2 - 1) * 100
 
-                    if mtd_2024 > 0:
-                        # mtd_ratio = portion of month represented by days 1-current_day
-                        mtd_ratio = mtd_2024 / full_2024
+                projected_revenue = prev_revenue * (1 + two_year_growth / 100)
+                projected_orders = int(prev_orders * (1 + two_year_growth / 100))
 
-                        # Estimate 2025 full month: current_mtd / ratio
-                        mtd_2025 = float(monthly_2025[month]['total_revenue'])
-                        estimated_full_2025 = mtd_2025 / mtd_ratio
+                confidence_lower = projected_revenue * (1 - std_dev_next / 100)
+                confidence_upper = projected_revenue * (1 + std_dev_next / 100)
 
-                        baseline_revenue = estimated_full_2025
-                        baseline_orders = int(monthly_2025[month]['total_orders'] / mtd_ratio)
-                    else:
-                        baseline_revenue = float(monthly_2025[month]['total_revenue'])
-                        baseline_orders = monthly_2025[month]['total_orders']
-                else:
-                    # Complete month - use actual value
-                    baseline_revenue = float(monthly_2025[month]['total_revenue'])
-                    baseline_orders = monthly_2025[month]['total_orders']
-
-                # Apply growth rate
-                projected_revenue = baseline_revenue * (1 + avg_growth_rate_2026 / 100)
-                projected_orders = int(baseline_orders * (1 + avg_growth_rate_2026 / 100))
-
-                # Calculate confidence interval (±1 std dev)
-                confidence_lower = projected_revenue * (1 - std_dev_2026 / 100)
-                confidence_upper = projected_revenue * (1 + std_dev_2026 / 100)
-
-                projection_entry = {
+                projections_next.append({
                     'month': month,
                     'month_name': month_name,
-                    'year': 2026,
+                    'year': next_year,
                     'total_orders': projected_orders,
                     'total_revenue': projected_revenue,
                     'is_actual': False,
@@ -455,31 +488,86 @@ async def get_executive_kpis(
                     'is_future': True,
                     'confidence_lower': confidence_lower,
                     'confidence_upper': confidence_upper,
-                    'growth_rate_applied': avg_growth_rate_2026
+                    'growth_rate_applied': two_year_growth,
+                    'baseline_year': previous_year,
+                    'baseline_note': f'Projected from {previous_year} (no {current_year} data yet)'
+                })
+                continue
+
+            # Use same month from current year as baseline for next year projections
+            if month in monthly_curr:
+                # For the current incomplete month, estimate full month based on previous year pattern
+                # This answers: "How am I doing until this date vs last year?" and projects the full month
+                is_incomplete_month = (month == current_month)
+
+                if is_incomplete_month and month in monthly_prev and month in monthly_prev_mtd:
+                    # Calculate MTD ratio from previous year: what % of the month is days 1-current_day?
+                    mtd_prev = float(monthly_prev_mtd[month]['total_revenue'])
+                    full_prev = float(monthly_prev[month]['total_revenue'])
+
+                    if mtd_prev > 0:
+                        # mtd_ratio = portion of month represented by days 1-current_day
+                        mtd_ratio = mtd_prev / full_prev
+
+                        # Estimate current year full month: current_mtd / ratio
+                        mtd_curr = float(monthly_curr[month]['total_revenue'])
+                        estimated_full_curr = mtd_curr / mtd_ratio
+
+                        baseline_revenue = estimated_full_curr
+                        baseline_orders = int(monthly_curr[month]['total_orders'] / mtd_ratio)
+                    else:
+                        baseline_revenue = float(monthly_curr[month]['total_revenue'])
+                        baseline_orders = monthly_curr[month]['total_orders']
+                else:
+                    # Complete month - use actual value
+                    baseline_revenue = float(monthly_curr[month]['total_revenue'])
+                    baseline_orders = monthly_curr[month]['total_orders']
+
+                # Apply MONTH-SPECIFIC growth rate (fall back to average if not available)
+                month_growth_rate = growth_rates_by_month.get(month, avg_growth_rate_next)
+                projected_revenue = baseline_revenue * (1 + month_growth_rate / 100)
+                projected_orders = int(baseline_orders * (1 + month_growth_rate / 100))
+
+                # Calculate confidence interval (±1 std dev)
+                confidence_lower = projected_revenue * (1 - std_dev_next / 100)
+                confidence_upper = projected_revenue * (1 + std_dev_next / 100)
+
+                projection_entry = {
+                    'month': month,
+                    'month_name': month_name,
+                    'year': next_year,
+                    'total_orders': projected_orders,
+                    'total_revenue': projected_revenue,
+                    'is_actual': False,
+                    'is_projection': True,
+                    'is_future': True,
+                    'confidence_lower': confidence_lower,
+                    'confidence_upper': confidence_upper,
+                    'growth_rate_applied': month_growth_rate  # Now shows month-specific rate
                 }
 
                 # Add metadata for incomplete month estimation
-                if is_incomplete_month and month in monthly_2024 and month in monthly_2024_mtd:
+                if is_incomplete_month and month in monthly_prev and month in monthly_prev_mtd:
                     projection_entry['is_estimated_from_mtd'] = True
-                    projection_entry['estimated_2025_full_month'] = baseline_revenue
-                    projection_entry['mtd_ratio_used'] = mtd_ratio if mtd_2024 > 0 else None
+                    projection_entry['estimated_curr_full_month'] = baseline_revenue
+                    projection_entry['mtd_ratio_used'] = mtd_ratio if mtd_prev > 0 else None
 
-                projections_2026.append(projection_entry)
+                projections_next.append(projection_entry)
             else:
-                # No 2025 baseline, use average from 2025
-                if monthly_2025:
-                    avg_revenue = statistics.mean([float(row['total_revenue']) for row in monthly_2025.values()])
-                    avg_orders = int(statistics.mean([row['total_orders'] for row in monthly_2025.values()]))
-                    projected_revenue = avg_revenue * (1 + avg_growth_rate_2026 / 100)
-                    projected_orders = int(avg_orders * (1 + avg_growth_rate_2026 / 100))
+                # No current year baseline, use average from current year
+                if monthly_curr:
+                    avg_revenue = statistics.mean([float(row['total_revenue']) for row in monthly_curr.values()])
+                    avg_orders = int(statistics.mean([row['total_orders'] for row in monthly_curr.values()]))
+                    projected_revenue = avg_revenue * (1 + avg_growth_rate_next / 100)
+                    projected_orders = int(avg_orders * (1 + avg_growth_rate_next / 100))
                 else:
                     projected_revenue = 0
                     projected_orders = 0
 
-                projections_2026.append({
+                projections_next.append({
                     'month': month,
                     'month_name': month_name,
-                    'year': 2026,
+                    'year': next_year,
                     'total_orders': projected_orders,
                     'total_revenue': float(projected_revenue),
                     'is_actual': False,
@@ -487,78 +575,86 @@ async def get_executive_kpis(
                     'is_future': True,
                     'confidence_lower': float(projected_revenue * 0.8),
                     'confidence_upper': float(projected_revenue * 1.2),
-                    'growth_rate_applied': avg_growth_rate_2026
+                    'growth_rate_applied': avg_growth_rate_next
                 })
 
-        # Calculate KPIs
-        total_revenue_2024 = sum([m['total_revenue'] for m in sales_by_month_2024])
-        total_orders_2024 = sum([m['total_orders'] for m in sales_by_month_2024])
-        avg_ticket_2024 = total_revenue_2024 / total_orders_2024 if total_orders_2024 > 0 else 0
+        # Calculate KPIs using dynamic year variables
+        total_revenue_prev = sum([m['total_revenue'] for m in sales_by_month_prev])
+        total_orders_prev = sum([m['total_orders'] for m in sales_by_month_prev])
+        avg_ticket_prev = total_revenue_prev / total_orders_prev if total_orders_prev > 0 else 0
 
-        total_revenue_2025_actual = sum([m['total_revenue'] for m in sales_by_month_2025])
-        total_orders_2025_actual = sum([m['total_orders'] for m in sales_by_month_2025])
-        avg_ticket_2025 = total_revenue_2025_actual / total_orders_2025_actual if total_orders_2025_actual > 0 else 0
+        total_revenue_curr = sum([m['total_revenue'] for m in sales_by_month_curr])
+        total_orders_curr = sum([m['total_orders'] for m in sales_by_month_curr])
+        avg_ticket_curr = total_revenue_curr / total_orders_curr if total_orders_curr > 0 else 0
 
         # Calculate YoY changes (comparing same period)
-        # FAIR COMPARISON: For current month, use MTD-adjusted 2024 data
-        # This compares Dec 1-17, 2024 with Dec 1-17, 2025 instead of full Dec 2024 vs partial Dec 2025
-        total_revenue_2024_ytd = 0
-        total_orders_2024_ytd = 0
+        # FAIR COMPARISON: For current month, use MTD-adjusted previous year data
+        total_revenue_prev_ytd = 0
+        total_orders_prev_ytd = 0
         for m in range(1, current_month + 1):
-            if m == current_month and m in monthly_2024_mtd:
+            if m == current_month and m in monthly_prev_mtd:
                 # Use MTD-adjusted data for current month (fair comparison)
-                total_revenue_2024_ytd += float(monthly_2024_mtd[m]['total_revenue'])
-                total_orders_2024_ytd += monthly_2024_mtd[m]['total_orders']
-            elif m in monthly_2024:
+                total_revenue_prev_ytd += float(monthly_prev_mtd[m]['total_revenue'])
+                total_orders_prev_ytd += monthly_prev_mtd[m]['total_orders']
+            elif m in monthly_prev:
                 # Use full month data for completed months
-                total_revenue_2024_ytd += float(monthly_2024[m]['total_revenue'])
-                total_orders_2024_ytd += monthly_2024[m]['total_orders']
+                total_revenue_prev_ytd += float(monthly_prev[m]['total_revenue'])
+                total_orders_prev_ytd += monthly_prev[m]['total_orders']
 
-        revenue_yoy_change = ((total_revenue_2025_actual - total_revenue_2024_ytd) / total_revenue_2024_ytd * 100) if total_revenue_2024_ytd > 0 else 0
-        orders_yoy_change = ((total_orders_2025_actual - total_orders_2024_ytd) / total_orders_2024_ytd * 100) if total_orders_2024_ytd > 0 else 0
-        ticket_yoy_change = ((avg_ticket_2025 - avg_ticket_2024) / avg_ticket_2024 * 100) if avg_ticket_2024 > 0 else 0
+        revenue_yoy_change = ((total_revenue_curr - total_revenue_prev_ytd) / total_revenue_prev_ytd * 100) if total_revenue_prev_ytd > 0 else 0
+        orders_yoy_change = ((total_orders_curr - total_orders_prev_ytd) / total_orders_prev_ytd * 100) if total_orders_prev_ytd > 0 else 0
+        ticket_yoy_change = ((avg_ticket_curr - avg_ticket_prev) / avg_ticket_prev * 100) if avg_ticket_prev > 0 else 0
 
-        # Calculate 2026 projected totals
-        total_revenue_2026_projected = sum([m['total_revenue'] for m in projections_2026])
-        total_orders_2026_projected = sum([m['total_orders'] for m in projections_2026])
+        # Calculate next year projected totals
+        total_revenue_next_projected = sum([m['total_revenue'] for m in projections_next])
+        total_orders_next_projected = sum([m['total_orders'] for m in projections_next])
+
+        # Get current month name for dynamic message
+        current_month_name = datetime(current_year, current_month, 1).strftime('%B')
 
         return {
             "status": "success",
             "data": {
-                "sales_2024": sales_by_month_2024,
-                "sales_2025_actual": sales_by_month_2025,
-                "sales_2025_projected": projections_2025,
-                "sales_2026_projected": projections_2026,
+                # Use generic keys but include actual years in the data
+                "sales_previous_year": sales_by_month_prev,
+                "sales_current_year": sales_by_month_curr,
+                "sales_current_year_projected": projections_curr,
+                "sales_next_year_projected": projections_next,
                 "kpis": {
-                    "total_revenue_2024": total_revenue_2024,
-                    "total_revenue_2025_actual": total_revenue_2025_actual,
-                    "total_revenue_2026_projected": total_revenue_2026_projected,
-                    "total_orders_2024": total_orders_2024,
-                    "total_orders_2025_actual": total_orders_2025_actual,
-                    "total_orders_2026_projected": total_orders_2026_projected,
-                    "avg_ticket_2024": avg_ticket_2024,
-                    "avg_ticket_2025": avg_ticket_2025,
+                    "total_revenue_previous_year": total_revenue_prev,
+                    "total_revenue_current_year": total_revenue_curr,
+                    "total_revenue_next_year_projected": total_revenue_next_projected,
+                    "total_orders_previous_year": total_orders_prev,
+                    "total_orders_current_year": total_orders_curr,
+                    "total_orders_next_year_projected": total_orders_next_projected,
+                    "avg_ticket_previous_year": avg_ticket_prev,
+                    "avg_ticket_current_year": avg_ticket_curr,
                     "revenue_yoy_change": revenue_yoy_change,
                     "orders_yoy_change": orders_yoy_change,
                     "ticket_yoy_change": ticket_yoy_change,
                 },
                 "projection_metadata": {
                     "avg_growth_rate": avg_growth_rate,
-                    "avg_growth_rate_2026": avg_growth_rate_2026,
+                    "avg_growth_rate_next_year": avg_growth_rate_next,
+                    "growth_rates_by_month": growth_rates_by_month,
+                    "projection_method": "month_specific",
                     "std_dev": std_dev,
-                    "std_dev_2026": std_dev_2026,
-                    "months_projected": len(projections_2025),
+                    "std_dev_next_year": std_dev_next,
+                    "months_projected": len(projections_curr),
                     "current_month": current_month,
+                    "current_month_name": current_month_name,
                     "current_year": current_year,
+                    "previous_year": previous_year,
+                    "next_year": next_year,
                     "mtd_day": current_day,
-                    "is_mtd_comparison": current_month in monthly_2024_mtd,
-                    "mtd_comparison_info": f"Diciembre: comparando días 1-{current_day} de 2024 vs 2025" if current_month in monthly_2024_mtd else None,
-                    # Incomplete month estimation for 2026 projections
+                    "is_mtd_comparison": current_month in monthly_prev_mtd,
+                    "mtd_comparison_info": f"{current_month_name}: comparando días 1-{current_day} de {previous_year} vs {current_year}" if current_month in monthly_prev_mtd else None,
+                    # Incomplete month estimation for next year projections
                     "incomplete_month_estimation": {
                         "month": current_month,
-                        "mtd_ratio": float(monthly_2024_mtd[current_month]['total_revenue']) / float(monthly_2024[current_month]['total_revenue']) if current_month in monthly_2024_mtd and current_month in monthly_2024 else None,
-                        "estimated_2025_full_month": float(monthly_2025[current_month]['total_revenue']) / (float(monthly_2024_mtd[current_month]['total_revenue']) / float(monthly_2024[current_month]['total_revenue'])) if current_month in monthly_2025 and current_month in monthly_2024_mtd and current_month in monthly_2024 else None
-                    } if current_month in monthly_2024_mtd else None
+                        "mtd_ratio": float(monthly_prev_mtd[current_month]['total_revenue']) / float(monthly_prev[current_month]['total_revenue']) if current_month in monthly_prev_mtd and current_month in monthly_prev else None,
+                        "estimated_curr_full_month": float(monthly_curr[current_month]['total_revenue']) / (float(monthly_prev_mtd[current_month]['total_revenue']) / float(monthly_prev[current_month]['total_revenue'])) if current_month in monthly_curr and current_month in monthly_prev_mtd and current_month in monthly_prev else None
+                    } if current_month in monthly_prev_mtd else None
                 }
             }
         }
