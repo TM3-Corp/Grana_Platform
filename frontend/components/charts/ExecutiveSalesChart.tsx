@@ -1,4 +1,17 @@
-import { XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, ComposedChart, Line } from 'recharts'
+'use client'
+
+import { useState, useEffect } from 'react'
+import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, ComposedChart, Line } from 'recharts'
+
+// Type for series visibility
+type SeriesKey = 'previousYear' | 'currentYear' | 'projectedCurrentYear' | 'projectedNextYear'
+
+interface SeriesConfig {
+  key: SeriesKey
+  label: string
+  color: string
+  defaultEnabled: boolean
+}
 
 interface MonthData {
   month: number
@@ -180,6 +193,9 @@ const CustomTooltip = ({ active, payload, label, previousYear, currentYear, next
   )
 }
 
+// Local storage key for series visibility
+const SERIES_STORAGE_KEY = 'executiveChart_seriesVisibility'
+
 export default function ExecutiveSalesChart({
   sales_previous_year,
   sales_current_year,
@@ -189,6 +205,48 @@ export default function ExecutiveSalesChart({
   current_year,
   next_year
 }: ExecutiveSalesChartProps) {
+  // Series configuration with dynamic labels
+  const seriesConfigs: SeriesConfig[] = [
+    { key: 'currentYear', label: `${current_year} (Real)`, color: '#0D9488', defaultEnabled: true },
+    { key: 'previousYear', label: `${previous_year} (Real)`, color: '#9CA3AF', defaultEnabled: true },
+    { key: 'projectedCurrentYear', label: `${current_year} (Proyección)`, color: '#14B8A6', defaultEnabled: true },
+    { key: 'projectedNextYear', label: `${next_year} (Proyección)`, color: '#9333EA', defaultEnabled: false },
+  ]
+
+  // Initialize visibility state from localStorage or defaults
+  const [visibleSeries, setVisibleSeries] = useState<Record<SeriesKey, boolean>>(() => {
+    const defaults: Record<SeriesKey, boolean> = {
+      previousYear: true,
+      currentYear: true,
+      projectedCurrentYear: true,
+      projectedNextYear: false,
+    }
+    if (typeof window === 'undefined') return defaults
+    try {
+      const stored = localStorage.getItem(SERIES_STORAGE_KEY)
+      if (stored) {
+        return { ...defaults, ...JSON.parse(stored) }
+      }
+    } catch {
+      // Ignore localStorage errors
+    }
+    return defaults
+  })
+
+  // Persist visibility changes to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(SERIES_STORAGE_KEY, JSON.stringify(visibleSeries))
+    } catch {
+      // Ignore localStorage errors
+    }
+  }, [visibleSeries])
+
+  // Toggle series visibility
+  const toggleSeries = (key: SeriesKey) => {
+    setVisibleSeries(prev => ({ ...prev, [key]: !prev[key] }))
+  }
+
   // Combine all data for the chart with dynamic year labels
   // Note: Backend returns MTD-adjusted values as primary for current month (DRY principle)
   const chartData = sales_previous_year.map(m => ({
@@ -278,12 +336,48 @@ export default function ExecutiveSalesChart({
   return (
     <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
       <div className="mb-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-2">
-          Comparación de Ventas y Proyección {next_year}
-        </h2>
-        <p className="text-sm text-gray-600">
-          Datos reales de {previous_year} y {current_year}, con proyección {next_year} basada en crecimiento YoY. Hover sobre cada punto para ver las diferencias.
-        </p>
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900 mb-2">
+              Comparación de Ventas y Proyecciones
+            </h2>
+            <p className="text-sm text-gray-600">
+              Selecciona las series que deseas visualizar. Hover sobre cada punto para ver las diferencias.
+            </p>
+          </div>
+
+          {/* Series Toggle Buttons */}
+          <div className="flex flex-wrap gap-2">
+            {seriesConfigs.map((config) => (
+              <button
+                key={config.key}
+                onClick={() => toggleSeries(config.key)}
+                className={`
+                  flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium
+                  transition-all duration-200 border
+                  ${visibleSeries[config.key]
+                    ? 'border-transparent shadow-sm'
+                    : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50'
+                  }
+                `}
+                style={{
+                  backgroundColor: visibleSeries[config.key] ? `${config.color}15` : undefined,
+                  color: visibleSeries[config.key] ? config.color : undefined,
+                  borderColor: visibleSeries[config.key] ? config.color : undefined,
+                }}
+              >
+                <span
+                  className="w-3 h-3 rounded-full border-2"
+                  style={{
+                    backgroundColor: visibleSeries[config.key] ? config.color : 'transparent',
+                    borderColor: config.color,
+                  }}
+                />
+                {config.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       <ResponsiveContainer width="100%" height={450}>
@@ -301,156 +395,169 @@ export default function ExecutiveSalesChart({
             domain={['auto', 'auto']}
           />
           <Tooltip content={<CustomTooltip previousYear={previous_year} currentYear={current_year} nextYear={next_year} />} />
-          <Legend
-            wrapperStyle={{ paddingTop: '20px' }}
-            iconType="line"
-          />
 
-          {/* Confidence interval area for next year projections - light purple */}
-          <Area
-            type="monotone"
-            dataKey="confidence_upper_next"
-            stroke="none"
-            fill="#9333EA"
-            fillOpacity={0.1}
-            name={`Rango de confianza ${next_year}`}
-            legendType="none"
-          />
-          <Area
-            type="monotone"
-            dataKey="confidence_lower_next"
-            stroke="none"
-            fill="white"
-            fillOpacity={1}
-            legendType="none"
-          />
+          {/* Confidence interval area for next year projections - only show when next year projection is visible */}
+          {visibleSeries.projectedNextYear && (
+            <>
+              <Area
+                type="monotone"
+                dataKey="confidence_upper_next"
+                stroke="none"
+                fill="#9333EA"
+                fillOpacity={0.1}
+                name={`Rango de confianza ${next_year}`}
+                legendType="none"
+              />
+              <Area
+                type="monotone"
+                dataKey="confidence_lower_next"
+                stroke="none"
+                fill="white"
+                fillOpacity={1}
+                legendType="none"
+              />
+            </>
+          )}
 
           {/* Previous year actual line - GRAY solid */}
-          <Line
-            type="monotone"
-            dataKey="revenue_previous_year"
-            stroke="#9CA3AF"
-            strokeWidth={2}
-            name={`${previous_year} (Real)`}
-            dot={{ r: 4, fill: '#9CA3AF', strokeWidth: 1, stroke: '#6B7280' }}
-            activeDot={{ r: 7, fill: '#6B7280' }}
-          />
+          {visibleSeries.previousYear && (
+            <Line
+              type="monotone"
+              dataKey="revenue_previous_year"
+              stroke="#9CA3AF"
+              strokeWidth={2}
+              name={`${previous_year} (Real)`}
+              dot={{ r: 4, fill: '#9CA3AF', strokeWidth: 1, stroke: '#6B7280' }}
+              activeDot={{ r: 7, fill: '#6B7280' }}
+            />
+          )}
 
           {/* Current year actual line - TEAL solid */}
-          <Line
-            type="monotone"
-            dataKey="revenue_current_year_actual"
-            stroke="#0D9488"
-            strokeWidth={3}
-            name={`${current_year} (Real)`}
-            dot={{ r: 5, fill: '#0D9488', strokeWidth: 2, stroke: '#115E59' }}
-            activeDot={{ r: 8, fill: '#115E59' }}
-            label={<CustomLabel color="#0D9488" />}
-          />
+          {visibleSeries.currentYear && (
+            <Line
+              type="monotone"
+              dataKey="revenue_current_year_actual"
+              stroke="#0D9488"
+              strokeWidth={3}
+              name={`${current_year} (Real)`}
+              dot={{ r: 5, fill: '#0D9488', strokeWidth: 2, stroke: '#115E59' }}
+              activeDot={{ r: 8, fill: '#115E59' }}
+              label={<CustomLabel color="#0D9488" />}
+            />
+          )}
+
+          {/* Current year projected line - TEAL dashed (remaining months) */}
+          {visibleSeries.projectedCurrentYear && (
+            <Line
+              type="monotone"
+              dataKey="revenue_current_year_projected"
+              stroke="#14B8A6"
+              strokeWidth={2}
+              strokeDasharray="6 3"
+              name={`${current_year} (Proyección)`}
+              dot={{ r: 4, fill: '#14B8A6', strokeWidth: 1, stroke: '#0D9488' }}
+              activeDot={{ r: 6, fill: '#0D9488' }}
+            />
+          )}
 
           {/* Next year projected line - PURPLE dashed */}
-          <Line
-            type="monotone"
-            dataKey="revenue_next_year_projected"
-            stroke="#9333EA"
-            strokeWidth={3}
-            strokeDasharray="8 4"
-            name={`${next_year} (Proyección)`}
-            dot={{ r: 5, fill: '#9333EA', strokeWidth: 2, stroke: '#7C3AED' }}
-            activeDot={{ r: 8, fill: '#7C3AED' }}
-            label={<CustomLabel color="#9333EA" />}
-          />
+          {visibleSeries.projectedNextYear && (
+            <Line
+              type="monotone"
+              dataKey="revenue_next_year_projected"
+              stroke="#9333EA"
+              strokeWidth={3}
+              strokeDasharray="8 4"
+              name={`${next_year} (Proyección)`}
+              dot={{ r: 5, fill: '#9333EA', strokeWidth: 2, stroke: '#7C3AED' }}
+              activeDot={{ r: 8, fill: '#7C3AED' }}
+              label={<CustomLabel color="#9333EA" />}
+            />
+          )}
 
           {/* Striped gray line for full previous year month (incomplete months only) */}
-          <Line
-            type="monotone"
-            dataKey="revenue_previous_year_full"
-            stroke="#6B7280"
-            strokeWidth={2}
-            strokeDasharray="5 5"
-            name={`${previous_year} Mes completo`}
-            dot={(props: any) => {
-              // Only show dot at MTD month
-              if (!props.payload?.is_mtd) return null
-              return <circle key={`dot-prev-full-${props.index}`} cx={props.cx} cy={props.cy} r={5} fill="#6B7280" stroke="#4B5563" strokeWidth={2} />
-            }}
-            connectNulls={false}
-            legendType="none"
-            label={(props: any) => {
-              // Only show label at MTD month
-              if (!props.payload?.is_mtd) return null
-              return <CustomLabel key={`label-prev-full-${props.index}`} {...props} color="#6B7280" />
-            }}
-          />
+          {visibleSeries.previousYear && (
+            <Line
+              type="monotone"
+              dataKey="revenue_previous_year_full"
+              stroke="#6B7280"
+              strokeWidth={2}
+              strokeDasharray="5 5"
+              name={`${previous_year} Mes completo`}
+              dot={(props: any) => {
+                // Only show dot at MTD month
+                if (!props.payload?.is_mtd) return null
+                return <circle key={`dot-prev-full-${props.index}`} cx={props.cx} cy={props.cy} r={5} fill="#6B7280" stroke="#4B5563" strokeWidth={2} />
+              }}
+              connectNulls={false}
+              legendType="none"
+              label={(props: any) => {
+                // Only show label at MTD month
+                if (!props.payload?.is_mtd) return null
+                return <CustomLabel key={`label-prev-full-${props.index}`} {...props} color="#6B7280" />
+              }}
+            />
+          )}
 
           {/* Striped green line for estimated current year full month (incomplete months only) */}
-          <Line
-            type="monotone"
-            dataKey="revenue_current_year_estimated"
-            stroke="#059669"
-            strokeWidth={2}
-            strokeDasharray="5 5"
-            name={`${current_year} Estimado`}
-            dot={(props: any) => {
-              // Only show dot at MTD month
-              if (!props.payload?.is_mtd) return null
-              return <circle key={`dot-curr-est-${props.index}`} cx={props.cx} cy={props.cy} r={5} fill="#059669" stroke="#047857" strokeWidth={2} />
-            }}
-            connectNulls={false}
-            legendType="none"
-            label={(props: any) => {
-              // Only show label at MTD month
-              if (!props.payload?.is_mtd) return null
-              return <CustomLabel key={`label-curr-est-${props.index}`} {...props} color="#059669" />
-            }}
-          />
+          {visibleSeries.currentYear && (
+            <Line
+              type="monotone"
+              dataKey="revenue_current_year_estimated"
+              stroke="#059669"
+              strokeWidth={2}
+              strokeDasharray="5 5"
+              name={`${current_year} Estimado`}
+              dot={(props: any) => {
+                // Only show dot at MTD month
+                if (!props.payload?.is_mtd) return null
+                return <circle key={`dot-curr-est-${props.index}`} cx={props.cx} cy={props.cy} r={5} fill="#059669" stroke="#047857" strokeWidth={2} />
+              }}
+              connectNulls={false}
+              legendType="none"
+              label={(props: any) => {
+                // Only show label at MTD month
+                if (!props.payload?.is_mtd) return null
+                return <CustomLabel key={`label-curr-est-${props.index}`} {...props} color="#059669" />
+              }}
+            />
+          )}
         </ComposedChart>
       </ResponsiveContainer>
 
-      {/* Clear Legend explanation with color samples */}
-      <div className="mt-6 pt-4 border-t border-gray-200">
-        <div className="flex flex-wrap items-center justify-center gap-6 text-sm">
-          <div className="flex items-center gap-2">
-            <div className="w-10 h-1 bg-gray-400 rounded"></div>
-            <div className="w-3 h-3 rounded-full bg-gray-400 -ml-2"></div>
-            <span className="text-gray-700 font-medium">{previous_year} Real</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-10 h-1 bg-teal-600 rounded"></div>
-            <div className="w-3 h-3 rounded-full bg-teal-600 -ml-2"></div>
-            <span className="text-gray-700 font-medium">{current_year} Real</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-10 h-1 bg-purple-600 rounded" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #9333EA 0px, #9333EA 6px, transparent 6px, transparent 10px)' }}></div>
-            <div className="w-3 h-3 rounded-full bg-purple-600 -ml-2"></div>
-            <span className="text-gray-700 font-medium">{next_year} Proyección</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-4 bg-purple-100 rounded border border-purple-200"></div>
-            <span className="text-gray-700 font-medium">Rango de confianza</span>
+      {/* Striped lines legend for incomplete months - only show if relevant series are visible */}
+      {chartData.some(d => d.is_mtd) && (visibleSeries.previousYear || visibleSeries.currentYear) && (
+        <div className="mt-6 pt-4 border-t border-gray-200">
+          <div className="flex flex-wrap items-center justify-center gap-6 text-sm">
+            <span className="text-xs text-gray-500 font-medium">Mes en curso ({currentMonthName}):</span>
+            {visibleSeries.previousYear && (
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-0.5 rounded" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #6B7280 0px, #6B7280 4px, transparent 4px, transparent 8px)' }}></div>
+                <div className="w-2.5 h-2.5 rounded-full bg-gray-500 -ml-1"></div>
+                <span className="text-gray-600 text-xs">{previous_year} Mes completo</span>
+              </div>
+            )}
+            {visibleSeries.currentYear && (
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-0.5 rounded" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #059669 0px, #059669 4px, transparent 4px, transparent 8px)' }}></div>
+                <div className="w-2.5 h-2.5 rounded-full bg-emerald-600 -ml-1"></div>
+                <span className="text-gray-600 text-xs">{current_year} Estimado mes completo</span>
+              </div>
+            )}
+            {visibleSeries.projectedNextYear && (
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-4 bg-purple-100 rounded border border-purple-200"></div>
+                <span className="text-gray-600 text-xs">Rango de confianza {next_year}</span>
+              </div>
+            )}
           </div>
         </div>
-        {/* Striped lines legend for incomplete months */}
-        {chartData.some(d => d.is_mtd) && (
-          <div className="flex flex-wrap items-center justify-center gap-6 text-sm mt-3 pt-3 border-t border-gray-100">
-            <span className="text-xs text-gray-500 font-medium">Mes en curso ({currentMonthName}):</span>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-0.5 rounded" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #6B7280 0px, #6B7280 4px, transparent 4px, transparent 8px)' }}></div>
-              <div className="w-2.5 h-2.5 rounded-full bg-gray-500 -ml-1"></div>
-              <span className="text-gray-600 text-xs">{previous_year} Mes completo</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-0.5 rounded" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #059669 0px, #059669 4px, transparent 4px, transparent 8px)' }}></div>
-              <div className="w-2.5 h-2.5 rounded-full bg-emerald-600 -ml-1"></div>
-              <span className="text-gray-600 text-xs">{current_year} Estimado mes completo</span>
-            </div>
-          </div>
-        )}
-      </div>
+      )}
 
-      {/* Gap between previous and current year */}
-      <div className="mt-6 pt-4 border-t border-gray-200">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">Diferencia Años ({current_year} Real vs {previous_year}):</h3>
+      {/* Gap between previous and current year - only show when both series are visible */}
+      {visibleSeries.previousYear && visibleSeries.currentYear && (
+        <div className="mt-6 pt-4 border-t border-gray-200">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Diferencia Años ({current_year} Real vs {previous_year}):</h3>
         <div className="grid grid-cols-6 md:grid-cols-12 gap-2 text-xs">
           {chartData.map((d, idx) => {
             const hasData = d.revenue_current_year_actual !== null
@@ -492,56 +599,59 @@ export default function ExecutiveSalesChart({
             )
           })}
         </div>
-      </div>
-
-      {/* Gap between current and next year projections */}
-      <div className="mt-4 pt-4 border-t border-gray-200">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">Crecimiento Proyectado {next_year} (vs {current_year} Real):</h3>
-        <div className="grid grid-cols-6 md:grid-cols-12 gap-2 text-xs">
-          {chartData.map((d, idx) => {
-            const hasCurr = d.revenue_current_year_actual !== null
-            const hasNext = d.revenue_next_year_projected !== null
-            const hasComparison = hasCurr && hasNext
-            const formatAmount = (amount: number) => {
-              const absAmount = Math.abs(amount)
-              if (absAmount >= 1000000) {
-                return `${amount >= 0 ? '+' : '-'}$${(absAmount / 1000000).toFixed(1)}M`
-              }
-              return `${amount >= 0 ? '+' : '-'}$${Math.round(absAmount / 1000)}K`
-            }
-            return (
-              <div
-                key={idx}
-                className={`text-center p-2 rounded ${
-                  !hasComparison
-                    ? 'bg-gray-50 text-gray-400'
-                    : 'bg-purple-50 border border-purple-200'
-                }`}
-              >
-                <div className="font-medium text-gray-600">{d.month.substring(0, 3)}</div>
-                {hasComparison && d.gap_next_percent !== null && d.gap_next_amount !== null ? (
-                  <>
-                    <div className={`font-bold ${d.gap_next_percent >= 0 ? 'text-purple-600' : 'text-red-600'}`}>
-                      {d.gap_next_percent >= 0 ? '+' : ''}{d.gap_next_percent.toFixed(0)}%
-                    </div>
-                    <div className={`text-[10px] ${d.gap_next_amount >= 0 ? 'text-purple-500' : 'text-red-500'}`}>
-                      {formatAmount(d.gap_next_amount)}
-                    </div>
-                  </>
-                ) : (
-                  <div className="text-gray-300">-</div>
-                )}
-              </div>
-            )
-          })}
         </div>
-        <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
-          <div className="flex items-center gap-1">
-            <span className="text-purple-600 font-bold">+%</span>
-            <span>Crecimiento proyectado</span>
+      )}
+
+      {/* Gap between current and next year projections - only show when both are visible */}
+      {visibleSeries.currentYear && visibleSeries.projectedNextYear && (
+        <div className="mt-4 pt-4 border-t border-gray-200">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Crecimiento Proyectado {next_year} (vs {current_year} Real):</h3>
+          <div className="grid grid-cols-6 md:grid-cols-12 gap-2 text-xs">
+            {chartData.map((d, idx) => {
+              const hasCurr = d.revenue_current_year_actual !== null
+              const hasNext = d.revenue_next_year_projected !== null
+              const hasComparison = hasCurr && hasNext
+              const formatAmount = (amount: number) => {
+                const absAmount = Math.abs(amount)
+                if (absAmount >= 1000000) {
+                  return `${amount >= 0 ? '+' : '-'}$${(absAmount / 1000000).toFixed(1)}M`
+                }
+                return `${amount >= 0 ? '+' : '-'}$${Math.round(absAmount / 1000)}K`
+              }
+              return (
+                <div
+                  key={idx}
+                  className={`text-center p-2 rounded ${
+                    !hasComparison
+                      ? 'bg-gray-50 text-gray-400'
+                      : 'bg-purple-50 border border-purple-200'
+                  }`}
+                >
+                  <div className="font-medium text-gray-600">{d.month.substring(0, 3)}</div>
+                  {hasComparison && d.gap_next_percent !== null && d.gap_next_amount !== null ? (
+                    <>
+                      <div className={`font-bold ${d.gap_next_percent >= 0 ? 'text-purple-600' : 'text-red-600'}`}>
+                        {d.gap_next_percent >= 0 ? '+' : ''}{d.gap_next_percent.toFixed(0)}%
+                      </div>
+                      <div className={`text-[10px] ${d.gap_next_amount >= 0 ? 'text-purple-500' : 'text-red-500'}`}>
+                        {formatAmount(d.gap_next_amount)}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-gray-300">-</div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
+            <div className="flex items-center gap-1">
+              <span className="text-purple-600 font-bold">+%</span>
+              <span>Crecimiento proyectado</span>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

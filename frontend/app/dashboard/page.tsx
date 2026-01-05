@@ -31,7 +31,6 @@ interface MonthData {
 }
 
 interface ExecutiveData {
-  // Dynamic year-based response structure
   sales_previous_year: MonthData[]
   sales_current_year: MonthData[]
   sales_current_year_projected: MonthData[]
@@ -48,6 +47,10 @@ interface ExecutiveData {
     revenue_yoy_change: number
     orders_yoy_change: number
     ticket_yoy_change: number
+    // YTD-adjusted values for fair comparison display
+    total_revenue_previous_year_ytd: number
+    total_orders_previous_year_ytd: number
+    avg_ticket_previous_year_ytd: number
   }
   projection_metadata: {
     avg_growth_rate: number
@@ -260,7 +263,7 @@ function DashboardContent() {
     fetchExecutiveData()
   }, [filters.family])
 
-  // Fetch distribution data (respects period filters)
+  // Fetch distribution data (YTD)
   useEffect(() => {
     const fetchDistributionData = async () => {
       try {
@@ -296,6 +299,22 @@ function DashboardContent() {
 
     fetchDistributionData()
   }, [dateRange, filters.family])
+
+  // Calculate projected total for current year (actual YTD + projected remaining)
+  const projectedCurrentYearTotal = useMemo(() => {
+    if (!executiveData) return 0
+    const actualRevenue = executiveData.kpis.total_revenue_current_year
+    const projectedRemaining = executiveData.sales_current_year_projected
+      .reduce((sum, m) => sum + m.total_revenue, 0)
+    return actualRevenue + projectedRemaining
+  }, [executiveData])
+
+  // Calculate YoY change for projected total vs previous year full
+  const projectedYoYChange = useMemo(() => {
+    if (!executiveData || executiveData.kpis.total_revenue_previous_year === 0) return 0
+    return ((projectedCurrentYearTotal - executiveData.kpis.total_revenue_previous_year) /
+            executiveData.kpis.total_revenue_previous_year * 100)
+  }, [executiveData, projectedCurrentYearTotal])
 
   if (loading) {
     return (
@@ -337,7 +356,7 @@ function DashboardContent() {
           </div>
         </div>
 
-        {/* MTD Comparison Info - Dynamic */}
+        {/* MTD Comparison Info */}
         {executiveData.projection_metadata.is_mtd_comparison && (
           <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 flex items-center gap-2">
             <svg className="w-5 h-5 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -350,12 +369,12 @@ function DashboardContent() {
           </div>
         )}
 
-        {/* KPI Cards - Dynamic Years */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          {/* Revenue KPI */}
+        {/* KPI Cards - 4 cards including Projected Revenue */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          {/* Revenue YTD KPI */}
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <div className="flex items-center justify-between mb-3">
-              <span className="text-sm text-gray-500">Ingresos Totales</span>
+              <span className="text-sm text-gray-500">Ingresos YTD</span>
               {executiveData.kpis.revenue_yoy_change !== 0 && (
                 <span className={`text-sm font-medium ${executiveData.kpis.revenue_yoy_change > 0 ? 'text-green-600' : 'text-red-600'}`}>
                   {executiveData.kpis.revenue_yoy_change > 0 ? '+' : ''}{executiveData.kpis.revenue_yoy_change.toFixed(1)}%
@@ -363,7 +382,21 @@ function DashboardContent() {
               )}
             </div>
             <div className="text-2xl font-semibold text-gray-900">${Math.round(executiveData.kpis.total_revenue_current_year).toLocaleString('es-CL')}</div>
-            <div className="text-xs text-gray-400 mt-1">vs ${Math.round(executiveData.kpis.total_revenue_previous_year).toLocaleString('es-CL')} en {executiveData.projection_metadata.previous_year}</div>
+            <div className="text-xs text-gray-400 mt-1">vs ${Math.round(executiveData.kpis.total_revenue_previous_year_ytd).toLocaleString('es-CL')} en {executiveData.projection_metadata.previous_year}</div>
+          </div>
+
+          {/* Projected Revenue KPI - NEW */}
+          <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl border border-purple-200 p-5">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm text-purple-600 font-medium">Ingresos Proyectados {executiveData.projection_metadata.current_year}</span>
+              {projectedYoYChange !== 0 && (
+                <span className={`text-sm font-medium ${projectedYoYChange > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {projectedYoYChange > 0 ? '+' : ''}{projectedYoYChange.toFixed(1)}%
+                </span>
+              )}
+            </div>
+            <div className="text-2xl font-semibold text-purple-900">${Math.round(projectedCurrentYearTotal).toLocaleString('es-CL')}</div>
+            <div className="text-xs text-purple-500 mt-1">vs ${Math.round(executiveData.kpis.total_revenue_previous_year).toLocaleString('es-CL')} en {executiveData.projection_metadata.previous_year}</div>
           </div>
 
           {/* Orders KPI */}
@@ -377,7 +410,7 @@ function DashboardContent() {
               )}
             </div>
             <div className="text-2xl font-semibold text-gray-900">{executiveData.kpis.total_orders_current_year.toLocaleString('es-CL')}</div>
-            <div className="text-xs text-gray-400 mt-1">vs {executiveData.kpis.total_orders_previous_year.toLocaleString('es-CL')} en {executiveData.projection_metadata.previous_year}</div>
+            <div className="text-xs text-gray-400 mt-1">vs {executiveData.kpis.total_orders_previous_year_ytd.toLocaleString('es-CL')} en {executiveData.projection_metadata.previous_year}</div>
           </div>
 
           {/* Avg Ticket KPI */}
@@ -391,11 +424,11 @@ function DashboardContent() {
               )}
             </div>
             <div className="text-2xl font-semibold text-gray-900">${Math.round(executiveData.kpis.avg_ticket_current_year).toLocaleString('es-CL')}</div>
-            <div className="text-xs text-gray-400 mt-1">vs ${Math.round(executiveData.kpis.avg_ticket_previous_year).toLocaleString('es-CL')} en {executiveData.projection_metadata.previous_year}</div>
+            <div className="text-xs text-gray-400 mt-1">vs ${Math.round(executiveData.kpis.avg_ticket_previous_year_ytd).toLocaleString('es-CL')} en {executiveData.projection_metadata.previous_year}</div>
           </div>
         </div>
 
-        {/* Executive Sales Chart with Projections - Dynamic Years */}
+        {/* Executive Sales Chart with Projections */}
         <div className="mb-8">
           <ExecutiveSalesChart
             sales_previous_year={executiveData.sales_previous_year}
@@ -408,25 +441,37 @@ function DashboardContent() {
           />
         </div>
 
-        {/* Projection Metadata - Dynamic Next Year */}
+        {/* Projection Summary Card */}
         {executiveData.sales_next_year_projected && executiveData.sales_next_year_projected.length > 0 && (
           <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-xl p-5 mb-8">
-            <h3 className="text-sm font-medium text-gray-900 mb-2">Proyección de Ventas {executiveData.projection_metadata.next_year}</h3>
-            <p className="text-sm text-gray-600 mb-3">Proyección anual basada en el crecimiento histórico {executiveData.projection_metadata.previous_year}-{executiveData.projection_metadata.current_year}</p>
-            <div className="flex flex-wrap gap-6 text-sm">
-              <div>
-                <span className="text-gray-500">Revenue {executiveData.projection_metadata.next_year} Proyectado:</span>
-                <span className="ml-2 font-semibold text-purple-700">
-                  ${Math.round(executiveData.kpis.total_revenue_next_year_projected).toLocaleString('es-CL')}
+            <h3 className="text-sm font-medium text-gray-900 mb-3">Resumen de Proyecciones</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+              <div className="bg-white/60 rounded-lg p-3">
+                <span className="text-gray-500 block mb-1">Proyección {executiveData.projection_metadata.current_year}</span>
+                <span className="text-lg font-semibold text-gray-900">
+                  ${Math.round(projectedCurrentYearTotal).toLocaleString('es-CL')}
+                </span>
+                <span className="text-xs text-gray-400 block">
+                  (YTD + {executiveData.projection_metadata.months_projected} meses proyectados)
                 </span>
               </div>
-              <div>
-                <span className="text-gray-500">Crecimiento aplicado:</span>
-                <span className="ml-2 font-medium text-gray-900">+{executiveData.projection_metadata.avg_growth_rate_next_year.toFixed(1)}%</span>
+              <div className="bg-white/60 rounded-lg p-3">
+                <span className="text-gray-500 block mb-1">Proyección {executiveData.projection_metadata.next_year}</span>
+                <span className="text-lg font-semibold text-purple-700">
+                  ${Math.round(executiveData.kpis.total_revenue_next_year_projected).toLocaleString('es-CL')}
+                </span>
+                <span className="text-xs text-gray-400 block">
+                  Crecimiento: +{executiveData.projection_metadata.avg_growth_rate_next_year.toFixed(1)}%
+                </span>
               </div>
-              <div>
-                <span className="text-gray-500">Variabilidad:</span>
-                <span className="ml-2 font-medium text-gray-900">±{executiveData.projection_metadata.std_dev_next_year.toFixed(1)}%</span>
+              <div className="bg-white/60 rounded-lg p-3">
+                <span className="text-gray-500 block mb-1">Variabilidad Proyección</span>
+                <span className="text-lg font-semibold text-gray-900">
+                  ±{executiveData.projection_metadata.std_dev_next_year.toFixed(1)}%
+                </span>
+                <span className="text-xs text-gray-400 block">
+                  Basado en histórico {executiveData.projection_metadata.previous_year}-{executiveData.projection_metadata.current_year}
+                </span>
               </div>
             </div>
           </div>
@@ -434,7 +479,7 @@ function DashboardContent() {
 
         {/* Distribution Section - Collapsible with Chart Toggles */}
         <CollapsibleSection
-          title="Distribuciones"
+          title="Distribuciones YTD"
           icon="📊"
           defaultExpanded={true}
           storageKey="dashboard_distributions"

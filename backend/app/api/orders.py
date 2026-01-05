@@ -554,15 +554,32 @@ async def get_executive_kpis(
 
                 projections_next.append(projection_entry)
             else:
-                # No current year baseline, use average from current year
-                if monthly_curr:
-                    avg_revenue = statistics.mean([float(row['total_revenue']) for row in monthly_curr.values()])
-                    avg_orders = int(statistics.mean([row['total_orders'] for row in monthly_curr.values()]))
-                    projected_revenue = avg_revenue * (1 + avg_growth_rate_next / 100)
-                    projected_orders = int(avg_orders * (1 + avg_growth_rate_next / 100))
+                # No current year ACTUAL data for this month
+                # Try to use current year PROJECTION as baseline (from projections_curr)
+                curr_year_projection = next(
+                    (p for p in projections_curr if p['month'] == month),
+                    None
+                )
+
+                if curr_year_projection and curr_year_projection['total_revenue'] > 0:
+                    # Use 2026 projection as baseline for 2027
+                    baseline_revenue = curr_year_projection['total_revenue']
+                    baseline_orders = curr_year_projection['total_orders']
+                    projected_revenue = baseline_revenue * (1 + avg_growth_rate_next / 100)
+                    projected_orders = int(baseline_orders * (1 + avg_growth_rate_next / 100))
+                    baseline_note = f'Based on {current_year} projection'
+                elif month in monthly_prev:
+                    # Fall back to previous year with 2-year growth
+                    prev_revenue = float(monthly_prev[month]['total_revenue'])
+                    prev_orders = monthly_prev[month]['total_orders']
+                    two_year_growth = ((1 + avg_growth_rate_next / 100) ** 2 - 1) * 100
+                    projected_revenue = prev_revenue * (1 + two_year_growth / 100)
+                    projected_orders = int(prev_orders * (1 + two_year_growth / 100))
+                    baseline_note = f'Based on {previous_year} with 2-year growth'
                 else:
                     projected_revenue = 0
                     projected_orders = 0
+                    baseline_note = 'No baseline data'
 
                 projections_next.append({
                     'month': month,
@@ -575,7 +592,8 @@ async def get_executive_kpis(
                     'is_future': True,
                     'confidence_lower': float(projected_revenue * 0.8),
                     'confidence_upper': float(projected_revenue * 1.2),
-                    'growth_rate_applied': avg_growth_rate_next
+                    'growth_rate_applied': avg_growth_rate_next,
+                    'baseline_note': baseline_note
                 })
 
         # Calculate KPIs using dynamic year variables
@@ -603,7 +621,9 @@ async def get_executive_kpis(
 
         revenue_yoy_change = ((total_revenue_curr - total_revenue_prev_ytd) / total_revenue_prev_ytd * 100) if total_revenue_prev_ytd > 0 else 0
         orders_yoy_change = ((total_orders_curr - total_orders_prev_ytd) / total_orders_prev_ytd * 100) if total_orders_prev_ytd > 0 else 0
-        ticket_yoy_change = ((avg_ticket_curr - avg_ticket_prev) / avg_ticket_prev * 100) if avg_ticket_prev > 0 else 0
+        # Calculate YTD-adjusted average ticket for fair comparison
+        avg_ticket_prev_ytd = total_revenue_prev_ytd / total_orders_prev_ytd if total_orders_prev_ytd > 0 else 0
+        ticket_yoy_change = ((avg_ticket_curr - avg_ticket_prev_ytd) / avg_ticket_prev_ytd * 100) if avg_ticket_prev_ytd > 0 else 0
 
         # Calculate next year projected totals
         total_revenue_next_projected = sum([m['total_revenue'] for m in projections_next])
@@ -632,6 +652,10 @@ async def get_executive_kpis(
                     "revenue_yoy_change": revenue_yoy_change,
                     "orders_yoy_change": orders_yoy_change,
                     "ticket_yoy_change": ticket_yoy_change,
+                    # YTD-adjusted values for fair comparison display (same period as current year)
+                    "total_revenue_previous_year_ytd": total_revenue_prev_ytd,
+                    "total_orders_previous_year_ytd": total_orders_prev_ytd,
+                    "avg_ticket_previous_year_ytd": avg_ticket_prev_ytd,
                 },
                 "projection_metadata": {
                     "avg_growth_rate": avg_growth_rate,
