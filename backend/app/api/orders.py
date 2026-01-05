@@ -286,15 +286,21 @@ async def get_executive_kpis(
                     rev_prev = float(monthly_prev[month]['total_revenue'])
                     if rev_ybp > 0:
                         growth_rate = ((rev_prev - rev_ybp) / rev_ybp) * 100
+                        # Cap individual growth rates to prevent absurd projections
+                        growth_rate = max(-90, min(100, growth_rate))  # Cap between -90% and +100%
                         historical_growth_rates.append(growth_rate)
 
         # Calculate average growth rate and std dev for projections
         # Use historical growth rates when current year has no data
         if historical_growth_rates and not growth_rates:
             avg_growth_rate = statistics.mean(historical_growth_rates)
+            # Cap the average growth rate for safety
+            avg_growth_rate = max(-90, min(100, avg_growth_rate))
             std_dev = statistics.stdev(historical_growth_rates) if len(historical_growth_rates) > 1 else 10
         else:
             avg_growth_rate = statistics.mean(growth_rates) if growth_rates else 0
+            # Also cap regular growth rates to prevent edge cases
+            avg_growth_rate = max(-90, min(100, avg_growth_rate))
             std_dev = statistics.stdev(growth_rates) if len(growth_rates) > 1 else 10
 
         # Build response data
@@ -446,11 +452,15 @@ async def get_executive_kpis(
                 rev_curr = float(monthly_curr[month]['total_revenue'])
                 if rev_prev > 0:
                     growth_rate = ((rev_curr - rev_prev) / rev_prev) * 100
+                    # Cap individual month growth rates to prevent absurd projections
+                    growth_rate = max(-90, min(100, growth_rate))
                     growth_rates_by_month[month] = growth_rate
                     growth_rates_list.append(growth_rate)
 
         # Calculate average as fallback for months without specific data
         avg_growth_rate_next = statistics.mean(growth_rates_list) if growth_rates_list else avg_growth_rate
+        # Cap the average as well
+        avg_growth_rate_next = max(-90, min(100, avg_growth_rate_next))
         std_dev_next = statistics.stdev(growth_rates_list) if len(growth_rates_list) > 1 else std_dev
 
         # Check if current year has meaningful data - if not, use previous year as baseline
