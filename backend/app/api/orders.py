@@ -279,28 +279,29 @@ async def get_executive_kpis(
         # FALLBACK: If current year has no meaningful data (start of year edge case),
         # calculate historical growth from year_before_previous to previous_year (e.g., 2024→2025)
         historical_growth_rates = []
-        if current_year_total < 1000:  # Less than $1000 = essentially no data
+
+        # IMPORTANT: When filtering by product family AND no current year data exists,
+        # we cannot make meaningful projections. This is valuable information for the client.
+        # Example: Crackers might have $0 in 2026 YTD but $105M in 2025 - we can't project.
+        insufficient_data_for_projection = product_family is not None and current_year_total < 1000
+
+        if current_year_total < 1000 and not insufficient_data_for_projection:
+            # Only calculate historical growth for unfiltered queries (overall dashboard)
             for month in range(1, 13):
                 if month in monthly_ybp and month in monthly_prev:
                     rev_ybp = float(monthly_ybp[month]['total_revenue'])
                     rev_prev = float(monthly_prev[month]['total_revenue'])
                     if rev_ybp > 0:
                         growth_rate = ((rev_prev - rev_ybp) / rev_ybp) * 100
-                        # Cap individual growth rates to prevent absurd projections
-                        growth_rate = max(-90, min(100, growth_rate))  # Cap between -90% and +100%
                         historical_growth_rates.append(growth_rate)
 
         # Calculate average growth rate and std dev for projections
-        # Use historical growth rates when current year has no data
+        # Use historical growth rates when current year has no data (unfiltered only)
         if historical_growth_rates and not growth_rates:
             avg_growth_rate = statistics.mean(historical_growth_rates)
-            # Cap the average growth rate for safety
-            avg_growth_rate = max(-90, min(100, avg_growth_rate))
             std_dev = statistics.stdev(historical_growth_rates) if len(historical_growth_rates) > 1 else 10
         else:
             avg_growth_rate = statistics.mean(growth_rates) if growth_rates else 0
-            # Also cap regular growth rates to prevent edge cases
-            avg_growth_rate = max(-90, min(100, avg_growth_rate))
             std_dev = statistics.stdev(growth_rates) if len(growth_rates) > 1 else 10
 
         # Build response data
@@ -384,7 +385,13 @@ async def get_executive_kpis(
 
         # CURRENT YEAR projected data for ALL 12 months (based on previous year + growth rate)
         # This allows comparison of actual vs projected for past months too
-        for month in range(1, 13):
+        # SKIP projections when we don't have sufficient current year data for a filtered query
+        if insufficient_data_for_projection:
+            projections_curr = []  # No meaningful projections possible
+        else:
+            pass  # Continue with normal projection logic below
+
+        for month in range(1, 13) if not insufficient_data_for_projection else []:
             month_name = datetime(current_year, month, 1).strftime('%b')
             is_future_month = month > current_month
 
@@ -452,15 +459,11 @@ async def get_executive_kpis(
                 rev_curr = float(monthly_curr[month]['total_revenue'])
                 if rev_prev > 0:
                     growth_rate = ((rev_curr - rev_prev) / rev_prev) * 100
-                    # Cap individual month growth rates to prevent absurd projections
-                    growth_rate = max(-90, min(100, growth_rate))
                     growth_rates_by_month[month] = growth_rate
                     growth_rates_list.append(growth_rate)
 
         # Calculate average as fallback for months without specific data
         avg_growth_rate_next = statistics.mean(growth_rates_list) if growth_rates_list else avg_growth_rate
-        # Cap the average as well
-        avg_growth_rate_next = max(-90, min(100, avg_growth_rate_next))
         std_dev_next = statistics.stdev(growth_rates_list) if len(growth_rates_list) > 1 else std_dev
 
         # Check if current year has meaningful data - if not, use previous year as baseline
@@ -468,7 +471,9 @@ async def get_executive_kpis(
         use_previous_year_as_baseline = current_year_total_revenue < 1000  # Less than $1000 = essentially no data
 
         projections_next = []
-        for month in range(1, 13):
+
+        # SKIP next year projections when insufficient data for filtered queries
+        for month in range(1, 13) if not insufficient_data_for_projection else []:
             month_name = datetime(next_year, month, 1).strftime('%b')
 
             # EDGE CASE: Beginning of new year with no current year data
@@ -668,12 +673,12 @@ async def get_executive_kpis(
                     "avg_ticket_previous_year_ytd": avg_ticket_prev_ytd,
                 },
                 "projection_metadata": {
-                    "avg_growth_rate": avg_growth_rate,
-                    "avg_growth_rate_next_year": avg_growth_rate_next,
+                    "avg_growth_rate": avg_growth_rate if not insufficient_data_for_projection else None,
+                    "avg_growth_rate_next_year": avg_growth_rate_next if not insufficient_data_for_projection else None,
                     "growth_rates_by_month": growth_rates_by_month,
                     "projection_method": "month_specific",
-                    "std_dev": std_dev,
-                    "std_dev_next_year": std_dev_next,
+                    "std_dev": std_dev if not insufficient_data_for_projection else None,
+                    "std_dev_next_year": std_dev_next if not insufficient_data_for_projection else None,
                     "months_projected": len(projections_curr),
                     "current_month": current_month,
                     "current_month_name": current_month_name,
@@ -683,6 +688,9 @@ async def get_executive_kpis(
                     "mtd_day": current_day,
                     "is_mtd_comparison": current_month in monthly_prev_mtd,
                     "mtd_comparison_info": f"{current_month_name}: comparando días 1-{current_day} de {previous_year} vs {current_year}" if current_month in monthly_prev_mtd else None,
+                    # Flag indicating insufficient data for projections (filtered queries with no current year data)
+                    "insufficient_data_for_projection": insufficient_data_for_projection,
+                    "insufficient_data_message": f"No hay datos de {current_year} para esta familia. No es posible generar proyecciones comparativas." if insufficient_data_for_projection else None,
                     # Incomplete month estimation for next year projections
                     "incomplete_month_estimation": {
                         "month": current_month,

@@ -53,10 +53,10 @@ interface ExecutiveData {
     avg_ticket_previous_year_ytd: number
   }
   projection_metadata: {
-    avg_growth_rate: number
-    avg_growth_rate_next_year: number
-    std_dev: number
-    std_dev_next_year: number
+    avg_growth_rate: number | null
+    avg_growth_rate_next_year: number | null
+    std_dev: number | null
+    std_dev_next_year: number | null
     months_projected: number
     current_month: number
     current_month_name?: string
@@ -66,6 +66,9 @@ interface ExecutiveData {
     mtd_day?: number
     is_mtd_comparison?: boolean
     mtd_comparison_info?: string | null
+    // Flag indicating insufficient data for projections (filtered queries with no current year data)
+    insufficient_data_for_projection?: boolean
+    insufficient_data_message?: string | null
   }
 }
 
@@ -389,14 +392,23 @@ function DashboardContent() {
           <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl border border-purple-200 p-5">
             <div className="flex items-center justify-between mb-3">
               <span className="text-sm text-purple-600 font-medium">Ingresos Proyectados {executiveData.projection_metadata.current_year}</span>
-              {projectedYoYChange !== 0 && (
+              {!executiveData.projection_metadata.insufficient_data_for_projection && projectedYoYChange !== 0 && (
                 <span className={`text-sm font-medium ${projectedYoYChange > 0 ? 'text-green-600' : 'text-red-600'}`}>
                   {projectedYoYChange > 0 ? '+' : ''}{projectedYoYChange.toFixed(1)}%
                 </span>
               )}
             </div>
-            <div className="text-2xl font-semibold text-purple-900">${Math.round(projectedCurrentYearTotal).toLocaleString('es-CL')}</div>
-            <div className="text-xs text-purple-500 mt-1">vs ${Math.round(executiveData.kpis.total_revenue_previous_year).toLocaleString('es-CL')} en {executiveData.projection_metadata.previous_year}</div>
+            {executiveData.projection_metadata.insufficient_data_for_projection ? (
+              <>
+                <div className="text-lg font-medium text-purple-700">Sin datos suficientes</div>
+                <div className="text-xs text-purple-500 mt-1">{executiveData.projection_metadata.insufficient_data_message || 'No hay datos del año actual para esta familia'}</div>
+              </>
+            ) : (
+              <>
+                <div className="text-2xl font-semibold text-purple-900">${Math.round(projectedCurrentYearTotal).toLocaleString('es-CL')}</div>
+                <div className="text-xs text-purple-500 mt-1">vs ${Math.round(executiveData.kpis.total_revenue_previous_year).toLocaleString('es-CL')} en {executiveData.projection_metadata.previous_year}</div>
+              </>
+            )}
           </div>
 
           {/* Orders KPI */}
