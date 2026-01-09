@@ -1,42 +1,41 @@
 # FastAPI Core
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-pydantic==2.5.0
-pydantic-settings==2.1.0
+fastapi>=0.104.1
+uvicorn[standard]>=0.24.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
 
 # Database
-psycopg2-binary==2.9.9
-sqlalchemy==2.0.23
-alembic==1.12.1
+psycopg2-binary>=2.9.9
+sqlalchemy>=2.0.23
+alembic>=1.12.1
 
-# Supabase - Pinned to versions compatible with Pydantic 2.5
-supabase==2.22.0
-supabase-auth==2.22.0
+# Supabase
+supabase>=2.22.0
 
 # API Integrations
 httpx>=0.26.0
-requests==2.31.0
+requests>=2.31.0
 
 # Data Processing
-pandas==2.1.4
-python-dateutil==2.8.2
-openpyxl==3.1.5
+pandas>=2.2.0
+python-dateutil>=2.8.2
+openpyxl>=3.1.5
 
 # Utilities
-python-dotenv==1.0.0
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-python-multipart==0.0.6
+python-dotenv>=1.0.0
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+python-multipart>=0.0.6
 email-validator>=2.0.0
 
 # Logging & Monitoring
-loguru==0.7.2
+loguru>=0.7.2
 
 # Development
-pytest==7.4.3
-pytest-asyncio==0.21.1
-black==23.12.0
-flake8==6.1.0
+pytest>=7.4.3
+pytest-asyncio>=0.21.1
+black>=23.12.0
+flake8>=6.1.0
 
 # AI Integration
 anthropic>=0.39.0
