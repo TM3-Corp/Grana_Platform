@@ -71,3 +71,15 @@ backup/
 
 # Data directory (raw data, not for git)
 data/
+
+# Supabase local (Docker containers temp files)
+supabase/.temp/
+supabase/.branches/
+supabase/.cache/
+supabase/snippets/
+
+# Supabase generated types (regenerate with: npx supabase gen types typescript)
+database.types.ts
+
+# Claude Code sessions
+.claude_sessions/

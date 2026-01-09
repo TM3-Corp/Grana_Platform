@@ -119,6 +119,15 @@ python3 script.py  # Now reads from backend/.env correctly
 DATABASE_URL = "postgresql://postgres.lypuvibmtxjaxmcmahxr:%24Ilofono1@aws-1-sa-east-1.pooler.supabase.com:6543/postgres"
 ```
 
+### Database Connection Tiers (`core/database.py`)
+
+Three access patterns available:
+1. **SQLAlchemy ORM**: Use `SessionLocal` for structured data with models
+2. **psycopg2 direct**: Use `get_db_connection()` for raw SQL performance queries
+3. **Supabase client**: Use `get_supabase_client()` for Supabase-specific features
+
+All connections have retry logic for SSL failures (exponential backoff, max 3 retries) and 10-second timeout.
+
 ---
 
 ## Architecture Overview
@@ -163,6 +172,14 @@ backend/app/
 └── services/         # Business logic
 ```
 
+### Key Services
+
+- **`ProductCatalogService`**: Manages product families, SKU mappings, and conversion factors. Replaces CSV-based logic.
+- **`SyncService`**: Orchestrates data sync from external APIs (Shopify, MercadoLibre, Relbase) with transactional rollback on errors.
+- **`SKUMappingService`**: Database-driven SKU transformation rules.
+- **`InventoryService`**: Stock level management across warehouses.
+- **`ClaudeChatService`**: AI-powered inventory queries via Anthropic API.
+
 ### Key Frontend Structure
 
 ```
@@ -196,6 +213,14 @@ frontend/
 AUTH_SECRET=grana_platform_secret_key_2025_production_ready
 ```
 
+**Role-based access control (RBAC):** admin (3) > user (2) > viewer (1)
+- Protected endpoints use `get_current_user` dependency from `core/auth.py`
+
+**Rate limiting (`core/rate_limit.py`):** Sliding window algorithm
+- Authenticated users: 1000 req/min
+- API keys: 100 req/min (configurable)
+- Unauthenticated/IP: 100 req/min
+
 ---
 
 ## External API Integration
@@ -227,14 +252,14 @@ headers = {
 Family: "Barra Low Carb Manzana Canela"
 ├── BAMC_U04010 (1 unidad)
 ├── BAMC_U20010 (5 unidades)
-└── BAMC_C02810 (caja master)
+└── BAMC_C02810 (caja master - 20 units)
 ```
 
-**Source of truth:** `public/Archivos_Compartidos/Códigos_Grana_Final.csv` - maps SKU → family and format.
+**Source of truth:** `product_catalog` table in Supabase (migrated from CSV in Nov 2025)
 
-**SKU fields calculated dynamically in Python** (not stored in DB):
-- SKU Primario: `backend/app/api/audit.py` → `get_sku_primario()`
-- Unidades: quantity × conversion factor from CSV
+**SKU fields calculated dynamically via `ProductCatalogService`** (not stored in orders):
+- SKU Primario: base/primary SKU for product families
+- Units: quantity × conversion factor (units_per_display, items_per_master_box)
 
 ---
 
