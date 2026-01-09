@@ -2,12 +2,31 @@
 # .gitignore - Archivos que NUNCA deben subirse a Git
 # ============================================================================
 
-# Credenciales (MUY IMPORTANTE)
+# ============================================
+# Environment Files
+# ============================================
+# IMPORTANT: .env.development is SAFE to commit (local Docker credentials)
+# Only .env, .env.local, and .env.production contain real credentials
+
+# Root level
 .env
 .env.local
-.env.*.local
+.env.production
+
+# Backend - production credentials (NEVER commit)
 backend/.env
 backend/.env.local
+backend/.env.production
+
+# Frontend - production credentials (NEVER commit)
+frontend/.env.local
+frontend/.env.production
+
+# NOTE: These ARE tracked (safe - local Docker only):
+# - backend/.env.development
+# - frontend/.env.development
+
+# Keys and certificates
 *.pem
 *.key
 

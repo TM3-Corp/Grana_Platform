@@ -30,8 +30,15 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# env files
+# .env.development is SAFE to commit (local Docker credentials)
+.env
+.env.local
+.env.production
+.env*.local
+
+# Allow .env.development (local Supabase Docker - safe to commit)
+!.env.development
 
 # vercel
 .vercel
@@ -46,4 +53,3 @@ next-env.d.ts
 # CSV data files (contain business data)
 *.csv
 /public/Archivos_Compartidos/
-.env*.local

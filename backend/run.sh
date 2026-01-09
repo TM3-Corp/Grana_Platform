@@ -1,9 +1,16 @@
 #!/bin/bash
-# Script para levantar el backend de manera simple
+# Script para levantar el backend en modo DESARROLLO
+# Usa .env.development (Supabase local Docker)
 
-# Unset system DATABASE_URL to ensure we use the Session Pooler from .env
-# WSL2 only supports IPv4, so we must use Session Pooler, not direct connection
+# Set environment to development (loads .env.development)
+export APP_ENV=development
+
+# Unset any system DATABASE_URL to ensure we use local config
 unset DATABASE_URL
+
+echo "🔧 Starting backend in DEVELOPMENT mode..."
+echo "   Using: .env.development (local Supabase Docker)"
+echo ""
 
 source venv/bin/activate
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000

@@ -1,6 +1,10 @@
 #!/bin/bash
+# ============================================
 # First-time setup script for Grana Platform
+# ============================================
 # Run this once after cloning the repository
+# Sets up DEVELOPMENT environment (local Supabase Docker)
+# ============================================
 
 set -e  # Exit on any error
 
@@ -14,6 +18,7 @@ NC='\033[0m' # No Color
 echo ""
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}🍃 Grana Platform - First Time Setup${NC}"
+echo -e "${GREEN}   Environment: DEVELOPMENT (Local Supabase)${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
@@ -143,18 +148,22 @@ echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━
 echo ""
 echo -e "${BLUE}Next steps:${NC}"
 echo ""
-echo -e "   1. Configure environment variables (if not done):"
-echo -e "      - Edit ${YELLOW}backend/.env${NC} with database credentials"
-echo -e "      - Edit ${YELLOW}frontend/.env.local${NC} with API URLs"
+echo -e "   1. Start Supabase local (Docker):"
+echo -e "      ${GREEN}npx supabase start${NC}"
+echo -e "      ${GREEN}npx supabase db reset${NC}  (apply migrations)"
 echo ""
 echo -e "   2. Start the application:"
 echo -e "      ${GREEN}./dev.sh${NC}"
 echo ""
 echo -e "   3. Access the app:"
-echo -e "      - Frontend: ${BLUE}http://localhost:3000${NC}"
-echo -e "      - Backend:  ${BLUE}http://localhost:8000${NC}"
-echo -e "      - API Docs: ${BLUE}http://localhost:8000/docs${NC}"
+echo -e "      - Frontend:        ${BLUE}http://localhost:3000${NC}"
+echo -e "      - Backend:         ${BLUE}http://localhost:8000${NC}"
+echo -e "      - API Docs:        ${BLUE}http://localhost:8000/docs${NC}"
+echo -e "      - Supabase Studio: ${BLUE}http://127.0.0.1:54323${NC}"
 echo ""
 echo -e "   4. Stop the application:"
 echo -e "      ${GREEN}./stop.sh${NC} or ${GREEN}Ctrl+C${NC}"
+echo -e "      ${GREEN}npx supabase stop${NC}  (stop Docker containers)"
+echo ""
+echo -e "${YELLOW}📖 See supabase/REMOTE_SUPABASE_SETUP.md for full local setup guide${NC}"
 echo ""

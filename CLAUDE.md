@@ -16,27 +16,53 @@ This script will:
 - Install frontend npm dependencies
 - Set up git hooks
 
-### Running the Application
+### Running the Application (Development Mode)
 
 ```bash
-# Start both frontend and backend (recommended)
+# Start Supabase local first (if not running)
+npx supabase start
+npx supabase db reset    # Apply migrations
+
+# Start both frontend and backend
 ./dev.sh
 
 # Stop all services
 ./stop.sh
-
-# Or run separately:
-# Backend (FastAPI)
-cd backend && source venv/bin/activate && uvicorn app.main:app --reload --port 8000
-
-# Frontend (Next.js)
-cd frontend && npm run dev
+npx supabase stop        # Stop Supabase Docker
 ```
 
 **Local URLs:**
 - Frontend: http://localhost:3000
 - Backend: http://localhost:8000
 - API Docs: http://localhost:8000/docs
+- Supabase Studio: http://127.0.0.1:54323
+
+---
+
+## Critical Rule: Development vs Production Environment
+
+**Default environment is DEVELOPMENT** — uses local Supabase Docker, never production.
+
+### Environment Files
+
+| File | Environment | Tracked | Contains |
+|------|-------------|---------|----------|
+| `backend/.env.development` | Development | Yes | Local Supabase Docker credentials |
+| `frontend/.env.development` | Development | Yes | Local Supabase Docker credentials |
+| `backend/.env` | Production | No | Remote Supabase credentials |
+| `frontend/.env.local` | Production | No | Remote Supabase credentials |
+
+### How It Works
+
+- `APP_ENV=development` (default) → loads `.env.development`
+- `APP_ENV=production` → loads `.env.production` or `.env`
+- `./dev.sh` automatically sets `APP_ENV=development`
+
+### Safety Measures
+
+1. **Default to development**: If `APP_ENV` is not set, defaults to development
+2. **Claude Code hooks**: Block `supabase push`, `supabase link`, `npm run build`
+3. **Gitignore**: `.env` and `.env.local` are never committed
 
 ### Backend Commands
 
