@@ -142,30 +142,25 @@ Esto:
 
 ---
 
-## 6) Configurar variables de entorno
+## 6) Variables de entorno (ya configuradas)
 
-### 6.1 Backend (`backend/.env`)
+Los archivos `.env.development` ya vienen configurados en el repositorio con las credenciales locales de Docker. **No necesitas crear nada manualmente.**
 
-Crea o edita `backend/.env`:
+### 6.1 Backend (`backend/.env.development`) — YA EXISTE
 
 ```env
 # ============================================
 # SUPABASE LOCAL (Docker) — NO PRODUCCIÓN
 # ============================================
 
+APP_ENV=development
 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres
 SUPABASE_URL=http://127.0.0.1:54321
-SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
-
-# Auth (debe coincidir con frontend)
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 AUTH_SECRET=grana_platform_secret_key_2025_production_ready
-
-# Otras variables que tu app necesite...
 ```
 
-### 6.2 Frontend (`frontend/.env.local`)
-
-Crea o edita `frontend/.env.local`:
+### 6.2 Frontend (`frontend/.env.development`) — YA EXISTE
 
 ```env
 # ============================================
@@ -173,15 +168,14 @@ Crea o edita `frontend/.env.local`:
 # ============================================
 
 NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 NEXT_PUBLIC_API_URL=http://localhost:8000
-
-# Auth
 AUTH_SECRET=grana_platform_secret_key_2025_production_ready
-NEXTAUTH_URL=http://localhost:3000
 ```
 
-⚠️ **Las keys locales son siempre las mismas** (son de demo, no son secretas).
+✅ **Estos archivos están en Git** porque solo contienen credenciales locales de Docker (son de demo, no son secretas).
+
+⚠️ **NUNCA edites `.env` o `.env.local`** — esos son para producción y están en `.gitignore`.
 
 ---
 
@@ -255,19 +249,77 @@ npx supabase migration new nombre_descriptivo
 
 ---
 
-## 9) Poblar la DB local con datos de prueba (opcional)
+## 9) Cargar datos de producción a local (recomendado)
 
-La DB local está vacía después de `db reset`. Opciones:
+La DB local está vacía después de `db reset`. Para desarrollar con datos reales, puedes copiar los datos de producción a tu local.
 
-### Opción A: Insertar datos manualmente
+> **IMPORTANTE:** Este proceso es de SOLO LECTURA en producción. No modifica nada remoto.
 
-1. Abre Studio: http://127.0.0.1:54323
-2. Ve a Table Editor
-3. Inserta registros en las tablas que necesites
+### Opción A: Usar el script automático (recomendado)
 
-### Opción B: Crear script de seed
+```bash
+./scripts/load-remote-data.sh
+```
 
-Crea `supabase/seed.sql` con INSERTs de datos de prueba:
+Este script:
+1. Hace `pg_dump` de producción (solo lectura)
+2. Carga los datos en tu DB local
+3. No toca el esquema (viene de las migraciones)
+
+### Opción B: Manual paso a paso
+
+**Paso 1:** Exportar datos de producción (READ-ONLY)
+
+```bash
+# Usar pg_dump desde Docker (tiene la versión correcta de PostgreSQL)
+docker run --rm --network host \
+    public.ecr.aws/supabase/postgres:17.6.1.011 \
+    pg_dump "postgresql://postgres.lypuvibmtxjaxmcmahxr:%24Ilofono1@aws-1-sa-east-1.pooler.supabase.com:6543/postgres" \
+    --data-only \
+    --exclude-schema='auth' \
+    --exclude-schema='storage' \
+    --exclude-schema='supabase_*' \
+    --exclude-schema='extensions' \
+    --exclude-schema='graphql' \
+    --exclude-schema='graphql_public' \
+    --exclude-schema='realtime' \
+    --exclude-schema='_realtime' \
+    --exclude-schema='pgsodium*' \
+    --exclude-schema='vault' \
+    --exclude-table='schema_migrations' \
+    --no-owner \
+    --no-privileges \
+    > /tmp/remote_data.sql
+```
+
+**Paso 2:** Verificar el archivo exportado
+
+```bash
+du -h /tmp/remote_data.sql   # Debería ser ~9MB
+```
+
+**Paso 3:** Cargar datos en local
+
+```bash
+psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+    -f /tmp/remote_data.sql
+```
+
+**Paso 4:** Verificar datos cargados
+
+```bash
+psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -c "
+SELECT 'orders' as tabla, COUNT(*) as registros FROM orders
+UNION ALL SELECT 'customers', COUNT(*) FROM customers
+UNION ALL SELECT 'products', COUNT(*) FROM products;
+"
+```
+
+O abre Supabase Studio: http://127.0.0.1:54323
+
+### Opción C: Datos de prueba manuales
+
+Si prefieres no usar datos de producción, crea `supabase/seed.sql`:
 
 ```sql
 -- Ejemplo de seed data
@@ -276,7 +328,7 @@ INSERT INTO users (email, name, role) VALUES
   ('user@test.com', 'Usuario Local', 'user');
 ```
 
-Luego aplica con:
+Aplica con:
 ```bash
 psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -f supabase/seed.sql
 ```
@@ -329,11 +381,13 @@ Antes de empezar a desarrollar, verifica:
 - [ ] Docker Desktop está **Running**
 - [ ] `docker ps` muestra contenedores de supabase
 - [ ] `npx supabase status` muestra URLs y puertos
+- [ ] `npx supabase db reset` ejecutado (migraciones aplicadas)
+- [ ] `./scripts/load-remote-data.sh` ejecutado (datos cargados)
 - [ ] Studio funciona: http://127.0.0.1:54323
-- [ ] Las tablas existen en Studio → Table Editor
-- [ ] `backend/.env` apunta a `127.0.0.1:54322`
-- [ ] `frontend/.env.local` apunta a `127.0.0.1:54321`
-- [ ] La app levanta sin errores de conexión
+- [ ] Las tablas tienen datos en Studio → Table Editor
+- [ ] `backend/.env.development` existe (ya viene en el repo)
+- [ ] `frontend/.env.development` existe (ya viene en el repo)
+- [ ] `./dev.sh` levanta sin errores de conexión
 
 ---
 
