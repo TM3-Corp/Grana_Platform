@@ -40,6 +40,8 @@ interface AuditData {
   channel_null: boolean;
   sku_null: boolean;
   in_catalog: boolean;
+  is_pack_component?: boolean;  // True if this row is from an expanded variety pack
+  pack_parent?: string;         // Original PACK SKU (e.g., "PACKNAVIDAD2")
 }
 
 interface AuditSummary {
@@ -1492,7 +1494,7 @@ export default function AuditView() {
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
                                   {expandedGroupDetails[groupKey].map((item, idx) => (
-                                    <tr key={`${item.item_id}-${idx}`} className="hover:bg-gray-50">
+                                    <tr key={`${item.item_id}-${idx}`} className={`hover:bg-gray-50 ${item.is_pack_component ? 'bg-indigo-50/50' : ''}`}>
                                       <td className="px-2 py-2 text-xs text-gray-900">
                                         <div className="font-medium">{item.order_external_id}</div>
                                         <div className="text-gray-500">{item.order_source}</div>
@@ -1514,6 +1516,11 @@ export default function AuditView() {
                                       <td className="px-2 py-2 text-xs max-w-24">
                                         <div className={`break-all font-mono ${item.sku_null ? 'text-red-600 font-medium' : 'text-gray-900'}`}>
                                           {item.sku || 'SIN SKU'}
+                                          {item.is_pack_component && item.pack_parent && (
+                                            <div className="text-xs text-indigo-600 font-normal" title={`Componente de ${item.pack_parent}`}>
+                                              📦 {item.pack_parent}
+                                            </div>
+                                          )}
                                         </div>
                                       </td>
                                       <td className="px-2 py-2 text-xs max-w-24">
@@ -1610,7 +1617,7 @@ export default function AuditView() {
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                       {groupItems.map((item, idx) => (
-                        <tr key={`${item.item_id}-${idx}`} className="hover:bg-gray-50">
+                        <tr key={`${item.item_id}-${idx}`} className={`hover:bg-gray-50 ${item.is_pack_component ? 'bg-indigo-50/50' : ''}`}>
                           <td className="px-2 py-2 text-xs text-gray-900">
                             <div className="font-medium">{item.order_external_id}</div>
                             <div className="text-gray-500">{item.order_source}</div>
@@ -1632,6 +1639,11 @@ export default function AuditView() {
                           <td className="px-2 py-2 text-xs max-w-24">
                             <div className={`break-all font-mono ${item.sku_null ? 'text-red-600 font-medium' : 'text-gray-900'}`}>
                               {item.sku || 'SIN SKU'}
+                              {item.is_pack_component && item.pack_parent && (
+                                <div className="text-xs text-indigo-600 font-normal" title={`Componente de ${item.pack_parent}`}>
+                                  📦 {item.pack_parent}
+                                </div>
+                              )}
                             </div>
                           </td>
                           <td className="px-2 py-2 text-xs max-w-24">

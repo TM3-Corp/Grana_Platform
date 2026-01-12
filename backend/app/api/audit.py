@@ -287,6 +287,9 @@ def expand_pack_to_components(row_dict: dict, pack_mappings: list, cursor) -> li
         # Calculate component quantity
         component_qty = original_qty * qty_multiplier
 
+        # Calculate unit price for this component (revenue / quantity)
+        component_unit_price = round(component_revenue / component_qty, 2) if component_qty > 0 else 0
+
         # Get additional product info from catalog
         peso_display_total = service.get_peso_display_total(component_sku)
         peso_total = service.calculate_peso_total(component_sku, component_qty)
@@ -302,6 +305,7 @@ def expand_pack_to_components(row_dict: dict, pack_mappings: list, cursor) -> li
             'family': mapping['category'] or row_dict.get('family'),
             'quantity': component_qty,
             'unidades': component_qty,  # For expanded components, qty = units
+            'unit_price': component_unit_price,  # Calculated price per unit
             'item_subtotal': component_revenue,
             'peso_display_total': peso_display_total,
             'peso_total': peso_total,
