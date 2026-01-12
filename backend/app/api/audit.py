@@ -226,15 +226,15 @@ def get_pack_component_mappings(sku: str, cursor) -> list:
     if len(mappings) <= 1:
         return []
 
-    # Convert to list of dicts
+    # Convert to list of dicts (cursor returns RealDictCursor rows)
     return [
         {
-            'target_sku': row[0],
-            'quantity_multiplier': row[1] or 1,
-            'product_name': row[2],
-            'sku_primario': row[3],
-            'category': row[4],
-            'sku_value': row[5] or 1000
+            'target_sku': row['target_sku'],
+            'quantity_multiplier': row['quantity_multiplier'] or 1,
+            'product_name': row['product_name'],
+            'sku_primario': row['sku_primario'],
+            'category': row['category'],
+            'sku_value': row['sku_value'] or 1000
         }
         for row in mappings
     ]
@@ -510,7 +510,8 @@ async def get_audit_data(
                 where_clauses.append("o.invoice_status IN ('accepted', 'accepted_objection')")
 
                 # ✅ Filter out ANU/legacy codes (historical SKUs that clutter reports)
-                where_clauses.append("oi.product_sku NOT LIKE 'ANU%'")
+                # Note: Use %% to escape % in LIKE pattern for psycopg2
+                where_clauses.append("oi.product_sku NOT LIKE 'ANU%%'")
 
                 # Multi-value filters using IN operator
                 if source:
@@ -1618,7 +1619,8 @@ async def export_audit_data(
                 where_clauses.append("o.source = 'relbase'")
                 where_clauses.append("o.invoice_status IN ('accepted', 'accepted_objection')")
                 # ✅ Filter out ANU/legacy codes (historical SKUs that clutter reports)
-                where_clauses.append("oi.product_sku NOT LIKE 'ANU%'")
+                # Note: Use %% to escape % in LIKE pattern for psycopg2
+                where_clauses.append("oi.product_sku NOT LIKE 'ANU%%'")
 
                 if source:
                     placeholders = ','.join(['%s'] * len(source))
