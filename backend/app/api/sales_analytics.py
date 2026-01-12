@@ -69,6 +69,8 @@ async def get_sales_analytics(
         # Build base filters
         # ✅ FORCE RelBase only - ignore sources parameter to avoid duplication
         where_clauses = ["mv.source = 'relbase'"]
+        # ✅ Filter out ANU/legacy codes (historical SKUs that clutter reports)
+        where_clauses.append("mv.original_sku NOT LIKE 'ANU%'")
         params = []  # No dynamic source parameter
 
         # NOTE: invoice_status filter already applied in materialized view
@@ -855,6 +857,8 @@ async def export_sales_analytics(
 
         # Build base filters (same as main endpoint)
         where_clauses = ["mv.source = 'relbase'"]
+        # ✅ Filter out ANU/legacy codes (historical SKUs that clutter reports)
+        where_clauses.append("mv.original_sku NOT LIKE 'ANU%'")
         params = []
 
         # Date filters

@@ -184,7 +184,10 @@ export default function GroupedDataTable({
                 key={index}
                 className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
               >
-                <td className="py-3 px-4 text-gray-900 font-medium">
+                <td
+                  className="py-3 px-4 text-gray-900 font-medium min-w-64"
+                  title={row.group_value || 'Sin clasificar'}
+                >
                   {row.group_value || 'Sin clasificar'}
                 </td>
                 <td className="py-3 px-4 text-right text-gray-900 font-medium">

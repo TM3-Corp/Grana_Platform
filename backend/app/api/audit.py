@@ -178,6 +178,147 @@ def calculate_units(sku: str, quantity: int, conversion_map: dict = None, source
     return service.calculate_units(sku, quantity, source)
 
 
+def get_pack_component_mappings(sku: str, cursor) -> list:
+    """
+    Get all component mappings for a PACK/variety product.
+
+    Returns list of component dictionaries if SKU has multiple mappings (is a variety pack),
+    otherwise returns empty list for normal products.
+
+    Each component dict contains:
+    - target_sku: Component SKU
+    - quantity_multiplier: How many of this component in the pack
+    - product_name: Name from product catalog
+    - sku_primario: Primary SKU for grouping
+    - category: Product category
+    - sku_value: Value for proportional revenue calculation
+
+    Example for PACKNAVIDAD2:
+    [
+        {'target_sku': 'KSMC_U15010', 'quantity_multiplier': 2, 'sku_value': 1886, ...},
+        {'target_sku': 'BABE_U20010', 'quantity_multiplier': 1, 'sku_value': 1461, ...},
+        ...
+    ]
+    """
+    if not sku:
+        return []
+
+    cursor.execute('''
+        SELECT
+            sm.target_sku,
+            sm.quantity_multiplier,
+            pc.product_name,
+            pc.sku_primario,
+            pc.category,
+            COALESCE(pc.sku_value, 1000) as sku_value
+        FROM sku_mappings sm
+        LEFT JOIN product_catalog pc ON pc.sku = sm.target_sku AND pc.is_active = TRUE
+        WHERE sm.source_pattern = %s
+          AND sm.pattern_type = 'exact'
+          AND sm.is_active = TRUE
+        ORDER BY sm.id
+    ''', (sku.upper(),))
+
+    mappings = cursor.fetchall()
+
+    # Only return mappings if there are multiple (variety pack)
+    # Single mappings are handled normally (not expanded)
+    if len(mappings) <= 1:
+        return []
+
+    # Convert to list of dicts
+    return [
+        {
+            'target_sku': row[0],
+            'quantity_multiplier': row[1] or 1,
+            'product_name': row[2],
+            'sku_primario': row[3],
+            'category': row[4],
+            'sku_value': row[5] or 1000
+        }
+        for row in mappings
+    ]
+
+
+def expand_pack_to_components(row_dict: dict, pack_mappings: list, cursor) -> list:
+    """
+    Expand a PACK order item into individual component rows.
+
+    Takes a single order row containing a variety pack and returns multiple rows,
+    one for each component product, with proportional revenue distribution.
+
+    Args:
+        row_dict: Original order item row (e.g., PACKNAVIDAD2, qty=1, $40,112)
+        pack_mappings: List of component mappings from get_pack_component_mappings()
+        cursor: Database cursor for additional lookups
+
+    Returns:
+        List of expanded row dicts, one per component
+    """
+    if not pack_mappings:
+        return [row_dict]
+
+    expanded_rows = []
+    original_qty = row_dict.get('quantity', 0) or 0
+    original_subtotal = row_dict.get('item_subtotal', 0) or 0
+    original_sku = row_dict.get('sku', '')
+    service = get_product_catalog_service()
+
+    # Calculate total weighted value for proportional revenue split
+    total_weighted_value = sum(
+        m['sku_value'] * m['quantity_multiplier']
+        for m in pack_mappings
+    )
+
+    for mapping in pack_mappings:
+        component_sku = mapping['target_sku']
+        qty_multiplier = mapping['quantity_multiplier']
+        component_value = mapping['sku_value']
+        weighted_value = component_value * qty_multiplier
+
+        # Calculate proportional revenue
+        if total_weighted_value > 0:
+            proportion = weighted_value / total_weighted_value
+            component_revenue = round(original_subtotal * proportion, 2)
+        else:
+            # Equal split if no value data
+            component_revenue = round(original_subtotal / len(pack_mappings), 2)
+
+        # Calculate component quantity
+        component_qty = original_qty * qty_multiplier
+
+        # Get additional product info from catalog
+        peso_display_total = service.get_peso_display_total(component_sku)
+        peso_total = service.calculate_peso_total(component_sku, component_qty)
+
+        # Create new row for this component
+        component_row = {
+            **row_dict,  # Copy all original fields
+            'sku': component_sku,
+            'product_name': mapping['product_name'] or component_sku,
+            'sku_primario': mapping['sku_primario'],
+            'sku_primario_name': service.get_product_name_for_sku_primario(mapping['sku_primario']) if mapping['sku_primario'] else None,
+            'category': mapping['category'] or row_dict.get('category'),
+            'family': mapping['category'] or row_dict.get('family'),
+            'quantity': component_qty,
+            'unidades': component_qty,  # For expanded components, qty = units
+            'item_subtotal': component_revenue,
+            'peso_display_total': peso_display_total,
+            'peso_total': peso_total,
+            'pack_parent': original_sku,  # Reference to original PACK SKU
+            'is_pack_component': True,
+            'pack_quantity': qty_multiplier,
+            'match_type': 'pack_expansion',
+            'confidence': 100,
+            'in_catalog': True,
+            'conversion_factor': 1
+        }
+
+        expanded_rows.append(component_row)
+
+    return expanded_rows
+
+
 def map_sku_with_quantity(sku, product_name, product_map, catalog_skus, catalog_master_skus, source=None):
     """
     Map raw SKU to catalog SKU using database-driven rules and programmatic fallbacks.
@@ -367,6 +508,9 @@ async def get_audit_data(
                 # ✅ INVOICE STATUS FILTER: Only show accepted invoices (exclude cancelled, declined, NULL)
                 # This aligns with Sales Analytics endpoint and ensures data consistency
                 where_clauses.append("o.invoice_status IN ('accepted', 'accepted_objection')")
+
+                # ✅ Filter out ANU/legacy codes (historical SKUs that clutter reports)
+                where_clauses.append("oi.product_sku NOT LIKE 'ANU%'")
 
                 # Multi-value filters using IN operator
                 if source:
@@ -1184,7 +1328,16 @@ async def get_audit_data(
                         row_dict['in_catalog'] = False
                         row_dict['conversion_factor'] = 1
 
-                    enriched_rows.append(row_dict)
+                    # ✅ PACK EXPANSION: Check if this is a variety pack (multiple component mappings)
+                    # If so, expand into individual component rows with proportional revenue
+                    pack_mappings = get_pack_component_mappings(sku, cursor)
+                    if pack_mappings:
+                        # Expand PACK into component rows
+                        component_rows = expand_pack_to_components(row_dict, pack_mappings, cursor)
+                        enriched_rows.extend(component_rows)
+                    else:
+                        # Normal product - add as-is
+                        enriched_rows.append(row_dict)
 
                 # Calculate totals from enriched data
                 # total_unidades: Use MV-based calculation for accuracy (full dataset)
@@ -1464,6 +1617,8 @@ async def export_audit_data(
                 # Base filters
                 where_clauses.append("o.source = 'relbase'")
                 where_clauses.append("o.invoice_status IN ('accepted', 'accepted_objection')")
+                # ✅ Filter out ANU/legacy codes (historical SKUs that clutter reports)
+                where_clauses.append("oi.product_sku NOT LIKE 'ANU%'")
 
                 if source:
                     placeholders = ','.join(['%s'] * len(source))
@@ -1813,26 +1968,51 @@ async def export_audit_data(
 
                     service = get_product_catalog_service()
 
-                    for row_idx, row in enumerate(rows, 2):
+                    # ===== PACK EXPANSION for Export =====
+                    # First, expand PACK products into component rows
+                    processed_rows = []
+                    for row in rows:
+                        row_dict = dict(row)
+                        sku = row_dict.get('sku', '') or ''
+
+                        # Check if this is a PACK product
+                        pack_mappings = get_pack_component_mappings(sku, cursor)
+
+                        if pack_mappings:
+                            # Expand PACK into component rows
+                            component_rows = expand_pack_to_components(row_dict, pack_mappings, cursor)
+                            processed_rows.extend(component_rows)
+                        else:
+                            processed_rows.append(row_dict)
+
+                    # Now process and write all rows (including expanded components)
+                    for row_idx, row in enumerate(processed_rows, 2):
                         row_sku = row.get('sku', '')
                         product_name = row.get('product_name', '')
                         order_source = row.get('order_source', '')
                         quantity = row.get('quantity', 0) or 0
+                        is_pack_component = row.get('is_pack_component', False)
 
-                        # Map SKU
-                        official_sku, _, _, product_info, _ = map_sku_with_quantity(
-                            row_sku, product_name, product_catalog, catalog_skus, catalog_master_skus, order_source
-                        )
-
-                        # Get enriched data
-                        if official_sku:
-                            sku_prim = get_sku_primario(official_sku, conversion_map)
-                            unidades = calculate_units(row_sku, quantity, conversion_map, order_source)
-                            familia = product_info.get('category', '') if product_info else row.get('category', '')
-                        else:
-                            sku_prim = None
-                            unidades = quantity
+                        # For PACK components, use pre-computed values
+                        if is_pack_component:
+                            sku_prim = row.get('sku_primario', '')
+                            unidades = quantity  # Already in units
                             familia = row.get('category', '')
+                        else:
+                            # Map SKU normally
+                            official_sku, _, _, product_info, _ = map_sku_with_quantity(
+                                row_sku, product_name, product_catalog, catalog_skus, catalog_master_skus, order_source
+                            )
+
+                            # Get enriched data
+                            if official_sku:
+                                sku_prim = get_sku_primario(official_sku, conversion_map)
+                                unidades = calculate_units(row_sku, quantity, conversion_map, order_source)
+                                familia = product_info.get('category', '') if product_info else row.get('category', '')
+                            else:
+                                sku_prim = None
+                                unidades = quantity
+                                familia = row.get('category', '')
 
                         # Format date
                         order_date = row.get('order_date')

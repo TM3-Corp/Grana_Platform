@@ -163,7 +163,10 @@ export default function TopItemsChart({ data, groupBy, topLimit, loading }: TopI
                 <td className="py-2 px-3 text-gray-600">
                   {index + 1}
                 </td>
-                <td className="py-2 px-3 text-gray-900 font-medium">
+                <td
+                  className="py-2 px-3 text-gray-900 font-medium min-w-48"
+                  title={item.group_value || 'Sin clasificar'}
+                >
                   {item.group_value || 'Sin clasificar'}
                 </td>
                 <td className="py-2 px-3 text-right text-gray-900 font-medium">
