@@ -120,6 +120,9 @@ export default function AuditView() {
   const [groupSortDirection, setGroupSortDirection] = useState<'asc' | 'desc'>('desc');
   const [isAggregatedMode, setIsAggregatedMode] = useState<boolean>(false);
 
+  // Export state
+  const [isExporting, setIsExporting] = useState(false);
+
   useEffect(() => {
     if (status === 'authenticated') {
       fetchFilters();
@@ -418,6 +421,90 @@ export default function AuditView() {
     setExpandedGroupDetails({});
   };
 
+  const handleExport = async () => {
+    setIsExporting(true);
+
+    try {
+      const params = new URLSearchParams();
+
+      // Add all current filters (same as fetchData)
+      selectedFamilia.forEach(familia => params.append('category', familia));
+      selectedSource.forEach(source => params.append('source', source));
+      selectedChannel.forEach(channel => params.append('channel', channel));
+      selectedCustomer.forEach(customer => params.append('customer', customer));
+
+      if (selectedSKU) params.append('sku', selectedSKU);
+      if (showNullsOnly) params.append('has_nulls', 'true');
+      if (showNotInCatalogOnly) params.append('not_in_catalog', 'true');
+
+      // Date filters
+      if (dateFilterType === 'year' && selectedYear.length > 0) {
+        const years = selectedYear.map(y => parseInt(y)).sort();
+        params.append('from_date', `${years[0]}-01-01`);
+        params.append('to_date', `${years[years.length - 1]}-12-31`);
+      } else if (dateFilterType === 'month' && selectedYear.length > 0 && selectedMonth.length > 0) {
+        const yearMonths = selectedYear.flatMap(year =>
+          selectedMonth.map(month => ({ year: parseInt(year), month: parseInt(month) }))
+        ).sort((a, b) => {
+          if (a.year !== b.year) return a.year - b.year;
+          return a.month - b.month;
+        });
+
+        const first = yearMonths[0];
+        const last = yearMonths[yearMonths.length - 1];
+        const lastDay = new Date(last.year, last.month, 0).getDate();
+
+        params.append('from_date', `${first.year}-${first.month.toString().padStart(2, '0')}-01`);
+        params.append('to_date', `${last.year}-${last.month.toString().padStart(2, '0')}-${lastDay}`);
+      } else if (dateFilterType === 'custom' && customFromDate && customToDate) {
+        params.append('from_date', customFromDate);
+        params.append('to_date', customToDate);
+      }
+
+      // Include grouping if active
+      if (groupBy) {
+        params.append('group_by', groupBy);
+      }
+
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://granaplatform-production.up.railway.app';
+      const exportUrl = `${apiUrl}/api/v1/audit/export?${params}`;
+
+      // Fetch the file as blob and trigger download
+      const response = await fetch(exportUrl);
+
+      if (!response.ok) {
+        throw new Error('Error al exportar datos');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+
+      // Extract filename from Content-Disposition header if available
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = 'auditoria_export.xlsx';
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename=(.+)/);
+        if (match) {
+          filename = match[1].replace(/"/g, '');
+        }
+      }
+
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+    } catch (err) {
+      console.error('Error exporting:', err);
+      alert('Error al exportar. Por favor intenta de nuevo.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const toggleGroupCollapse = (groupKey: string) => {
     const isCurrentlyCollapsed = collapsedGroups.has(groupKey);
 
@@ -710,7 +797,7 @@ export default function AuditView() {
       )}
 
       {/* Large Dataset Warning */}
-      {!loading && filteredTotals && filteredTotals.total_pedidos > 1000 && groupBy && (
+      {!loading && filteredTotals && filteredTotals.total_pedidos !== undefined && filteredTotals.total_pedidos > 1000 && groupBy && (
         <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
           <div className="flex">
             <div className="flex-shrink-0">
@@ -742,15 +829,39 @@ export default function AuditView() {
               <p className="text-xs text-gray-500">Refina tu búsqueda para obtener resultados específicos</p>
             </div>
           </div>
-          <button
-            onClick={clearFilters}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-            Limpiar filtros
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleExport}
+              disabled={isExporting || loading}
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-green-400 disabled:cursor-not-allowed rounded-lg transition-colors shadow-sm"
+            >
+              {isExporting ? (
+                <>
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Exportando...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Exportar Excel
+                </>
+              )}
+            </button>
+            <button
+              onClick={clearFilters}
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Limpiar filtros
+            </button>
+          </div>
         </div>
 
         {/* Familia Selector */}

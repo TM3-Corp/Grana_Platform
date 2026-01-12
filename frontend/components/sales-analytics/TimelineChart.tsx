@@ -146,13 +146,9 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
 
   const formatYAxis = (value: number) => {
     if (selectedMetric === 'revenue') {
-      if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`
-      if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`
-      return `$${value}`
+      return `$${Math.round(value).toLocaleString('es-CL')}`
     } else {
-      if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`
-      if (value >= 1000) return `${(value / 1000).toFixed(0)}K`
-      return value.toString()
+      return Math.round(value).toLocaleString('es-CL')
     }
   }
 

@@ -71,3 +71,6 @@ backup/
 
 # Data directory (raw data, not for git)
 data/
+
+# Docs directory (generated documentation)
+docs/

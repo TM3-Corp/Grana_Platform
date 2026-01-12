@@ -45,23 +45,11 @@ export default function GroupedDataTable({
   }
 
   const formatCurrency = (value: number): string => {
-    if (value >= 1000000) {
-      return `$${(value / 1000000).toFixed(1)}M`
-    } else if (value >= 1000) {
-      return `$${(value / 1000).toFixed(0)}K`
-    } else {
-      return `$${value.toLocaleString('es-CL')}`
-    }
+    return `$${Math.round(value).toLocaleString('es-CL')}`
   }
 
   const formatNumber = (value: number): string => {
-    if (value >= 1000000) {
-      return `${(value / 1000000).toFixed(1)}M`
-    } else if (value >= 1000) {
-      return `${(value / 1000).toFixed(0)}K`
-    } else {
-      return value.toLocaleString('es-CL')
-    }
+    return Math.round(value).toLocaleString('es-CL')
   }
 
   if (loading) {
@@ -163,7 +151,7 @@ export default function GroupedDataTable({
             "
           >
             <span>📥</span>
-            Exportar CSV
+            Exportar Excel
           </button>
         )}
       </div>

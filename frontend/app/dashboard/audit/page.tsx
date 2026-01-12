@@ -19,6 +19,7 @@ interface AuditData {
   channel_source: string;
   item_id: number;
   sku: string;
+  sku_primario?: string;
   product_name: string;
   quantity: number;
   unit_price: number;
@@ -30,6 +31,8 @@ interface AuditData {
   channel_null: boolean;
   sku_null: boolean;
   in_catalog: boolean;
+  match_type?: string;
+  pack_quantity?: number;
 }
 
 interface AuditSummary {
@@ -46,6 +49,7 @@ interface AuditSummary {
     not_in_catalog: number;
     catalog_coverage_pct: number;
     unmapped_skus_sample: string[];
+    mapped_skus: number;
   };
 }
 

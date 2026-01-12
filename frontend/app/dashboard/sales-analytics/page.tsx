@@ -318,33 +318,82 @@ export default function SalesAnalyticsPage() {
     setCurrentPage(1)
   }
 
-  const handleExportCSV = () => {
-    if (!data || !data.grouped_data) return
+  const handleExportCSV = async () => {
+    if (!data) return
 
-    // Build CSV content
-    const headers = ['Categoría', 'Ingresos', 'Unidades', 'Órdenes', 'Ticket Promedio']
-    const rows = data.grouped_data.map(row => [
-      row.group_value,
-      row.revenue,
-      row.units,
-      row.orders,
-      row.avg_ticket
-    ])
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://granaplatform-production.up.railway.app'
 
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.join(','))
-    ].join('\n')
+      // Build query parameters (same as fetchSalesAnalytics)
+      const params = new URLSearchParams()
 
-    // Download CSV
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-    const link = document.createElement('a')
-    const url = URL.createObjectURL(blob)
-    link.setAttribute('href', url)
-    link.setAttribute('download', `sales_analytics_${new Date().toISOString().split('T')[0]}.csv`)
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+      // Date filters
+      if (dateFilterType === 'year' && selectedYears.length > 0) {
+        const years = selectedYears.map(y => parseInt(y)).sort()
+        params.append('from_date', `${years[0]}-01-01`)
+        params.append('to_date', `${years[years.length - 1]}-12-31`)
+      } else if (dateFilterType === 'month' && selectedMonths.length > 0) {
+        const yearsToUse = selectedYears.length > 0
+          ? selectedYears
+          : [new Date().getFullYear().toString()]
+
+        const yearMonths = yearsToUse.flatMap(year =>
+          selectedMonths.map(month => ({ year: parseInt(year), month: parseInt(month) }))
+        ).sort((a, b) => {
+          if (a.year !== b.year) return a.year - b.year
+          return a.month - b.month
+        })
+
+        const first = yearMonths[0]
+        const last = yearMonths[yearMonths.length - 1]
+        const lastDay = new Date(last.year, last.month, 0).getDate()
+
+        params.append('from_date', `${first.year}-${first.month.toString().padStart(2, '0')}-01`)
+        params.append('to_date', `${last.year}-${last.month.toString().padStart(2, '0')}-${lastDay}`)
+      } else if (dateFilterType === 'custom' && customFromDate && customToDate) {
+        params.append('from_date', customFromDate)
+        params.append('to_date', customToDate)
+      }
+
+      // Multi-select filters
+      selectedCategories.forEach(cat => params.append('categories', cat))
+      selectedChannels.forEach(ch => params.append('channels', ch))
+      selectedCustomers.forEach(cust => params.append('customers', cust))
+      selectedFormats.forEach(fmt => params.append('formats', fmt))
+      selectedSkuPrimarios.forEach(sku => params.append('sku_primarios', sku))
+
+      // Grouping
+      if (groupBy) {
+        params.append('group_by', groupBy)
+      }
+
+      // Fetch Excel file from backend
+      const response = await fetch(`${apiUrl}/api/v1/sales-analytics/export?${params.toString()}`)
+
+      if (!response.ok) {
+        throw new Error(`Export failed (${response.status})`)
+      }
+
+      // Get filename from Content-Disposition header or use default
+      const contentDisposition = response.headers.get('Content-Disposition')
+      const filenameMatch = contentDisposition?.match(/filename=(.+)/)
+      const filename = filenameMatch ? filenameMatch[1] : `ventas_${groupBy || 'categoria'}_${new Date().toISOString().split('T')[0]}.xlsx`
+
+      // Download the file
+      const blob = await response.blob()
+      const link = document.createElement('a')
+      const url = URL.createObjectURL(blob)
+      link.setAttribute('href', url)
+      link.setAttribute('download', filename)
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+
+    } catch (err) {
+      console.error('Export error:', err)
+      alert('Error al exportar. Por favor intenta nuevamente.')
+    }
   }
 
   return (

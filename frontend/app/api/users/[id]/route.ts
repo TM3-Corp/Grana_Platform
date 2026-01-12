@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { encode } from 'next-auth/jwt';
+import { SignJWT } from 'jose';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const AUTH_SECRET = process.env.AUTH_SECRET;
@@ -12,19 +12,21 @@ async function getAuthHeaders() {
     return null;
   }
 
-  // Create a JWT token to send to the backend
-  const token = await encode({
-    token: {
-      id: session.user.id,
-      email: session.user.email,
-      name: session.user.name,
-      role: (session.user as { role?: string }).role,
-    },
-    secret: AUTH_SECRET!,
-  });
+  const secret = new TextEncoder().encode(AUTH_SECRET!);
+  const backendToken = await new SignJWT({
+    id: session.user.id,
+    email: session.user.email,
+    name: session.user.name,
+    role: (session.user as { role?: string }).role,
+    sub: session.user.id,
+  })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime('1h')
+    .sign(secret);
 
   return {
-    'Authorization': `Bearer ${token}`,
+    'Authorization': `Bearer ${backendToken}`,
     'Content-Type': 'application/json',
   };
 }

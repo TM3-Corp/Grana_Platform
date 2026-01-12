@@ -49,9 +49,11 @@ interface KPIMetrics {
 
 interface TimeSeriesData {
   period: string;
-  revenue: number;
-  units: number;
-  orders: number;
+  total_revenue: number;
+  shopify_revenue: number;
+  mercadolibre_revenue: number;
+  relbase_revenue: number;
+  lokal_revenue: number;
 }
 
 // ============================================================================
@@ -282,7 +284,7 @@ function ConsolidatedAnalyticsContent() {
       sources: Set<string>;
       channels: Set<string>;
     }>();
-    const byDate = new Map<string, { revenue: number; units: number; orders: number }>();
+    const byDate = new Map<string, { total_revenue: number; shopify_revenue: number; mercadolibre_revenue: number; relbase_revenue: number; lokal_revenue: number; units: number; orders: number }>();
 
     let totalRevenue = 0;
     let totalUnits = 0;

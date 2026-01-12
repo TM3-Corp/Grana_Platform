@@ -416,21 +416,40 @@ export default function UsersPage() {
                           <div className="flex items-center gap-2">
                             <button
                               onClick={() => openEditModal(user)}
-                              className="text-blue-600 hover:text-blue-800 font-medium"
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md border border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors"
                             >
+                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
                               Editar
                             </button>
                             <button
                               onClick={() => openResetPasswordModal(user)}
-                              className="text-purple-600 hover:text-purple-800 font-medium"
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md border border-purple-300 text-purple-700 bg-purple-50 hover:bg-purple-100 transition-colors"
                             >
-                              Reset
+                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                              </svg>
+                              Resetear
                             </button>
                             {user.id.toString() !== currentUserId && (
                               <button
                                 onClick={() => handleToggleActive(user)}
-                                className={`font-medium ${user.is_active ? 'text-red-600 hover:text-red-800' : 'text-green-600 hover:text-green-800'}`}
+                                className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md border transition-colors ${
+                                  user.is_active
+                                    ? 'border-red-300 text-red-700 bg-red-50 hover:bg-red-100'
+                                    : 'border-green-300 text-green-700 bg-green-50 hover:bg-green-100'
+                                }`}
                               >
+                                {user.is_active ? (
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                  </svg>
+                                ) : (
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                )}
                                 {user.is_active ? 'Desactivar' : 'Activar'}
                               </button>
                             )}

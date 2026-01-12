@@ -7,10 +7,14 @@ Author: Claude Code
 Date: 2025-11-12
 """
 from fastapi import APIRouter, Query, HTTPException
+from fastapi.responses import StreamingResponse
 from typing import List, Optional, Dict, Any
 import psycopg2
 import os
 from datetime import datetime, timedelta
+from io import BytesIO
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 router = APIRouter()
 
@@ -819,3 +823,237 @@ async def get_filter_options(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching filter options: {str(e)}")
+
+
+@router.get("/export")
+async def export_sales_analytics(
+    # Date filters
+    from_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    to_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+
+    # Multi-select filters
+    sources: Optional[List[str]] = Query(['relbase'], description="Data sources"),
+    channels: Optional[List[str]] = Query(None, description="Channel names"),
+    customers: Optional[List[str]] = Query(None, description="Customer names"),
+    categories: Optional[List[str]] = Query(None, description="Product categories"),
+    formats: Optional[List[str]] = Query(None, description="Product formats/names"),
+    sku_primarios: Optional[List[str]] = Query(None, description="SKU Primarios"),
+
+    # Grouping
+    group_by: Optional[str] = Query('category', description="Group by: category, channel, customer, format, sku_primario"),
+):
+    """
+    Export Sales Analytics data to Excel file.
+
+    Returns an Excel file with grouped data matching the current filters.
+    The file includes proper formatting with headers, borders, and currency formatting.
+    """
+
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+
+        # Build base filters (same as main endpoint)
+        where_clauses = ["mv.source = 'relbase'"]
+        params = []
+
+        # Date filters
+        if from_date and to_date:
+            where_clauses.append("mv.order_date >= %s AND mv.order_date <= %s")
+            params.extend([from_date, to_date])
+        elif from_date:
+            where_clauses.append("mv.order_date >= %s")
+            params.append(from_date)
+        elif to_date:
+            where_clauses.append("mv.order_date <= %s")
+            params.append(to_date)
+        else:
+            where_clauses.append("EXTRACT(YEAR FROM mv.order_date) = 2025")
+
+        # Multi-select filters
+        if channels:
+            channel_conditions = ' OR '.join(['mv.channel_name ILIKE %s'] * len(channels))
+            where_clauses.append(f"({channel_conditions})")
+            for ch in channels:
+                params.append(f"%{ch}%")
+
+        if customers:
+            customer_conditions = ' OR '.join(['mv.customer_name ILIKE %s'] * len(customers))
+            where_clauses.append(f"({customer_conditions})")
+            for cust in customers:
+                params.append(f"%{cust}%")
+
+        if categories:
+            placeholders = ','.join(['%s'] * len(categories))
+            where_clauses.append(f"mv.category IN ({placeholders})")
+            params.extend(categories)
+
+        if formats:
+            placeholders = ','.join(['%s'] * len(formats))
+            where_clauses.append(f"""(
+                mv.catalog_sku IN (
+                    SELECT pc.sku FROM product_catalog pc
+                    WHERE pc.product_name IN ({placeholders}) AND pc.is_active = TRUE
+                )
+                OR mv.original_sku IN (
+                    SELECT pc.sku_master FROM product_catalog pc
+                    WHERE pc.product_name IN ({placeholders}) AND pc.is_active = TRUE AND pc.sku_master IS NOT NULL
+                )
+            )""")
+            params.extend(formats)
+            params.extend(formats)
+
+        if sku_primarios:
+            placeholders = ','.join(['%s'] * len(sku_primarios))
+            where_clauses.append(f"mv.sku_primario IN ({placeholders})")
+            params.extend(sku_primarios)
+
+        where_clause = " AND ".join(where_clauses)
+
+        # Determine group field
+        group_field_map = {
+            'category': ('mv.category', 'Familia'),
+            'channel': ('mv.channel_name', 'Canal'),
+            'customer': ('mv.customer_name', 'Cliente'),
+            'format': ('mv.package_type', 'Formato'),
+            'sku_primario': ('mv.sku_primario', 'SKU Primario')
+        }
+        group_field, group_label = group_field_map.get(group_by, ('mv.category', 'Familia'))
+
+        # Helper expressions for unit calculations
+        units_expr = """SUM(
+            CASE
+                WHEN mv.is_caja_master THEN mv.units_sold * COALESCE(mv.items_per_master_box, 1)
+                ELSE mv.units_sold * COALESCE(mv.units_per_display, 1)
+            END
+        )"""
+        items_expr = """SUM(
+            CASE
+                WHEN mv.is_caja_master THEN mv.units_sold * COALESCE(mv.items_per_master_box, 1) / NULLIF(COALESCE(mv.units_per_display, 1), 0)
+                ELSE mv.units_sold
+            END
+        )"""
+
+        # Query grouped data (all rows, no pagination for export)
+        export_query = f"""
+            SELECT
+                {group_field} as group_value,
+                COUNT(DISTINCT mv.order_id) as orders,
+                {items_expr} as items,
+                {units_expr} as units,
+                SUM(mv.revenue) as revenue
+            FROM sales_facts_mv mv
+            WHERE {where_clause}
+            GROUP BY {group_field}
+            HAVING {group_field} IS NOT NULL
+            ORDER BY revenue DESC
+        """
+
+        cur.execute(export_query, params)
+        rows = cur.fetchall()
+
+        cur.close()
+        conn.close()
+
+        # Create Excel workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = f"Ventas por {group_label}"
+
+        # Styles
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+        header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        thin_border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+        number_format_currency = '#,##0'
+        number_format_int = '#,##0'
+
+        # Headers
+        headers = [group_label, "Pedidos", "Items", "Unidades", "Ingresos"]
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_alignment
+            cell.border = thin_border
+
+        # Data rows
+        for row_idx, row in enumerate(rows, 2):
+            group_value, orders, items, units, revenue = row
+
+            ws.cell(row=row_idx, column=1, value=group_value or 'Sin clasificar').border = thin_border
+
+            cell_orders = ws.cell(row=row_idx, column=2, value=int(orders or 0))
+            cell_orders.border = thin_border
+            cell_orders.number_format = number_format_int
+
+            cell_items = ws.cell(row=row_idx, column=3, value=int(items or 0))
+            cell_items.border = thin_border
+            cell_items.number_format = number_format_int
+
+            cell_units = ws.cell(row=row_idx, column=4, value=int(units or 0))
+            cell_units.border = thin_border
+            cell_units.number_format = number_format_int
+
+            cell_revenue = ws.cell(row=row_idx, column=5, value=float(revenue or 0))
+            cell_revenue.border = thin_border
+            cell_revenue.number_format = number_format_currency
+
+        # Add totals row
+        total_row = len(rows) + 2
+        ws.cell(row=total_row, column=1, value="TOTAL").font = Font(bold=True)
+        ws.cell(row=total_row, column=1).border = thin_border
+
+        for col in range(2, 6):
+            cell = ws.cell(row=total_row, column=col)
+            cell.font = Font(bold=True)
+            cell.border = thin_border
+            # Sum formula
+            cell.value = f"=SUM({chr(64+col)}2:{chr(64+col)}{total_row-1})"
+            if col == 5:
+                cell.number_format = number_format_currency
+            else:
+                cell.number_format = number_format_int
+
+        # Column widths
+        ws.column_dimensions['A'].width = 40
+        ws.column_dimensions['B'].width = 12
+        ws.column_dimensions['C'].width = 12
+        ws.column_dimensions['D'].width = 12
+        ws.column_dimensions['E'].width = 18
+
+        # Freeze header row
+        ws.freeze_panes = 'A2'
+
+        # Save to BytesIO
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        # Generate filename
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        date_range = ""
+        if from_date and to_date:
+            date_range = f"_{from_date}_a_{to_date}"
+        elif from_date:
+            date_range = f"_desde_{from_date}"
+        elif to_date:
+            date_range = f"_hasta_{to_date}"
+
+        filename = f"ventas_{group_by or 'categoria'}{date_range}_{timestamp}.xlsx"
+
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}"
+            }
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error exporting sales analytics: {str(e)}")

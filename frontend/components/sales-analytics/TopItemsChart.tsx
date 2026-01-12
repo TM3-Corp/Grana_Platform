@@ -66,13 +66,7 @@ export default function TopItemsChart({ data, groupBy, topLimit, loading }: TopI
   }
 
   const formatCurrency = (value: number): string => {
-    if (value >= 1000000) {
-      return `$${(value / 1000000).toFixed(1)}M`
-    } else if (value >= 1000) {
-      return `$${(value / 1000).toFixed(0)}K`
-    } else {
-      return `$${value.toFixed(0)}`
-    }
+    return `$${Math.round(value).toLocaleString('es-CL')}`
   }
 
   // Colors gradient for bars

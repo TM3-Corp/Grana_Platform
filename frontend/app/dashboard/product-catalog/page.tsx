@@ -306,15 +306,15 @@ export default function ProductCatalogPage() {
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Product Catalog</h1>
-            <p className="text-gray-600 mt-1">Manage products in the catalog database</p>
+            <h1 className="text-2xl font-bold text-gray-900">Catálogo de Productos</h1>
+            <p className="text-gray-600 mt-1">Gestionar productos en el catálogo de la base de datos</p>
           </div>
           <button
             onClick={() => openModal()}
             className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2"
           >
             <span className="text-lg">+</span>
-            Add Product
+            Agregar Producto
           </button>
         </div>
 
@@ -323,27 +323,27 @@ export default function ProductCatalogPage() {
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
             <div className="bg-white rounded-lg shadow p-4">
               <div className="text-2xl font-bold text-blue-600">{stats.total_products}</div>
-              <div className="text-sm text-gray-600">Total Products</div>
+              <div className="text-sm text-gray-600">Productos Totales</div>
             </div>
             <div className="bg-white rounded-lg shadow p-4">
               <div className="text-2xl font-bold text-green-600">{stats.active_products}</div>
-              <div className="text-sm text-gray-600">Active</div>
+              <div className="text-sm text-gray-600">Activos</div>
             </div>
             <div className="bg-white rounded-lg shadow p-4">
               <div className="text-2xl font-bold text-red-600">{stats.inactive_products}</div>
-              <div className="text-sm text-gray-600">Inactive</div>
+              <div className="text-sm text-gray-600">Inactivos</div>
             </div>
             <div className="bg-white rounded-lg shadow p-4">
               <div className="text-2xl font-bold text-purple-600">{stats.total_categories}</div>
-              <div className="text-sm text-gray-600">Categories</div>
+              <div className="text-sm text-gray-600">Categorías</div>
             </div>
             <div className="bg-white rounded-lg shadow p-4">
               <div className="text-2xl font-bold text-orange-600">{stats.has_master_box}</div>
-              <div className="text-sm text-gray-600">With Master Box</div>
+              <div className="text-sm text-gray-600">Con Caja Master</div>
             </div>
             <div className="bg-white rounded-lg shadow p-4">
               <div className="text-2xl font-bold text-teal-600">{stats.inventory_active}</div>
-              <div className="text-sm text-gray-600">Inventory Active</div>
+              <div className="text-sm text-gray-600">Inventario Activo</div>
             </div>
           </div>
         )}
@@ -354,7 +354,7 @@ export default function ProductCatalogPage() {
             <div className="flex-1 min-w-[200px]">
               <input
                 type="text"
-                placeholder="Search SKU, name, or SKU primario..."
+                placeholder="Buscar SKU, nombre o SKU primario..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full border rounded-lg px-3 py-2"
@@ -365,7 +365,7 @@ export default function ProductCatalogPage() {
               onChange={(e) => { setFilterCategory(e.target.value); setCurrentPage(1); }}
               className="border rounded-lg px-3 py-2"
             >
-              <option value="">All Categories</option>
+              <option value="">Todas las Categorías</option>
               {categories.map(cat => (
                 <option key={cat} value={cat}>{cat}</option>
               ))}
@@ -375,12 +375,12 @@ export default function ProductCatalogPage() {
               onChange={(e) => { setFilterActive(e.target.value); setCurrentPage(1); }}
               className="border rounded-lg px-3 py-2"
             >
-              <option value="">All Status</option>
-              <option value="true">Active</option>
-              <option value="false">Inactive</option>
+              <option value="">Todos los Estados</option>
+              <option value="true">Activo</option>
+              <option value="false">Inactivo</option>
             </select>
             <div className="text-sm text-gray-500">
-              {totalCount} products
+              {totalCount} productos
             </div>
           </div>
         </div>
@@ -408,28 +408,28 @@ export default function ProductCatalogPage() {
                     className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                     onClick={() => handleSort('product_name')}
                   >
-                    Product Name {sortBy === 'product_name' && (sortOrder === 'asc' ? '↑' : '↓')}
+                    Nombre del Producto {sortBy === 'product_name' && (sortOrder === 'asc' ? '↑' : '↓')}
                   </th>
                   <th
                     className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                     onClick={() => handleSort('category')}
                   >
-                    Category {sortBy === 'category' && (sortOrder === 'asc' ? '↑' : '↓')}
+                    Categoría {sortBy === 'category' && (sortOrder === 'asc' ? '↑' : '↓')}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                     SKU Primario
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
-                    Units/Display
+                    UDS/Display
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
-                    Master Box
+                    Caja Master
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
-                    Active
+                    Activo
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
-                    Actions
+                    Acciones
                   </th>
                 </tr>
               </thead>
@@ -437,13 +437,13 @@ export default function ProductCatalogPage() {
                 {loading ? (
                   <tr>
                     <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
-                      Loading...
+                      Cargando...
                     </td>
                   </tr>
                 ) : products.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
-                      No products found
+                      No se encontraron productos
                     </td>
                   </tr>
                 ) : (
@@ -455,8 +455,12 @@ export default function ProductCatalogPage() {
                         <td className="px-4 py-3">
                           <button
                             onClick={() => setExpandedProductId(expandedProductId === product.id ? null : product.id)}
-                            className="font-mono text-sm text-blue-600 hover:underline"
+                            className="flex items-center gap-2 font-mono text-sm text-blue-600 hover:text-blue-800 px-2 py-1 rounded-md bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors"
+                            title="Click para ver detalles"
                           >
+                            <span className={`transition-transform ${expandedProductId === product.id ? 'rotate-90' : ''}`}>
+                              ▶
+                            </span>
                             {product.sku}
                           </button>
                         </td>
@@ -501,15 +505,15 @@ export default function ProductCatalogPage() {
                           <div className="flex justify-center gap-2">
                             <button
                               onClick={() => openModal(product)}
-                              className="text-blue-600 hover:text-blue-800 text-sm"
+                              className="px-3 py-1.5 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-md transition-colors"
                             >
-                              Edit
+                              Editar
                             </button>
                             <button
                               onClick={() => setDeleteConfirm(product)}
-                              className="text-red-600 hover:text-red-800 text-sm"
+                              className="px-3 py-1.5 text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-md transition-colors"
                             >
-                              Delete
+                              Eliminar
                             </button>
                           </div>
                         </td>
@@ -520,58 +524,54 @@ export default function ProductCatalogPage() {
                           <td colSpan={8} className="px-4 py-4">
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                               <div>
-                                <span className="text-gray-500">Brand:</span>{' '}
+                                <span className="text-gray-500">Marca:</span>{' '}
                                 <span className="font-medium">{product.brand || '-'}</span>
                               </div>
                               <div>
-                                <span className="text-gray-500">Language:</span>{' '}
+                                <span className="text-gray-500">Idioma:</span>{' '}
                                 <span className="font-medium">{product.language || '-'}</span>
                               </div>
                               <div>
-                                <span className="text-gray-500">Package Type:</span>{' '}
+                                <span className="text-gray-500">Tipo de Empaque:</span>{' '}
                                 <span className="font-medium">{product.package_type || '-'}</span>
                               </div>
                               <div>
-                                <span className="text-gray-500">Base Code:</span>{' '}
+                                <span className="text-gray-500">Código Base:</span>{' '}
                                 <span className="font-medium font-mono">{product.base_code || '-'}</span>
                               </div>
                               <div>
-                                <span className="text-gray-500">Units/Master Box:</span>{' '}
+                                <span className="text-gray-500">UDS/Caja Master:</span>{' '}
                                 <span className="font-medium">{product.units_per_master_box || '-'}</span>
                               </div>
                               <div>
-                                <span className="text-gray-500">Items/Master Box:</span>{' '}
+                                <span className="text-gray-500">Items/Caja Master:</span>{' '}
                                 <span className="font-medium">{product.items_per_master_box || '-'}</span>
                               </div>
                               <div>
-                                <span className="text-gray-500">Display Weight:</span>{' '}
+                                <span className="text-gray-500">Peso Display:</span>{' '}
                                 <span className="font-medium">{product.peso_display_total ? `${product.peso_display_total} kg` : '-'}</span>
                               </div>
                               <div>
-                                <span className="text-gray-500">Master Box Weight:</span>{' '}
+                                <span className="text-gray-500">Peso Caja Master:</span>{' '}
                                 <span className="font-medium">{product.peso_caja_master_total ? `${product.peso_caja_master_total} kg` : '-'}</span>
                               </div>
                               <div>
-                                <span className="text-gray-500">SKU Value:</span>{' '}
+                                <span className="text-gray-500">Valor SKU:</span>{' '}
                                 <span className="font-medium">{product.sku_value ? `$${product.sku_value.toLocaleString()}` : '-'}</span>
                               </div>
                               <div>
-                                <span className="text-gray-500">Master Value:</span>{' '}
+                                <span className="text-gray-500">Valor Master:</span>{' '}
                                 <span className="font-medium">{product.sku_master_value ? `$${product.sku_master_value.toLocaleString()}` : '-'}</span>
                               </div>
                               <div>
-                                <span className="text-gray-500">Inventory Active:</span>{' '}
+                                <span className="text-gray-500">Inventario Activo:</span>{' '}
                                 <span className={`font-medium ${product.is_inventory_active ? 'text-green-600' : 'text-red-600'}`}>
-                                  {product.is_inventory_active ? 'Yes' : 'No'}
+                                  {product.is_inventory_active ? 'Sí' : 'No'}
                                 </span>
-                              </div>
-                              <div>
-                                <span className="text-gray-500">Is Master SKU:</span>{' '}
-                                <span className="font-medium">{product.is_master_sku ? 'Yes' : 'No'}</span>
                               </div>
                               {product.master_box_name && (
                                 <div className="col-span-2">
-                                  <span className="text-gray-500">Master Box Name:</span>{' '}
+                                  <span className="text-gray-500">Nombre Caja Master:</span>{' '}
                                   <span className="font-medium">{product.master_box_name}</span>
                                 </div>
                               )}
@@ -590,36 +590,36 @@ export default function ProductCatalogPage() {
           {totalPages > 1 && (
             <div className="px-4 py-3 border-t flex items-center justify-between">
               <div className="text-sm text-gray-500">
-                Page {currentPage} of {totalPages}
+                Página {currentPage} de {totalPages}
               </div>
               <div className="flex gap-2">
                 <button
                   onClick={() => setCurrentPage(1)}
                   disabled={currentPage === 1}
-                  className="px-3 py-1 border rounded disabled:opacity-50"
+                  className="px-3 py-1 border rounded disabled:opacity-50 hover:bg-gray-50"
                 >
-                  First
+                  Inicio
                 </button>
                 <button
                   onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
-                  className="px-3 py-1 border rounded disabled:opacity-50"
+                  className="px-3 py-1 border rounded disabled:opacity-50 hover:bg-gray-50"
                 >
-                  Prev
+                  Anterior
                 </button>
                 <button
                   onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages}
-                  className="px-3 py-1 border rounded disabled:opacity-50"
+                  className="px-3 py-1 border rounded disabled:opacity-50 hover:bg-gray-50"
                 >
-                  Next
+                  Siguiente
                 </button>
                 <button
                   onClick={() => setCurrentPage(totalPages)}
                   disabled={currentPage === totalPages}
-                  className="px-3 py-1 border rounded disabled:opacity-50"
+                  className="px-3 py-1 border rounded disabled:opacity-50 hover:bg-gray-50"
                 >
-                  Last
+                  Fin
                 </button>
               </div>
             </div>
@@ -632,7 +632,7 @@ export default function ProductCatalogPage() {
             <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
               <div className="p-6">
                 <h2 className="text-xl font-bold mb-4">
-                  {editingProduct ? 'Edit Product' : 'Add New Product'}
+                  {editingProduct ? 'Editar Producto' : 'Agregar Nuevo Producto'}
                 </h2>
 
                 {saveError && (
@@ -657,7 +657,7 @@ export default function ProductCatalogPage() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Product Name <span className="text-red-500">*</span>
+                      Nombre del Producto <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -670,21 +670,21 @@ export default function ProductCatalogPage() {
 
                   {/* Category and Brand */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label>
                     <select
                       value={formData.category || ''}
                       onChange={(e) => handleInputChange('category', e.target.value || null)}
                       className="w-full border rounded-lg px-3 py-2"
                     >
-                      <option value="">Select category...</option>
+                      <option value="">Seleccionar categoría...</option>
                       {categories.map(cat => (
                         <option key={cat} value={cat}>{cat}</option>
                       ))}
-                      <option value="__new__">+ Add new category</option>
+                      <option value="__new__">+ Agregar nueva categoría</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Marca</label>
                     <input
                       type="text"
                       value={formData.brand || ''}
@@ -706,7 +706,7 @@ export default function ProductCatalogPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Base Code</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Código Base</label>
                     <input
                       type="text"
                       value={formData.base_code || ''}
@@ -718,7 +718,7 @@ export default function ProductCatalogPage() {
 
                   {/* Conversion factors */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Units per Display</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Unidades por Display</label>
                     <input
                       type="number"
                       min="1"
@@ -729,7 +729,7 @@ export default function ProductCatalogPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Package Type</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Empaque</label>
                     <input
                       type="text"
                       value={formData.package_type || ''}
@@ -741,7 +741,7 @@ export default function ProductCatalogPage() {
 
                   {/* Master box fields */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Master Box SKU</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">SKU Caja Master</label>
                     <input
                       type="text"
                       value={formData.sku_master || ''}
@@ -751,7 +751,7 @@ export default function ProductCatalogPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Master Box Name</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Nombre Caja Master</label>
                     <input
                       type="text"
                       value={formData.master_box_name || ''}
@@ -762,7 +762,7 @@ export default function ProductCatalogPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Units per Master Box</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Unidades por Caja Master</label>
                     <input
                       type="number"
                       min="1"
@@ -773,7 +773,7 @@ export default function ProductCatalogPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Items per Master Box</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Items por Caja Master</label>
                     <input
                       type="number"
                       min="1"
@@ -786,7 +786,7 @@ export default function ProductCatalogPage() {
 
                   {/* Weight fields */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Display Weight (kg)</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Peso Display (kg)</label>
                     <input
                       type="number"
                       step="0.0001"
@@ -798,7 +798,7 @@ export default function ProductCatalogPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Master Box Weight (kg)</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Peso Caja Master (kg)</label>
                     <input
                       type="number"
                       step="0.001"
@@ -812,7 +812,7 @@ export default function ProductCatalogPage() {
 
                   {/* Value fields */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">SKU Value (CLP)</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Valor SKU (CLP)</label>
                     <input
                       type="number"
                       min="0"
@@ -823,7 +823,7 @@ export default function ProductCatalogPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Master Value (CLP)</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Valor Master (CLP)</label>
                     <input
                       type="number"
                       min="0"
@@ -843,7 +843,7 @@ export default function ProductCatalogPage() {
                         onChange={(e) => handleInputChange('is_active', e.target.checked)}
                         className="w-4 h-4"
                       />
-                      <span className="text-sm">Active</span>
+                      <span className="text-sm">Activo</span>
                     </label>
                     <label className="flex items-center gap-2">
                       <input
@@ -852,7 +852,7 @@ export default function ProductCatalogPage() {
                         onChange={(e) => handleInputChange('is_inventory_active', e.target.checked)}
                         className="w-4 h-4"
                       />
-                      <span className="text-sm">Show in Inventory</span>
+                      <span className="text-sm">Mostrar en Inventario</span>
                     </label>
                     <label className="flex items-center gap-2">
                       <input
@@ -861,18 +861,18 @@ export default function ProductCatalogPage() {
                         onChange={(e) => handleInputChange('is_master_sku', e.target.checked)}
                         className="w-4 h-4"
                       />
-                      <span className="text-sm">Is Master SKU</span>
+                      <span className="text-sm">Es SKU Master</span>
                     </label>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Language</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Idioma</label>
                     <select
                       value={formData.language || 'ES'}
                       onChange={(e) => handleInputChange('language', e.target.value)}
                       className="w-full border rounded-lg px-3 py-2"
                     >
-                      <option value="ES">Spanish (ES)</option>
-                      <option value="EN">English (EN)</option>
+                      <option value="ES">Español (ES)</option>
+                      <option value="EN">Inglés (EN)</option>
                     </select>
                   </div>
                 </div>
@@ -884,14 +884,14 @@ export default function ProductCatalogPage() {
                     className="px-4 py-2 border rounded-lg hover:bg-gray-50"
                     disabled={isSaving}
                   >
-                    Cancel
+                    Cancelar
                   </button>
                   <button
                     onClick={handleSave}
                     disabled={isSaving}
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                   >
-                    {isSaving ? 'Saving...' : (editingProduct ? 'Update' : 'Create')}
+                    {isSaving ? 'Guardando...' : (editingProduct ? 'Actualizar' : 'Crear')}
                   </button>
                 </div>
               </div>
@@ -903,23 +903,23 @@ export default function ProductCatalogPage() {
         {deleteConfirm && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-              <h3 className="text-lg font-bold text-red-600 mb-2">Delete Product</h3>
+              <h3 className="text-lg font-bold text-red-600 mb-2">Eliminar Producto</h3>
               <p className="text-gray-600 mb-4">
-                Are you sure you want to delete <strong>{deleteConfirm.sku}</strong>?
-                This action cannot be undone.
+                ¿Estás seguro de que deseas eliminar <strong>{deleteConfirm.sku}</strong>?
+                Esta acción no se puede deshacer.
               </p>
               <div className="flex justify-end gap-3">
                 <button
                   onClick={() => setDeleteConfirm(null)}
                   className="px-4 py-2 border rounded-lg hover:bg-gray-50"
                 >
-                  Cancel
+                  Cancelar
                 </button>
                 <button
                   onClick={() => handleDelete(deleteConfirm)}
                   className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
                 >
-                  Delete
+                  Eliminar
                 </button>
               </div>
             </div>

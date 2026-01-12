@@ -15,6 +15,7 @@ interface OrderItem {
   quantity: number
   unit_price: number
   total: number
+  subtotal: number
 }
 
 interface Order {
@@ -26,6 +27,7 @@ interface Order {
   customer_city: string
   channel_name: string
   total: number
+  subtotal: number
   status: string
   payment_status: string
   fulfillment_status: string
