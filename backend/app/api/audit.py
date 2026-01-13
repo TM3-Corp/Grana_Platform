@@ -654,7 +654,7 @@ async def get_audit_data(
                             FROM customer_channel_rules ccr
                             WHERE ccr.channel_external_id::text = (
                                 CASE
-                                    WHEN o.customer_notes ~ '^\s*\\{{'
+                                    WHEN o.customer_notes ~ '^\\s*\\{{'
                                     THEN o.customer_notes::json->>'channel_id_relbase'
                                     ELSE NULL
                                 END
@@ -800,7 +800,7 @@ async def get_audit_data(
                             FROM customer_channel_rules ccr
                             WHERE ccr.channel_external_id::text = (
                                 CASE
-                                    WHEN o.customer_notes ~ '^\s*\\{{'
+                                    WHEN o.customer_notes ~ '^\\s*\\{{'
                                     THEN o.customer_notes::json->>'channel_id_relbase'
                                     ELSE NULL
                                 END
@@ -839,7 +839,7 @@ async def get_audit_data(
                                 FROM customer_channel_rules ccr
                                 WHERE ccr.channel_external_id::text = (
                                     CASE
-                                        WHEN o.customer_notes ~ '^\s*\\{{'
+                                        WHEN o.customer_notes ~ '^\\s*\\{{'
                                         THEN o.customer_notes::json->>'channel_id_relbase'
                                         ELSE NULL
                                     END
@@ -877,7 +877,7 @@ async def get_audit_data(
                             FROM customer_channel_rules ccr
                             WHERE ccr.channel_external_id::text = (
                                 CASE
-                                    WHEN o.customer_notes ~ '^\s*\\{{'
+                                    WHEN o.customer_notes ~ '^\\s*\\{{'
                                     THEN o.customer_notes::json->>'channel_id_relbase'
                                     ELSE NULL
                                 END
@@ -923,7 +923,7 @@ async def get_audit_data(
                                 FROM customer_channel_rules ccr
                                 WHERE ccr.channel_external_id::text = (
                                     CASE
-                                        WHEN o.customer_notes ~ '^\s*\\{{'
+                                        WHEN o.customer_notes ~ '^\\s*\\{{'
                                         THEN o.customer_notes::json->>'channel_id_relbase'
                                         ELSE NULL
                                     END
@@ -1141,7 +1141,7 @@ async def get_audit_data(
                         FROM customer_channel_rules ccr
                         WHERE ccr.channel_external_id::text = (
                             CASE
-                                WHEN o.customer_notes ~ '^\s*\{{'
+                                WHEN o.customer_notes ~ '^\\s*\\{{'
                                 THEN o.customer_notes::json->>'channel_id_relbase'
                                 ELSE NULL
                             END
@@ -1178,7 +1178,7 @@ async def get_audit_data(
                         FROM customer_channel_rules ccr
                         WHERE ccr.channel_external_id::text = (
                             CASE
-                                WHEN o.customer_notes ~ '^\s*\{{'
+                                WHEN o.customer_notes ~ '^\\s*\\{{'
                                 THEN o.customer_notes::json->>'channel_id_relbase'
                                 ELSE NULL
                             END
@@ -1215,7 +1215,7 @@ async def get_audit_data(
                         FROM customer_channel_rules ccr
                         WHERE ccr.channel_external_id::text = (
                             CASE
-                                WHEN o.customer_notes ~ '^\s*\{{'
+                                WHEN o.customer_notes ~ '^\\s*\\{{'
                                 THEN o.customer_notes::json->>'channel_id_relbase'
                                 ELSE NULL
                             END
