@@ -1346,11 +1346,14 @@ async def get_audit_data(
 
                 # Calculate totals from enriched data
                 # total_unidades: Use MV-based calculation for accuracy (full dataset)
+                # Fallback to page sum if MV returns 0 (no date filter case)
                 # total_peso: Calculated from current page only (acceptable approximation)
-                filtered_totals["total_unidades"] = filtered_totals.get("total_unidades_mv", sum(row.get('unidades', 0) for row in enriched_rows))
+                page_unidades = sum(row.get('unidades', 0) for row in enriched_rows)
+                mv_unidades = filtered_totals.get("total_unidades_mv", 0)
+                filtered_totals["total_unidades"] = mv_unidades if mv_unidades > 0 else page_unidades
                 filtered_totals["total_peso"] = round(sum(row.get('peso_total', 0) for row in enriched_rows), 4)
                 # Also keep page-only units for debugging
-                filtered_totals["page_unidades"] = sum(row.get('unidades', 0) for row in enriched_rows)
+                filtered_totals["page_unidades"] = page_unidades
 
                 return {
                     "status": "success",
