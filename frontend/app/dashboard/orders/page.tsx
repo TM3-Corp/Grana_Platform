@@ -90,8 +90,10 @@ export default function OrdersPage() {
             params.append('from_date', fromDate)
             params.append('to_date', toDate)
           } else {
-            params.append('from_date', '2025-01-01')
-            params.append('to_date', '2025-12-31')
+            // Default to current year
+            const currentYear = new Date().getFullYear()
+            params.append('from_date', `${currentYear}-01-01`)
+            params.append('to_date', `${currentYear}-12-31`)
           }
 
           const fullUrl = `${apiUrl}/api/v1/orders/?${params}`
@@ -134,10 +136,11 @@ export default function OrdersPage() {
   }
 
   const sources = ['shopify', 'mercadolibre', 'relbase', 'lokal', 'manual']
-  const months = [
-    '2025-01', '2025-02', '2025-03', '2025-04', '2025-05', '2025-06',
-    '2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12'
-  ]
+  // Generate months dynamically for current year
+  const currentYear = new Date().getFullYear()
+  const months = Array.from({ length: 12 }, (_, i) =>
+    `${currentYear}-${String(i + 1).padStart(2, '0')}`
+  )
 
   const handleFilterChange = (filterType: 'source' | 'month', value: string) => {
     setCurrentPage(1)
@@ -248,7 +251,7 @@ export default function OrdersPage() {
                     onChange={(e) => handleFilterChange('month', e.target.value)}
                     className="px-6 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all bg-white"
                   >
-                    <option value="">Todos los meses (2025)</option>
+                    <option value="">Todos los meses ({currentYear})</option>
                     {months.map(month => {
                       const date = new Date(month + '-01')
                       const monthName = date.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })

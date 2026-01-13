@@ -368,9 +368,10 @@ async def get_executive_kpis(
                     if month in monthly_prev and month in monthly_prev_mtd:
                         mtd_prev = float(monthly_prev_mtd[month]['total_revenue'])
                         full_prev = float(monthly_prev[month]['total_revenue'])
-                        if mtd_prev > 0:
+                        if mtd_prev > 0 and full_prev > 0:
                             mtd_ratio = mtd_prev / full_prev
-                            entry['estimated_full_month'] = float(monthly_curr[month]['total_revenue']) / mtd_ratio
+                            if mtd_ratio > 0:
+                                entry['estimated_full_month'] = float(monthly_curr[month]['total_revenue']) / mtd_ratio
                 sales_by_month_curr.append(entry)
             else:
                 sales_by_month_curr.append({
@@ -520,16 +521,20 @@ async def get_executive_kpis(
                     mtd_prev = float(monthly_prev_mtd[month]['total_revenue'])
                     full_prev = float(monthly_prev[month]['total_revenue'])
 
-                    if mtd_prev > 0:
+                    if mtd_prev > 0 and full_prev > 0:
                         # mtd_ratio = portion of month represented by days 1-current_day
                         mtd_ratio = mtd_prev / full_prev
 
-                        # Estimate current year full month: current_mtd / ratio
-                        mtd_curr = float(monthly_curr[month]['total_revenue'])
-                        estimated_full_curr = mtd_curr / mtd_ratio
+                        if mtd_ratio > 0:
+                            # Estimate current year full month: current_mtd / ratio
+                            mtd_curr = float(monthly_curr[month]['total_revenue'])
+                            estimated_full_curr = mtd_curr / mtd_ratio
 
-                        baseline_revenue = estimated_full_curr
-                        baseline_orders = int(monthly_curr[month]['total_orders'] / mtd_ratio)
+                            baseline_revenue = estimated_full_curr
+                            baseline_orders = int(monthly_curr[month]['total_orders'] / mtd_ratio)
+                        else:
+                            baseline_revenue = float(monthly_curr[month]['total_revenue'])
+                            baseline_orders = monthly_curr[month]['total_orders']
                     else:
                         baseline_revenue = float(monthly_curr[month]['total_revenue'])
                         baseline_orders = monthly_curr[month]['total_orders']
@@ -565,7 +570,8 @@ async def get_executive_kpis(
                 if is_incomplete_month and month in monthly_prev and month in monthly_prev_mtd:
                     projection_entry['is_estimated_from_mtd'] = True
                     projection_entry['estimated_curr_full_month'] = baseline_revenue
-                    projection_entry['mtd_ratio_used'] = mtd_ratio if mtd_prev > 0 else None
+                    # Only include mtd_ratio if it was actually calculated (both mtd_prev and full_prev > 0)
+                    projection_entry['mtd_ratio_used'] = mtd_ratio if (mtd_prev > 0 and full_prev > 0) else None
 
                 projections_next.append(projection_entry)
             else:
@@ -694,8 +700,19 @@ async def get_executive_kpis(
                     # Incomplete month estimation for next year projections
                     "incomplete_month_estimation": {
                         "month": current_month,
-                        "mtd_ratio": float(monthly_prev_mtd[current_month]['total_revenue']) / float(monthly_prev[current_month]['total_revenue']) if current_month in monthly_prev_mtd and current_month in monthly_prev else None,
-                        "estimated_curr_full_month": float(monthly_curr[current_month]['total_revenue']) / (float(monthly_prev_mtd[current_month]['total_revenue']) / float(monthly_prev[current_month]['total_revenue'])) if current_month in monthly_curr and current_month in monthly_prev_mtd and current_month in monthly_prev else None
+                        "mtd_ratio": (
+                            float(monthly_prev_mtd[current_month]['total_revenue']) / float(monthly_prev[current_month]['total_revenue'])
+                            if current_month in monthly_prev_mtd and current_month in monthly_prev
+                               and float(monthly_prev[current_month]['total_revenue']) > 0
+                            else None
+                        ),
+                        "estimated_curr_full_month": (
+                            float(monthly_curr[current_month]['total_revenue']) / (float(monthly_prev_mtd[current_month]['total_revenue']) / float(monthly_prev[current_month]['total_revenue']))
+                            if current_month in monthly_curr and current_month in monthly_prev_mtd and current_month in monthly_prev
+                               and float(monthly_prev[current_month]['total_revenue']) > 0
+                               and float(monthly_prev_mtd[current_month]['total_revenue']) > 0
+                            else None
+                        )
                     } if current_month in monthly_prev_mtd else None
                 }
             }

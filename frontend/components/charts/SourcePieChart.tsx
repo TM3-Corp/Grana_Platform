@@ -34,15 +34,15 @@ export default function SourcePieChart({ data }: SourcePieChartProps) {
         📊 Distribución por Fuente
       </h2>
 
-      <ResponsiveContainer width="100%" height={300}>
-        <PieChart>
+      <ResponsiveContainer width="100%" height={350}>
+        <PieChart margin={{ top: 30, right: 20, bottom: 20, left: 20 }}>
           <Pie
             data={chartData}
             cx="50%"
             cy="50%"
             labelLine={false}
             label={({ name, percentage }) => `${name}: ${percentage}%`}
-            outerRadius={100}
+            outerRadius={90}
             fill="#8884d8"
             dataKey="value"
           >

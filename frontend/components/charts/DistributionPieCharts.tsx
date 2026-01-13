@@ -189,7 +189,7 @@ const SinglePieChart = ({ title, icon, data, colors, loading }: SinglePieChartPr
     return (
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="h-6 bg-gray-200 rounded w-1/2 mb-4 animate-pulse" />
-        <div className="h-64 bg-gray-100 rounded animate-pulse" />
+        <div className="h-72 bg-gray-100 rounded animate-pulse" />
       </div>
     )
   }
@@ -200,7 +200,7 @@ const SinglePieChart = ({ title, icon, data, colors, loading }: SinglePieChartPr
         <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2 mb-4">
           <span>{icon}</span> {title}
         </h3>
-        <div className="h-64 flex items-center justify-center text-gray-400">
+        <div className="h-72 flex items-center justify-center text-gray-400">
           No hay datos disponibles
         </div>
       </div>
@@ -218,15 +218,15 @@ const SinglePieChart = ({ title, icon, data, colors, loading }: SinglePieChartPr
         </span>
       </div>
 
-      <div className="h-64">
+      <div className="h-72">
         <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
+          <PieChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
             <Pie
               data={chartData}
               cx="50%"
               cy="50%"
-              innerRadius={50}
-              outerRadius={80}
+              innerRadius={45}
+              outerRadius={70}
               paddingAngle={2}
               dataKey="value"
               label={renderCustomLabel}

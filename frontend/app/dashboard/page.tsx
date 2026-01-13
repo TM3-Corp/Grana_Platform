@@ -150,7 +150,7 @@ function SinglePieChart({
     return (
       <div className="bg-gray-50 rounded-xl p-6 animate-pulse">
         <div className="h-6 bg-gray-200 rounded w-1/2 mb-4" />
-        <div className="h-48 bg-gray-200 rounded" />
+        <div className="h-56 bg-gray-200 rounded" />
       </div>
     )
   }
@@ -161,7 +161,7 @@ function SinglePieChart({
         <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2 mb-4">
           <span>{icon}</span> {title}
         </h3>
-        <div className="h-48 flex items-center justify-center text-gray-400">
+        <div className="h-56 flex items-center justify-center text-gray-400">
           No hay datos disponibles
         </div>
       </div>
@@ -177,15 +177,15 @@ function SinglePieChart({
         <span className="text-sm text-gray-500">Total: {formatCurrency(total)}</span>
       </div>
 
-      <div className="h-48">
+      <div className="h-56">
         <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
+          <PieChart margin={{ top: 15, right: 15, bottom: 15, left: 15 }}>
             <Pie
               data={chartData}
               cx="50%"
               cy="50%"
-              innerRadius={40}
-              outerRadius={70}
+              innerRadius={35}
+              outerRadius={60}
               paddingAngle={2}
               dataKey="value"
               label={({ percentage }: any) => percentage >= 5 ? `${percentage.toFixed(0)}%` : null}

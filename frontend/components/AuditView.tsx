@@ -95,9 +95,13 @@ export default function AuditView() {
   const [showNullsOnly, setShowNullsOnly] = useState(false);
   const [showNotInCatalogOnly, setShowNotInCatalogOnly] = useState(false);
 
+  // Generate years dynamically: current year + 2 previous years
+  const currentYear = new Date().getFullYear()
+  const availableYears = Array.from({ length: 3 }, (_, i) => String(currentYear - 2 + i)).reverse()
+
   // Date filter states (multi-select arrays for year and month)
   const [dateFilterType, setDateFilterType] = useState<string>('all'); // 'all', 'year', 'month', 'custom'
-  const [selectedYear, setSelectedYear] = useState<string[]>(['2025']);
+  const [selectedYear, setSelectedYear] = useState<string[]>([String(currentYear)]);
   const [selectedMonth, setSelectedMonth] = useState<string[]>([]);
   const [customFromDate, setCustomFromDate] = useState<string>('');
   const [customToDate, setCustomToDate] = useState<string>('');
@@ -414,7 +418,7 @@ export default function AuditView() {
     setShowNullsOnly(false);
     setShowNotInCatalogOnly(false);
     setDateFilterType('all');
-    setSelectedYear(['2025']);
+    setSelectedYear([String(currentYear)]);
     setSelectedMonth([]);
     setCustomFromDate('');
     setCustomToDate('');
@@ -1069,7 +1073,7 @@ export default function AuditView() {
             <option value="sku">SKU Original</option>
             <option value="sku_primario">SKU Primario</option>
             <option value="family">Producto</option>
-            <option value="format">Formato</option>
+            <option value="format">🔢 Unidades por SKU</option>
           </select>
         </div>
 
@@ -1186,7 +1190,7 @@ export default function AuditView() {
                 </label>
                 {selectedYear.length > 0 && (
                   <button
-                    onClick={() => { setSelectedYear(['2025']); setCurrentPage(1); }}
+                    onClick={() => { setSelectedYear([String(currentYear)]); setCurrentPage(1); }}
                     className="text-xs text-blue-600 hover:text-blue-800 underline"
                   >
                     Limpiar
@@ -1201,14 +1205,12 @@ export default function AuditView() {
                   setSelectedYear(options);
                   setCurrentPage(1);
                 }}
-                size={5}
+                size={3}
                 className="w-full md:w-48 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="2025">2025 (3,687 órdenes)</option>
-                <option value="2024">2024 (379 órdenes)</option>
-                <option value="2023">2023 (502 órdenes)</option>
-                <option value="2022">2022 (270 órdenes)</option>
-                <option value="2021">2021 (2,543 órdenes)</option>
+                {availableYears.map(year => (
+                  <option key={year} value={year}>{year}</option>
+                ))}
               </select>
               {selectedYear.length > 0 && (
                 <div className="mt-1 text-xs text-blue-600">

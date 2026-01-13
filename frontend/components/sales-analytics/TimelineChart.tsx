@@ -421,7 +421,7 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
       <ResponsiveContainer width="100%" height={400}>
         {useStackedBars ? (
           /* SIMPLE STACKED BAR CHART */
-          <BarChart data={chartData}>
+          <BarChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
             <XAxis
               dataKey="period"
@@ -432,6 +432,7 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
               tickFormatter={formatYAxis}
               stroke="#6b7280"
               style={{ fontSize: '12px' }}
+              width={80}
             />
             <Tooltip
               formatter={formatTooltip}
@@ -456,7 +457,7 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
           </BarChart>
         ) : hasStacking ? (
           /* GROUPED STACKED BAR CHART (Legacy - rarely used) */
-          <BarChart data={chartData}>
+          <BarChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
             <XAxis
               dataKey="period"
@@ -467,6 +468,7 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
               tickFormatter={formatYAxis}
               stroke="#6b7280"
               style={{ fontSize: '12px' }}
+              width={80}
             />
             <Tooltip
               formatter={formatTooltip}
@@ -491,7 +493,7 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
           </BarChart>
         ) : (
           /* LINE CHART (existing behavior) */
-          <LineChart data={chartData}>
+          <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
             <XAxis
               dataKey="period"
@@ -502,6 +504,7 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
               tickFormatter={formatYAxis}
               stroke="#6b7280"
               style={{ fontSize: '12px' }}
+              width={80}
             />
             <Tooltip
               formatter={formatTooltip}

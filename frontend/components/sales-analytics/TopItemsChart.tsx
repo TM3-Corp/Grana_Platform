@@ -103,7 +103,7 @@ export default function TopItemsChart({ data, groupBy, topLimit, loading }: TopI
         <BarChart
           data={chartData}
           layout="vertical"
-          margin={{ top: 5, right: 30, left: 100, bottom: 5 }}
+          margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" horizontal={true} vertical={false} />
           <XAxis
@@ -117,8 +117,8 @@ export default function TopItemsChart({ data, groupBy, topLimit, loading }: TopI
             dataKey="name"
             stroke="#6b7280"
             style={{ fontSize: '12px' }}
-            tickFormatter={(value) => truncateName(value, 25)}
-            width={100}
+            tickFormatter={(value) => truncateName(value, 30)}
+            width={160}
           />
           <Tooltip
             formatter={(value: number) => formatCurrency(value)}

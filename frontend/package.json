@@ -9,6 +9,9 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@radix-ui/react-popover": "^1.1.15",
+    "@radix-ui/react-select": "^2.2.6",
+    "@radix-ui/react-tooltip": "^1.2.8",
     "bcryptjs": "^3.0.2",
     "fuse.js": "^7.1.0",
     "next": "^15.5.9",

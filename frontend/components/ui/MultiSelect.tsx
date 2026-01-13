@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { cn } from '@/lib/utils'
+import { Tooltip, TooltipProvider } from './Tooltip'
 
 interface MultiSelectProps {
   options: string[]
@@ -81,6 +82,7 @@ export default function MultiSelect({
   }
 
   return (
+    <TooltipProvider>
     <div ref={containerRef} className={cn('relative', className)}>
       {label && (
         <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -113,21 +115,22 @@ export default function MultiSelect({
             <span className="text-gray-400 text-sm">{placeholder}</span>
           ) : selected.length <= 3 ? (
             selected.map(item => (
-              <span
-                key={item}
-                className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-800 text-xs font-medium rounded-full"
-              >
-                {item}
-                <button
-                  type="button"
-                  onClick={(e) => removeOption(item, e)}
-                  className="hover:bg-green-200 rounded-full p-0.5 transition-colors"
+              <Tooltip key={item} content={item} side="top" delayDuration={200}>
+                <span
+                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-800 text-xs font-medium rounded-full max-w-[150px]"
                 >
-                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </span>
+                  <span className="truncate">{item}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => removeOption(item, e)}
+                    className="hover:bg-green-200 rounded-full p-0.5 transition-colors flex-shrink-0"
+                  >
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </span>
+              </Tooltip>
             ))
           ) : (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-800 text-xs font-medium rounded-full">
@@ -246,7 +249,9 @@ export default function MultiSelect({
                       </svg>
                     )}
                   </span>
-                  <span className="truncate">{option}</span>
+                  <Tooltip content={option} side="right" delayDuration={400}>
+                    <span className="truncate">{option}</span>
+                  </Tooltip>
                 </button>
               ))
             )}
@@ -254,5 +259,6 @@ export default function MultiSelect({
         </div>
       )}
     </div>
+    </TooltipProvider>
   )
 }

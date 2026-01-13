@@ -1410,8 +1410,10 @@ async def get_available_filters():
                 """)
                 sources = [row['source'] for row in cursor.fetchall() if row['source']]
 
-                # Get official Relbase channels that have 2025 data
-                # Exclude channels with no orders in 2025 (EXPORTACIÓN, HORECA, MARKETPLACES)
+                # Get official Relbase channels that have data for the current year
+                # Exclude channels with no orders (EXPORTACIÓN, HORECA, MARKETPLACES)
+                # Exclude "Relbase" as it's a data source, not a sales channel
+                current_year = datetime.now().year
                 cursor.execute("""
                     SELECT DISTINCT ch.name as channel_name
                     FROM channels ch
@@ -1419,11 +1421,12 @@ async def get_available_filters():
                     WHERE ch.external_id IS NOT NULL
                       AND ch.source = 'relbase'
                       AND ch.is_active = true
+                      AND ch.name NOT ILIKE 'relbase'
                       AND o.source = 'relbase'
                       AND o.invoice_status IN ('accepted', 'accepted_objection')
-                      AND EXTRACT(YEAR FROM o.order_date) = 2025
+                      AND EXTRACT(YEAR FROM o.order_date) = %s
                     ORDER BY ch.name
-                """)
+                """, (current_year,))
                 channels = [row['channel_name'] for row in cursor.fetchall()]
 
                 # Always add "Sin Canal Asignado" as default for orders without channel
@@ -1434,12 +1437,12 @@ async def get_available_filters():
                     SELECT cust.name as customer_name
                     FROM orders o
                     LEFT JOIN customers cust ON cust.id = o.customer_id
-                    WHERE EXTRACT(YEAR FROM order_date) = 2025
+                    WHERE EXTRACT(YEAR FROM order_date) = %s
                       AND cust.name IS NOT NULL
                     GROUP BY cust.name
                     ORDER BY COUNT(*) DESC
                     LIMIT 100
-                """)
+                """, (current_year,))
                 customers = [row['customer_name'] for row in cursor.fetchall()]
 
                 # Get unique SKUs (limit to top 100 by quantity sold)
@@ -1447,13 +1450,13 @@ async def get_available_filters():
                     SELECT oi.product_sku as sku
                     FROM order_items oi
                     JOIN orders o ON o.id = oi.order_id
-                    WHERE EXTRACT(YEAR FROM o.order_date) = 2025
+                    WHERE EXTRACT(YEAR FROM o.order_date) = %s
                       AND oi.product_sku IS NOT NULL
                       AND oi.product_sku != ''
                     GROUP BY oi.product_sku
                     ORDER BY SUM(oi.quantity) DESC
                     LIMIT 100
-                """)
+                """, (current_year,))
                 skus = [row['sku'] for row in cursor.fetchall()]
 
                 return {
