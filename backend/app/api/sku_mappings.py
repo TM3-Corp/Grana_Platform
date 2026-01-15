@@ -738,6 +738,8 @@ async def get_all_order_skus(
     search: Optional[str] = Query(None, description="Search in SKU"),
     mapped_only: bool = Query(False, description="Only show mapped SKUs"),
     unmapped_only: bool = Query(False, description="Only show unmapped SKUs"),
+    sort_by: Optional[str] = Query(None, description="Sort by column: order_count, total_revenue, sku"),
+    sort_dir: Optional[str] = Query("desc", description="Sort direction: asc or desc"),
     limit: int = Query(100, ge=1, le=1000, description="Max results to return"),
     offset: int = Query(0, ge=0, description="Offset for pagination")
 ):
@@ -865,14 +867,32 @@ async def get_all_order_skus(
         cursor.execute(count_query, params)
         total = cursor.fetchone()['count']
 
+        # Build ORDER BY clause based on sort parameters
+        valid_sort_columns = {
+            'order_count': 'os.order_count',
+            'total_revenue': 'os.total_revenue',
+            'sku': 'os.sku'
+        }
+        sort_direction = 'DESC' if sort_dir and sort_dir.lower() == 'desc' else 'ASC'
+
+        if sort_by and sort_by in valid_sort_columns:
+            order_clause = f"""
+                ORDER BY {valid_sort_columns[sort_by]} {sort_direction} NULLS LAST
+            """
+        else:
+            # Default: unmapped first, then by revenue
+            order_clause = """
+                ORDER BY
+                    CASE WHEN mc.source_pattern IS NULL AND pc_direct.sku IS NULL AND pc_master.sku IS NULL THEN 0 ELSE 1 END,
+                    os.total_revenue DESC NULLS LAST,
+                    os.order_count DESC
+            """
+
         # Full query with pagination
         full_query = f"""
             {base_query}
             {filter_clause}
-            ORDER BY
-                CASE WHEN mc.source_pattern IS NULL AND pc_direct.sku IS NULL AND pc_master.sku IS NULL THEN 0 ELSE 1 END,
-                os.total_revenue DESC NULLS LAST,
-                os.order_count DESC
+            {order_clause}
             LIMIT %s OFFSET %s
         """
         cursor.execute(full_query, params + [limit, offset])

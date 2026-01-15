@@ -90,6 +90,10 @@ export default function SKUMappingsPage() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('unmapped'); // 'all', 'unmapped', 'mapped'
 
+  // Sorting
+  const [sortBy, setSortBy] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingMapping, setEditingMapping] = useState<SKUMapping | null>(null);
@@ -150,6 +154,10 @@ export default function SKUMappingsPage() {
       if (debouncedSearch) params.append('search', debouncedSearch);
       if (filterStatus === 'unmapped') params.append('unmapped_only', 'true');
       else if (filterStatus === 'mapped') params.append('mapped_only', 'true');
+      if (sortBy) {
+        params.append('sort_by', sortBy);
+        params.append('sort_dir', sortDir);
+      }
       params.append('limit', pageSize.toString());
       params.append('offset', ((currentPage - 1) * pageSize).toString());
 
@@ -165,7 +173,7 @@ export default function SKUMappingsPage() {
     } finally {
       setLoading(false);
     }
-  }, [viewMode, debouncedSearch, filterStatus, pageSize, currentPage]);
+  }, [viewMode, debouncedSearch, filterStatus, sortBy, sortDir, pageSize, currentPage]);
 
   // Fetch existing mappings
   const fetchMappings = useCallback(async () => {
@@ -490,6 +498,39 @@ export default function SKUMappingsPage() {
     return new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(amount);
   };
 
+  // Handle column sort
+  const handleSort = (column: string) => {
+    if (sortBy === column) {
+      // Toggle direction if same column
+      setSortDir(sortDir === 'desc' ? 'asc' : 'desc');
+    } else {
+      // New column, default to desc
+      setSortBy(column);
+      setSortDir('desc');
+    }
+    setCurrentPage(1);
+  };
+
+  // Sort indicator component
+  const SortIndicator = ({ column }: { column: string }) => {
+    if (sortBy !== column) {
+      return (
+        <svg className="w-4 h-4 ml-1 text-gray-400 opacity-0 group-hover:opacity-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+        </svg>
+      );
+    }
+    return sortDir === 'desc' ? (
+      <svg className="w-4 h-4 ml-1 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+      </svg>
+    ) : (
+      <svg className="w-4 h-4 ml-1 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+      </svg>
+    );
+  };
+
   return (
     <>
       <Navigation />
@@ -630,10 +671,34 @@ export default function SKUMappingsPage() {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
+                    <th
+                      className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group"
+                      onClick={() => handleSort('sku')}
+                    >
+                      <div className="flex items-center">
+                        SKU
+                        <SortIndicator column="sku" />
+                      </div>
+                    </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Producto</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Pedidos</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Ventas</th>
+                    <th
+                      className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group"
+                      onClick={() => handleSort('order_count')}
+                    >
+                      <div className="flex items-center justify-end">
+                        Pedidos
+                        <SortIndicator column="order_count" />
+                      </div>
+                    </th>
+                    <th
+                      className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group"
+                      onClick={() => handleSort('total_revenue')}
+                    >
+                      <div className="flex items-center justify-end">
+                        Ventas
+                        <SortIndicator column="total_revenue" />
+                      </div>
+                    </th>
                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Estado</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Mapeo</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Accion</th>
