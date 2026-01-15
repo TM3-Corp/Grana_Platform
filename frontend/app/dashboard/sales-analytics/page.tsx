@@ -95,6 +95,35 @@ export default function SalesAnalyticsPage() {
   const [availableFormats, setAvailableFormats] = useState<string[]>([])
   const [availableSkuPrimarios, setAvailableSkuPrimarios] = useState<string[]>([])
 
+  // Helper function to format the current date range display
+  const getDateRangeDisplay = (): string => {
+    const currentYear = new Date().getFullYear()
+
+    if (dateFilterType === 'all') {
+      return `Año actual: ${currentYear}`
+    } else if (dateFilterType === 'year' && selectedYears.length > 0) {
+      return `Años: ${selectedYears.sort().join(', ')}`
+    } else if (dateFilterType === 'month' && selectedMonths.length > 0) {
+      // Parse months (format: "2025-01") and display as "Enero 2025, Febrero 2025"
+      const monthNames: { [key: string]: string } = {
+        '01': 'Enero', '02': 'Febrero', '03': 'Marzo', '04': 'Abril',
+        '05': 'Mayo', '06': 'Junio', '07': 'Julio', '08': 'Agosto',
+        '09': 'Septiembre', '10': 'Octubre', '11': 'Noviembre', '12': 'Diciembre'
+      }
+      const formatted = selectedMonths.sort().map(m => {
+        const [year, month] = m.split('-')
+        return `${monthNames[month] || month} ${year}`
+      })
+      return `Meses: ${formatted.join(', ')}`
+    } else if (dateFilterType === 'custom' && customFromDate && customToDate) {
+      const from = new Date(customFromDate + 'T00:00:00')
+      const to = new Date(customToDate + 'T00:00:00')
+      const formatDate = (d: Date) => d.toLocaleDateString('es-CL')
+      return `Período: ${formatDate(from)} - ${formatDate(to)}`
+    }
+    return `Año actual: ${currentYear}`
+  }
+
   // Debounce search term
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -447,6 +476,13 @@ export default function SalesAnalyticsPage() {
           <p className="text-gray-600 text-lg">
             Visualiza patrones de ventas con filtros y agrupaciones dinámicas
           </p>
+          {/* Date Range Display */}
+          <div className="mt-4 flex items-center gap-2 text-sm text-gray-600 bg-blue-50 px-4 py-2 rounded-lg border border-blue-100 w-fit">
+            <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <span className="font-medium">{getDateRangeDisplay()}</span>
+          </div>
         </div>
 
         {/* Error State */}

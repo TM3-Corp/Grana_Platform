@@ -87,8 +87,9 @@ async def get_sales_analytics(
             where_clauses.append("mv.order_date <= %s")
             params.append(to_date)
         else:
-            # Default to 2025 for backward compatibility
-            where_clauses.append("EXTRACT(YEAR FROM mv.order_date) = 2025")
+            # Default to current year (dynamic, won't break on year rollover)
+            current_year = datetime.now().year
+            where_clauses.append(f"EXTRACT(YEAR FROM mv.order_date) = {current_year}")
 
         # Multi-select filters (using denormalized fields - NO JOINs!)
         if channels:
@@ -871,7 +872,9 @@ async def export_sales_analytics(
             where_clauses.append("mv.order_date <= %s")
             params.append(to_date)
         else:
-            where_clauses.append("EXTRACT(YEAR FROM mv.order_date) = 2025")
+            # Default to current year (dynamic, won't break on year rollover)
+            current_year = datetime.now().year
+            where_clauses.append(f"EXTRACT(YEAR FROM mv.order_date) = {current_year}")
 
         # Multi-select filters
         if channels:

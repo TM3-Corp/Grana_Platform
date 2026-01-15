@@ -1399,13 +1399,16 @@ async def get_available_filters():
         with psycopg2.connect(DATABASE_URL) as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
 
+                # Get current year for filtering
+                current_year = datetime.now().year
+
                 # Get unique sources
                 cursor.execute("""
                     SELECT DISTINCT source
                     FROM orders
-                    WHERE EXTRACT(YEAR FROM order_date) = 2025
+                    WHERE EXTRACT(YEAR FROM order_date) = %s
                     ORDER BY source
-                """)
+                """, (current_year,))
                 sources = [row['source'] for row in cursor.fetchall() if row['source']]
 
                 # Get official Relbase channels that have data for the current year
@@ -1489,30 +1492,33 @@ async def get_audit_summary():
         with psycopg2.connect(DATABASE_URL) as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
 
+                # Get current year for filtering (dynamic, won't break on year rollover)
+                current_year = datetime.now().year
+
                 # Total orders
                 cursor.execute("""
                     SELECT COUNT(*) as total
                     FROM orders
-                    WHERE EXTRACT(YEAR FROM order_date) = 2025
-                """)
+                    WHERE EXTRACT(YEAR FROM order_date) = %s
+                """, (current_year,))
                 total_orders = cursor.fetchone()['total']
 
                 # Orders with NULL customer
                 cursor.execute("""
                     SELECT COUNT(*) as total
                     FROM orders
-                    WHERE EXTRACT(YEAR FROM order_date) = 2025
+                    WHERE EXTRACT(YEAR FROM order_date) = %s
                       AND customer_id IS NULL
-                """)
+                """, (current_year,))
                 null_customers = cursor.fetchone()['total']
 
                 # Orders with NULL channel
                 cursor.execute("""
                     SELECT COUNT(*) as total
                     FROM orders o
-                    WHERE EXTRACT(YEAR FROM order_date) = 2025
+                    WHERE EXTRACT(YEAR FROM order_date) = %s
                       AND o.channel_id IS NULL
-                """)
+                """, (current_year,))
                 null_channels = cursor.fetchone()['total']
 
                 # Order items with NULL or empty SKU
@@ -1520,9 +1526,9 @@ async def get_audit_summary():
                     SELECT COUNT(*) as total
                     FROM order_items oi
                     JOIN orders o ON o.id = oi.order_id
-                    WHERE EXTRACT(YEAR FROM o.order_date) = 2025
+                    WHERE EXTRACT(YEAR FROM o.order_date) = %s
                       AND (oi.product_sku IS NULL OR oi.product_sku = '')
-                """)
+                """, (current_year,))
                 null_skus = cursor.fetchone()['total']
 
                 # Unique SKUs
@@ -1530,10 +1536,10 @@ async def get_audit_summary():
                     SELECT COUNT(DISTINCT oi.product_sku) as total
                     FROM order_items oi
                     JOIN orders o ON o.id = oi.order_id
-                    WHERE EXTRACT(YEAR FROM o.order_date) = 2025
+                    WHERE EXTRACT(YEAR FROM o.order_date) = %s
                       AND oi.product_sku IS NOT NULL
                       AND oi.product_sku != ''
-                """)
+                """, (current_year,))
                 unique_skus = cursor.fetchone()['total']
 
                 # Get all SKUs with product names and source for mapping
@@ -1541,10 +1547,10 @@ async def get_audit_summary():
                     SELECT DISTINCT oi.product_sku as sku, oi.product_name, o.source
                     FROM order_items oi
                     JOIN orders o ON o.id = oi.order_id
-                    WHERE EXTRACT(YEAR FROM o.order_date) = 2025
+                    WHERE EXTRACT(YEAR FROM o.order_date) = %s
                       AND oi.product_sku IS NOT NULL
                       AND oi.product_sku != ''
-                """)
+                """, (current_year,))
                 all_skus = cursor.fetchall()
 
                 # Apply conservative mapping to determine which SKUs are actually unmapped
