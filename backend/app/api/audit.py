@@ -513,9 +513,7 @@ async def get_audit_data(
                 # This aligns with Sales Analytics endpoint and ensures data consistency
                 where_clauses.append("o.invoice_status IN ('accepted', 'accepted_objection')")
 
-                # ✅ Filter out ANU/legacy codes (historical SKUs that clutter reports)
-                # Note: Use %% to escape % in LIKE pattern for psycopg2
-                where_clauses.append("oi.product_sku NOT LIKE 'ANU%%'")
+                # NOTE: ANU- SKUs are now included - map_sku_with_quantity() handles mapping
 
                 # Multi-value filters using IN operator
                 if source:
@@ -1628,9 +1626,7 @@ async def export_audit_data(
                 # Base filters
                 where_clauses.append("o.source = 'relbase'")
                 where_clauses.append("o.invoice_status IN ('accepted', 'accepted_objection')")
-                # ✅ Filter out ANU/legacy codes (historical SKUs that clutter reports)
-                # Note: Use %% to escape % in LIKE pattern for psycopg2
-                where_clauses.append("oi.product_sku NOT LIKE 'ANU%%'")
+                # NOTE: ANU- SKUs are now included - map_sku_with_quantity() handles mapping
 
                 if source:
                     placeholders = ','.join(['%s'] * len(source))

@@ -635,7 +635,7 @@ async def get_unmapped_order_skus(
             params.append(f"%{search}%")
 
         # Query to find unmapped SKUs with aggregated info
-        # Only include orders from 2025 (active/current SKUs)
+        # Include orders from 2024 onwards (older SKUs excluded as no longer relevant)
         # Check both product_catalog.sku AND product_catalog.sku_master (caja master codes)
         query = f"""
             WITH order_skus AS (
@@ -650,7 +650,7 @@ async def get_unmapped_order_skus(
                 JOIN orders o ON o.id = oi.order_id
                 WHERE oi.product_sku IS NOT NULL
                 AND oi.product_sku != ''
-                AND EXTRACT(YEAR FROM o.order_date) = 2025
+                AND o.order_date >= '2024-01-01'
                 {search_clause}
                 GROUP BY oi.product_sku
             )
@@ -680,7 +680,7 @@ async def get_unmapped_order_skus(
             ORDER BY os.total_revenue DESC NULLS LAST, os.order_count DESC
         """
 
-        # Get total count first (only 2025 orders, check both sku and sku_master)
+        # Get total count first (2024+ orders, check both sku and sku_master)
         count_query = f"""
             WITH order_skus AS (
                 SELECT DISTINCT oi.product_sku as sku
@@ -688,7 +688,7 @@ async def get_unmapped_order_skus(
                 JOIN orders o ON o.id = oi.order_id
                 WHERE oi.product_sku IS NOT NULL
                 AND oi.product_sku != ''
-                AND EXTRACT(YEAR FROM o.order_date) = 2025
+                AND o.order_date >= '2024-01-01'
                 {search_clause}
             )
             SELECT COUNT(*)
@@ -760,7 +760,7 @@ async def get_all_order_skus(
             search_clause = "AND oi.product_sku ILIKE %s"
             params.append(f"%{search}%")
 
-        # Base query with mapping status (only 2025 orders)
+        # Base query with mapping status (2024+ orders)
         # Check both product_catalog.sku AND product_catalog.sku_master (caja master codes)
         # Aggregate multiple mapping components into JSON array for pack products
         base_query = f"""
@@ -776,7 +776,7 @@ async def get_all_order_skus(
                 JOIN orders o ON o.id = oi.order_id
                 WHERE oi.product_sku IS NOT NULL
                 AND oi.product_sku != ''
-                AND EXTRACT(YEAR FROM o.order_date) = 2025
+                AND o.order_date >= '2024-01-01'
                 {search_clause}
                 GROUP BY oi.product_sku
             ),
@@ -839,7 +839,7 @@ async def get_all_order_skus(
         elif unmapped_only:
             filter_clause = "WHERE mc.source_pattern IS NULL AND pc_direct.sku IS NULL AND pc_master.sku IS NULL"
 
-        # Count query (only 2025 orders, check both sku and sku_master)
+        # Count query (2024+ orders, check both sku and sku_master)
         count_query = f"""
             WITH order_skus AS (
                 SELECT DISTINCT oi.product_sku as sku
@@ -847,7 +847,7 @@ async def get_all_order_skus(
                 JOIN orders o ON o.id = oi.order_id
                 WHERE oi.product_sku IS NOT NULL
                 AND oi.product_sku != ''
-                AND EXTRACT(YEAR FROM o.order_date) = 2025
+                AND o.order_date >= '2024-01-01'
                 {search_clause}
             ),
             mapping_sources AS (
@@ -905,7 +905,7 @@ async def get_order_skus_stats():
         conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
         cursor = conn.cursor(cursor_factory=RealDictCursor)
 
-        # Only include orders from 2025 (active/current SKUs)
+        # Include orders from 2024 onwards (older SKUs excluded as no longer relevant)
         # Check both product_catalog.sku AND product_catalog.sku_master (caja master codes)
         cursor.execute("""
             WITH order_skus AS (
@@ -914,7 +914,7 @@ async def get_order_skus_stats():
                 JOIN orders o ON o.id = oi.order_id
                 WHERE oi.product_sku IS NOT NULL
                 AND oi.product_sku != ''
-                AND EXTRACT(YEAR FROM o.order_date) = 2025
+                AND o.order_date >= '2024-01-01'
             ),
             sku_status AS (
                 SELECT
@@ -940,7 +940,7 @@ async def get_order_skus_stats():
 
         stats = cursor.fetchone()
 
-        # Get total revenue from unmapped SKUs (only 2025 orders)
+        # Get total revenue from unmapped SKUs (2024+ orders)
         # Check both product_catalog.sku AND product_catalog.sku_master (caja master codes)
         cursor.execute("""
             WITH order_skus AS (
@@ -951,7 +951,7 @@ async def get_order_skus_stats():
                 JOIN orders o ON o.id = oi.order_id
                 WHERE oi.product_sku IS NOT NULL
                 AND oi.product_sku != ''
-                AND EXTRACT(YEAR FROM o.order_date) = 2025
+                AND o.order_date >= '2024-01-01'
                 GROUP BY oi.product_sku
             )
             SELECT COALESCE(SUM(os.revenue), 0) as unmapped_revenue

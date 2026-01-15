@@ -177,6 +177,7 @@ async def get_executive_kpis(
             params_curr = [product_family.upper()]
 
         # Get PREVIOUS YEAR monthly data from sales_facts_mv (e.g., 2025)
+        # NOTE: ANU- SKUs are now included - they map to official SKUs via sales_facts_mv
         query_prev_year = f"""
             SELECT
                 DATE_TRUNC('month', order_date)::date as month,
@@ -185,7 +186,6 @@ async def get_executive_kpis(
             FROM sales_facts_mv
             WHERE EXTRACT(YEAR FROM order_date) = %s
             AND source = 'relbase'
-            AND original_sku NOT LIKE 'ANU%%'
             {family_filter}
             GROUP BY DATE_TRUNC('month', order_date)
             ORDER BY month
@@ -203,7 +203,6 @@ async def get_executive_kpis(
             FROM sales_facts_mv
             WHERE EXTRACT(YEAR FROM order_date) = %s
             AND source = 'relbase'
-            AND original_sku NOT LIKE 'ANU%%'
             {family_filter}
             GROUP BY DATE_TRUNC('month', order_date)
             ORDER BY month
@@ -223,7 +222,6 @@ async def get_executive_kpis(
             FROM sales_facts_mv
             WHERE EXTRACT(YEAR FROM order_date) = %s
             AND source = 'relbase'
-            AND original_sku NOT LIKE 'ANU%%'
             {family_filter}
             GROUP BY DATE_TRUNC('month', order_date)
             ORDER BY month
@@ -250,7 +248,6 @@ async def get_executive_kpis(
                 AND EXTRACT(MONTH FROM order_date) = %s
                 AND EXTRACT(DAY FROM order_date) <= %s
                 AND source = 'relbase'
-                AND original_sku NOT LIKE 'ANU%%'
                 {family_filter}
             """
             mtd_params = [previous_year, current_month, current_day] + params_prev
