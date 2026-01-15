@@ -18,7 +18,43 @@ interface ProductionProduct {
   days_to_earliest_expiration: number | null;
   days_of_coverage: number;
   production_needed: number;
+  coverage_type: 'calculated' | 'no_sales_data';
   urgency: 'critical' | 'high' | 'medium' | 'low';
+}
+
+interface LotInfo {
+  lot_number: string;
+  warehouse_code: string;
+  warehouse_name: string;
+  quantity: number;
+  expiration_date: string | null;
+  days_to_expiration: number | null;
+  status: string;
+  at_risk: boolean;
+}
+
+interface ExpirationScheduleItem {
+  date: string;
+  units: number;
+  cumulative: number;
+}
+
+interface LotBreakdownData {
+  status: string;
+  sku: string;
+  name: string;
+  category: string | null;
+  total_stock: number;
+  stock_usable: number;
+  avg_monthly_sales: number;
+  estimation_months: number;
+  days_of_coverage: number | null;
+  lots: LotInfo[];
+  expiration_schedule: ExpirationScheduleItem[];
+  risk_analysis: {
+    units_at_risk: number;
+    risk_message: string;
+  };
 }
 
 interface ProductionSummary {
@@ -49,6 +85,11 @@ export default function ProductionPlanningPage() {
 
   // Categories for filter dropdown
   const [categories, setCategories] = useState<string[]>([]);
+
+  // Expanded row state for lot details
+  const [expandedSku, setExpandedSku] = useState<string | null>(null);
+  const [lotBreakdown, setLotBreakdown] = useState<LotBreakdownData | null>(null);
+  const [lotLoading, setLotLoading] = useState(false);
 
   // Fetch categories on mount
   useEffect(() => {
@@ -98,6 +139,58 @@ export default function ProductionPlanningPage() {
   useEffect(() => {
     fetchData();
   }, [categoryFilter, urgencyFilter, onlyNeedingProduction]);
+
+  // Fetch lot breakdown for expanded row
+  const fetchLotBreakdown = async (sku: string) => {
+    setLotLoading(true);
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${apiUrl}/api/v1/inventory-planning/lot-breakdown/${encodeURIComponent(sku)}`);
+      if (response.ok) {
+        const result = await response.json();
+        setLotBreakdown(result);
+      } else {
+        setLotBreakdown(null);
+      }
+    } catch (err) {
+      console.error('Error fetching lot breakdown:', err);
+      setLotBreakdown(null);
+    } finally {
+      setLotLoading(false);
+    }
+  };
+
+  // Handle row click to expand/collapse
+  const handleRowClick = (sku: string) => {
+    if (expandedSku === sku) {
+      // Collapse if already expanded
+      setExpandedSku(null);
+      setLotBreakdown(null);
+    } else {
+      // Expand and fetch lot data
+      setExpandedSku(sku);
+      fetchLotBreakdown(sku);
+    }
+  };
+
+  // Get status badge for lot
+  const getLotStatusBadge = (status: string, atRisk: boolean) => {
+    if (atRisk) {
+      return 'bg-red-100 text-red-700 border-red-200';
+    }
+    switch (status) {
+      case 'Vencido':
+        return 'bg-red-100 text-red-700 border-red-200';
+      case 'Por vencer':
+        return 'bg-amber-100 text-amber-700 border-amber-200';
+      case 'Proximo':
+        return 'bg-yellow-100 text-yellow-700 border-yellow-200';
+      case 'Vigente':
+        return 'bg-green-100 text-green-700 border-green-200';
+      default:
+        return 'bg-gray-100 text-gray-600 border-gray-200';
+    }
+  };
 
   // Urgency badge styles
   const getUrgencyBadge = (urgency: string) => {
@@ -343,26 +436,44 @@ export default function ProductionPlanningPage() {
               </thead>
               <tbody className="bg-white divide-y divide-gray-100">
                 {data.data.map((product) => (
-                  <tr key={product.sku} className="hover:bg-gray-50 transition-colors">
+                  <>
+                  <tr
+                    key={product.sku}
+                    className="hover:bg-gray-50 transition-colors cursor-pointer"
+                    onClick={() => handleRowClick(product.sku)}
+                  >
                     {/* Product Info */}
                     <td className="px-4 py-3 min-w-[280px]">
-                      <div className="flex flex-col gap-0.5">
-                        <div className="flex items-center gap-2">
-                          <code className="text-xs font-mono font-medium text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
-                            {product.sku}
-                          </code>
-                          {product.category && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">
-                              {toTitleCase(product.category)}
-                            </span>
-                          )}
+                      <div className="flex items-start gap-2">
+                        {/* Expand/Collapse indicator */}
+                        <div className="pt-1">
+                          <svg
+                            className={`w-4 h-4 text-gray-400 transition-transform ${expandedSku === product.sku ? 'rotate-90' : ''}`}
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
                         </div>
-                        <span className="text-sm font-medium text-gray-900">
-                          {toTitleCase(product.name)}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          Estimación: {product.estimation_months === 1 ? 'Último mes' : `Últimos ${product.estimation_months} meses`}
-                        </span>
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-2">
+                            <code className="text-xs font-mono font-medium text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+                              {product.sku}
+                            </code>
+                            {product.category && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">
+                                {toTitleCase(product.category)}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-sm font-medium text-gray-900">
+                            {toTitleCase(product.name)}
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            Estimacion: {product.estimation_months === 1 ? 'Ultimo mes' : `Ultimos ${product.estimation_months} meses`}
+                          </span>
+                        </div>
                       </div>
                     </td>
 
@@ -382,7 +493,11 @@ export default function ProductionPlanningPage() {
 
                     {/* Days of Coverage */}
                     <td className="px-4 py-3 text-center">
-                      {product.days_of_coverage < 999 ? (
+                      {product.coverage_type === 'no_sales_data' ? (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-500 border border-gray-200">
+                          Sin ventas
+                        </span>
+                      ) : product.days_of_coverage < 999 ? (
                         <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-sm font-semibold ${getCoverageColor(product.days_of_coverage)}`}>
                           {product.days_of_coverage}d
                         </span>
@@ -486,6 +601,131 @@ export default function ProductionPlanningPage() {
                       </span>
                     </td>
                   </tr>
+
+                  {/* Expanded Lot Detail Row */}
+                  {expandedSku === product.sku && (
+                    <tr key={`${product.sku}-expanded`}>
+                      <td colSpan={8} className="px-4 py-4 bg-gray-50 border-t border-gray-200">
+                        {lotLoading ? (
+                          <div className="flex items-center justify-center py-8">
+                            <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent"></div>
+                            <span className="ml-3 text-gray-600">Cargando detalle de lotes...</span>
+                          </div>
+                        ) : lotBreakdown && lotBreakdown.lots.length > 0 ? (
+                          <div className="space-y-4">
+                            {/* Lot Table Header */}
+                            <div className="flex items-center justify-between">
+                              <h4 className="text-sm font-semibold text-gray-700">
+                                Detalle de Lotes ({lotBreakdown.lots.length} lotes)
+                              </h4>
+                              {lotBreakdown.risk_analysis.units_at_risk > 0 && (
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-red-100 text-red-700 text-xs font-semibold">
+                                  <svg className="w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                  </svg>
+                                  {lotBreakdown.risk_analysis.units_at_risk.toLocaleString('es-CL')} unidades en riesgo
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Lot Table */}
+                            <div className="overflow-hidden rounded-lg border border-gray-200">
+                              <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-100">
+                                  <tr>
+                                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Lote</th>
+                                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Bodega</th>
+                                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600">Cantidad</th>
+                                    <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600">Vencimiento</th>
+                                    <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600">Dias</th>
+                                    <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600">Estado</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-100">
+                                  {lotBreakdown.lots.map((lot, idx) => (
+                                    <tr key={`${lot.lot_number}-${idx}`} className={lot.at_risk ? 'bg-red-50' : ''}>
+                                      <td className="px-3 py-2">
+                                        <code className="text-xs font-mono bg-gray-100 px-1.5 py-0.5 rounded">
+                                          {lot.lot_number}
+                                        </code>
+                                      </td>
+                                      <td className="px-3 py-2 text-sm text-gray-700">
+                                        {lot.warehouse_name}
+                                      </td>
+                                      <td className="px-3 py-2 text-right text-sm font-medium text-gray-900 tabular-nums">
+                                        {lot.quantity.toLocaleString('es-CL')}
+                                      </td>
+                                      <td className="px-3 py-2 text-center text-sm text-gray-700">
+                                        {lot.expiration_date
+                                          ? new Date(lot.expiration_date).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                                          : '-'}
+                                      </td>
+                                      <td className="px-3 py-2 text-center text-sm text-gray-700 tabular-nums">
+                                        {lot.days_to_expiration ?? '-'}
+                                      </td>
+                                      <td className="px-3 py-2 text-center">
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${getLotStatusBadge(lot.status, lot.at_risk)}`}>
+                                          {lot.at_risk ? 'En riesgo' : lot.status}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+
+                            {/* Expiration Schedule */}
+                            {lotBreakdown.expiration_schedule.length > 0 && (
+                              <div className="mt-4 p-3 bg-white rounded-lg border border-gray-200">
+                                <h5 className="text-xs font-semibold text-gray-600 mb-2">Cronograma de Vencimiento</h5>
+                                <div className="space-y-1">
+                                  {lotBreakdown.expiration_schedule.map((item, idx) => (
+                                    <div key={idx} className="flex items-center text-xs text-gray-600">
+                                      <span className="w-24 font-medium">
+                                        {new Date(item.date).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                                      </span>
+                                      <span className="text-gray-400 mx-2">→</span>
+                                      <span className="tabular-nums">{item.units.toLocaleString('es-CL')} unidades</span>
+                                      <span className="text-gray-400 ml-2">(acum: {item.cumulative.toLocaleString('es-CL')})</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Risk Analysis Message */}
+                            <div className={`p-3 rounded-lg ${lotBreakdown.risk_analysis.units_at_risk > 0 ? 'bg-red-50 border border-red-200' : 'bg-green-50 border border-green-200'}`}>
+                              <p className={`text-sm ${lotBreakdown.risk_analysis.units_at_risk > 0 ? 'text-red-700' : 'text-green-700'}`}>
+                                {lotBreakdown.risk_analysis.units_at_risk > 0 ? (
+                                  <span className="flex items-center">
+                                    <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                    </svg>
+                                    {lotBreakdown.risk_analysis.risk_message}
+                                  </span>
+                                ) : (
+                                  <span className="flex items-center">
+                                    <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    {lotBreakdown.risk_analysis.risk_message}
+                                  </span>
+                                )}
+                              </p>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-center py-6 text-gray-500">
+                            <svg className="w-8 h-8 mx-auto text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                            </svg>
+                            <p className="text-sm">No hay datos de lotes disponibles para este producto</p>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                  </>
                 ))}
               </tbody>
             </table>
