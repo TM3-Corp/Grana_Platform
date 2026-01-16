@@ -18,7 +18,7 @@ else:
 load_dotenv(env_path)
 
 # Import API routers
-from app.api import conversion, shopify, products, orders, mercadolibre, product_mapping, relbase, audit, inventory, sales_analytics, sales_analytics_realtime, admin, warehouses, chat, sync, sku_mappings, analytics, auth, product_catalog, inventory_planning, channel_mappings, debug_mapping
+from app.api import conversion, shopify, products, orders, mercadolibre, product_mapping, audit, inventory, sales_analytics, sales_analytics_realtime, admin, warehouses, chat, sync, sku_mappings, analytics, auth, product_catalog, inventory_planning, channel_mappings, debug_mapping
 
 # Import centralized database connection with retry logic
 from app.core.database import get_db_connection_with_retry, CONNECTION_TIMEOUT
@@ -117,7 +117,7 @@ app.include_router(mercadolibre.router, prefix="/api/v1/mercadolibre", tags=["Me
 app.include_router(products.router, prefix="/api/v1/products", tags=["Products"])
 app.include_router(orders.router, prefix="/api/v1/orders", tags=["Orders"])
 app.include_router(product_mapping.router, prefix="/api/v1/product-mapping", tags=["Product Mapping"])
-app.include_router(relbase.router, prefix="/api/v1/relbase", tags=["Relbase"])
+# relbase.router removed - table relbase_product_mappings deleted in migration 20260113000001
 app.include_router(audit.router, prefix="/api/v1/audit", tags=["Audit"])
 # Use OLAP sales analytics (with stack_by support for stacked bar charts)
 app.include_router(sales_analytics.router, prefix="/api/v1/sales-analytics", tags=["Sales Analytics"])

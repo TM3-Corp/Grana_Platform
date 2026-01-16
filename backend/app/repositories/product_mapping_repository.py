@@ -1,181 +1,89 @@
 """
 Product Mapping Repository - Data Access Layer for Product Variants and Channel Equivalents
 
-Handles all database queries for product mappings and returns structured data.
+DEPRECATED: Tables product_variants and channel_equivalents were removed in migration 20260113.
+- product_variants: Replaced by product_catalog families (sku_primario grouping)
+- channel_equivalents: Never implemented, was always empty
+
+This file is kept for backwards compatibility but all functions return empty results.
+Use ProductCatalogService for family-based product queries.
 
 Author: TM3
 Date: 2025-10-17
+Refactored: 2026-01-16
 """
 from typing import List, Optional, Dict, Any
-from app.core.database import get_db_connection_dict_with_retry
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ProductMappingRepository:
     """
     Repository for Product Mapping data access
 
-    Handles:
-    - Product variants (packaging relationships)
-    - Channel equivalents (cross-platform product mappings)
-    - Consolidated inventory views
-    - Product family views
+    DEPRECATED: The underlying tables were removed in migration 20260113.
+    All methods now return empty results for backwards compatibility.
+
+    For product family data, use ProductCatalogService which queries
+    product_catalog with sku_primario for family grouping.
     """
 
     # ========================================
-    # Product Variants
+    # Product Variants (DEPRECATED)
     # ========================================
 
     def find_variants_by_base_product(self, base_product_id: int) -> List[Dict[str, Any]]:
         """
-        Find all variants for a base product
+        DEPRECATED: Table product_variants was removed in migration 20260113.
+        Use ProductCatalogService for family-based product queries.
 
-        Args:
-            base_product_id: ID of the base product (1 unit)
-
-        Returns:
-            List of variant mappings with product details
+        Returns empty list for backwards compatibility.
         """
-        conn = get_db_connection_dict_with_retry()
-        cursor = conn.cursor()
-
-        try:
-            cursor.execute("""
-                SELECT
-                    pv.id,
-                    pv.base_product_id,
-                    bp.sku as base_sku,
-                    bp.name as base_name,
-                    pv.variant_product_id,
-                    vp.sku as variant_sku,
-                    vp.name as variant_name,
-                    pv.quantity_multiplier,
-                    pv.packaging_type,
-                    vp.current_stock as variant_stock,
-                    vp.sale_price as variant_price,
-                    pv.is_active,
-                    pv.created_at
-                FROM product_variants pv
-                JOIN products bp ON pv.base_product_id = bp.id
-                JOIN products vp ON pv.variant_product_id = vp.id
-                WHERE pv.base_product_id = %s AND pv.is_active = true
-                ORDER BY pv.quantity_multiplier
-            """, (base_product_id,))
-
-            return cursor.fetchall()
-
-        finally:
-            cursor.close()
-            conn.close()
+        logger.warning(
+            "find_variants_by_base_product is deprecated. "
+            "Table product_variants removed in migration 20260113. "
+            "Use ProductCatalogService with sku_primario for family queries."
+        )
+        return []
 
     def find_variant_by_id(self, variant_id: int) -> Optional[Dict[str, Any]]:
         """
-        Find a variant mapping by ID
+        DEPRECATED: Table product_variants was removed in migration 20260113.
 
-        Args:
-            variant_id: ID of the variant mapping
-
-        Returns:
-            Variant mapping or None if not found
+        Returns None for backwards compatibility.
         """
-        conn = get_db_connection_dict_with_retry()
-        cursor = conn.cursor()
-
-        try:
-            cursor.execute("""
-                SELECT
-                    pv.id,
-                    pv.base_product_id,
-                    bp.sku as base_sku,
-                    bp.name as base_name,
-                    pv.variant_product_id,
-                    vp.sku as variant_sku,
-                    vp.name as variant_name,
-                    pv.quantity_multiplier,
-                    pv.packaging_type,
-                    pv.is_active,
-                    pv.created_at
-                FROM product_variants pv
-                JOIN products bp ON pv.base_product_id = bp.id
-                JOIN products vp ON pv.variant_product_id = vp.id
-                WHERE pv.id = %s
-            """, (variant_id,))
-
-            return cursor.fetchone()
-
-        finally:
-            cursor.close()
-            conn.close()
+        logger.warning(
+            "find_variant_by_id is deprecated. "
+            "Table product_variants removed in migration 20260113."
+        )
+        return None
 
     def find_consolidated_inventory(
         self,
         base_product_id: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """
-        Get consolidated inventory from database view
+        DEPRECATED: View inventory_consolidated was removed in migration 20260113.
 
-        Args:
-            base_product_id: Optional filter for specific product
-
-        Returns:
-            List of consolidated inventory records
+        Returns empty list for backwards compatibility.
         """
-        conn = get_db_connection_dict_with_retry()
-        cursor = conn.cursor()
-
-        try:
-            if base_product_id:
-                cursor.execute("""
-                    SELECT
-                        base_product_id,
-                        base_sku,
-                        base_name,
-                        base_source,
-                        base_unit_price,
-                        base_direct_stock,
-                        num_variants,
-                        variant_stock_as_units,
-                        total_units_available,
-                        stock_status,
-                        inventory_value
-                    FROM inventory_consolidated
-                    WHERE base_product_id = %s
-                    ORDER BY base_name
-                """, (base_product_id,))
-            else:
-                cursor.execute("""
-                    SELECT
-                        base_product_id,
-                        base_sku,
-                        base_name,
-                        base_source,
-                        base_unit_price,
-                        base_direct_stock,
-                        num_variants,
-                        variant_stock_as_units,
-                        total_units_available,
-                        stock_status,
-                        inventory_value
-                    FROM inventory_consolidated
-                    ORDER BY base_name
-                """)
-
-            return cursor.fetchall()
-
-        finally:
-            cursor.close()
-            conn.close()
+        logger.warning(
+            "find_consolidated_inventory is deprecated. "
+            "View inventory_consolidated removed in migration 20260113."
+        )
+        return []
 
     def find_product_families(
         self,
         base_product_id: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """
-        DEPRECATED: View product_families was removed in migration 029.
+        DEPRECATED: View product_families was removed in migration 20260113.
         Use product_catalog with sku_primario for family grouping.
 
         Returns empty list for backwards compatibility.
         """
-        # View removed in migration 029_cleanup_obsolete_tables.sql
         return []
 
     def create_variant_mapping(
@@ -187,152 +95,51 @@ class ProductMappingRepository:
         is_active: bool = True
     ) -> Dict[str, Any]:
         """
-        Create a new product variant mapping
+        DEPRECATED: Table product_variants was removed in migration 20260113.
 
-        Args:
-            base_product_id: ID of base product
-            variant_product_id: ID of variant product
-            quantity_multiplier: Number of base units in variant
-            packaging_type: Type of packaging (individual, display_5, etc.)
-            is_active: Whether mapping is active
-
-        Returns:
-            Result dict with success status and variant_id
+        Returns error for backwards compatibility.
         """
-        conn = get_db_connection_dict_with_retry()
-        cursor = conn.cursor()
-
-        try:
-            # Check if mapping already exists
-            cursor.execute("""
-                SELECT id FROM product_variants
-                WHERE base_product_id = %s AND variant_product_id = %s
-            """, (base_product_id, variant_product_id))
-
-            existing = cursor.fetchone()
-            if existing:
-                return {
-                    'success': False,
-                    'error': 'Variant mapping already exists'
-                }
-
-            # Create mapping
-            cursor.execute("""
-                INSERT INTO product_variants (
-                    base_product_id,
-                    variant_product_id,
-                    quantity_multiplier,
-                    packaging_type,
-                    is_active
-                )
-                VALUES (%s, %s, %s, %s, %s)
-                RETURNING id
-            """, (base_product_id, variant_product_id, quantity_multiplier, packaging_type, is_active))
-
-            variant_id = cursor.fetchone()['id']
-            conn.commit()
-
-            return {
-                'success': True,
-                'variant_id': variant_id
-            }
-
-        except Exception as e:
-            conn.rollback()
-            return {
-                'success': False,
-                'error': str(e)
-            }
-
-        finally:
-            cursor.close()
-            conn.close()
+        logger.warning(
+            "create_variant_mapping is deprecated. "
+            "Table product_variants removed in migration 20260113. "
+            "Use product_catalog for family management."
+        )
+        return {
+            'success': False,
+            'error': 'Table product_variants was removed. Use product_catalog for family management.'
+        }
 
     def delete_variant_mapping(self, variant_id: int) -> Dict[str, Any]:
         """
-        Soft delete a variant mapping
+        DEPRECATED: Table product_variants was removed in migration 20260113.
 
-        Args:
-            variant_id: ID of the variant mapping
-
-        Returns:
-            Result dict with success status
+        Returns error for backwards compatibility.
         """
-        conn = get_db_connection_dict_with_retry()
-        cursor = conn.cursor()
-
-        try:
-            cursor.execute("""
-                UPDATE product_variants
-                SET is_active = false
-                WHERE id = %s
-                RETURNING id
-            """, (variant_id,))
-
-            result = cursor.fetchone()
-            if not result:
-                return {
-                    'success': False,
-                    'error': 'Variant mapping not found'
-                }
-
-            conn.commit()
-            return {'success': True}
-
-        except Exception as e:
-            conn.rollback()
-            return {
-                'success': False,
-                'error': str(e)
-            }
-
-        finally:
-            cursor.close()
-            conn.close()
+        logger.warning(
+            "delete_variant_mapping is deprecated. "
+            "Table product_variants removed in migration 20260113."
+        )
+        return {
+            'success': False,
+            'error': 'Table product_variants was removed.'
+        }
 
     # ========================================
-    # Channel Equivalents
+    # Channel Equivalents (DEPRECATED)
     # ========================================
 
     def find_channel_equivalents(self) -> List[Dict[str, Any]]:
         """
-        Get all channel equivalents with product details
+        DEPRECATED: Table channel_equivalents was removed in migration 20260113.
+        This feature was never implemented.
 
-        Returns:
-            List of channel equivalent records
+        Returns empty list for backwards compatibility.
         """
-        conn = get_db_connection_dict_with_retry()
-        cursor = conn.cursor()
-
-        try:
-            cursor.execute("""
-                SELECT
-                    ce.id,
-                    ce.shopify_product_id,
-                    sp.sku as shopify_sku,
-                    sp.name as shopify_name,
-                    sp.current_stock as shopify_stock,
-                    sp.sale_price as shopify_price,
-                    ce.mercadolibre_product_id,
-                    mp.sku as ml_sku,
-                    mp.name as ml_name,
-                    mp.current_stock as ml_stock,
-                    mp.sale_price as ml_price,
-                    ce.equivalence_confidence,
-                    ce.verified,
-                    ce.notes,
-                    ce.created_at
-                FROM channel_equivalents ce
-                JOIN products sp ON ce.shopify_product_id = sp.id
-                JOIN products mp ON ce.mercadolibre_product_id = mp.id
-                ORDER BY sp.name
-            """)
-
-            return cursor.fetchall()
-
-        finally:
-            cursor.close()
-            conn.close()
+        logger.warning(
+            "find_channel_equivalents is deprecated. "
+            "Table channel_equivalents removed in migration 20260113."
+        )
+        return []
 
     def find_equivalent_by_product(
         self,
@@ -340,59 +147,15 @@ class ProductMappingRepository:
         source: str
     ) -> Optional[Dict[str, Any]]:
         """
-        Find channel equivalent for a product
+        DEPRECATED: Table channel_equivalents was removed in migration 20260113.
 
-        Args:
-            product_id: Product ID
-            source: Source platform (shopify or mercadolibre)
-
-        Returns:
-            Channel equivalent or None if not found
+        Returns None for backwards compatibility.
         """
-        conn = get_db_connection_dict_with_retry()
-        cursor = conn.cursor()
-
-        try:
-            if source.lower() == 'shopify':
-                cursor.execute("""
-                    SELECT
-                        ce.id,
-                        ce.shopify_product_id,
-                        sp.sku as shopify_sku,
-                        sp.name as shopify_name,
-                        ce.mercadolibre_product_id,
-                        mp.sku as ml_sku,
-                        mp.name as ml_name,
-                        ce.equivalence_confidence,
-                        ce.verified
-                    FROM channel_equivalents ce
-                    JOIN products sp ON ce.shopify_product_id = sp.id
-                    JOIN products mp ON ce.mercadolibre_product_id = mp.id
-                    WHERE ce.shopify_product_id = %s
-                """, (product_id,))
-            else:
-                cursor.execute("""
-                    SELECT
-                        ce.id,
-                        ce.shopify_product_id,
-                        sp.sku as shopify_sku,
-                        sp.name as shopify_name,
-                        ce.mercadolibre_product_id,
-                        mp.sku as ml_sku,
-                        mp.name as ml_name,
-                        ce.equivalence_confidence,
-                        ce.verified
-                    FROM channel_equivalents ce
-                    JOIN products sp ON ce.shopify_product_id = sp.id
-                    JOIN products mp ON ce.mercadolibre_product_id = mp.id
-                    WHERE ce.mercadolibre_product_id = %s
-                """, (product_id,))
-
-            return cursor.fetchone()
-
-        finally:
-            cursor.close()
-            conn.close()
+        logger.warning(
+            "find_equivalent_by_product is deprecated. "
+            "Table channel_equivalents removed in migration 20260113."
+        )
+        return None
 
     def create_channel_equivalent(
         self,
@@ -403,110 +166,36 @@ class ProductMappingRepository:
         notes: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Create a new channel equivalent
+        DEPRECATED: Table channel_equivalents was removed in migration 20260113.
 
-        Args:
-            shopify_product_id: Shopify product ID
-            mercadolibre_product_id: MercadoLibre product ID
-            equivalence_confidence: Confidence score (0-1)
-            verified: Whether manually verified
-            notes: Optional notes
-
-        Returns:
-            Result dict with success status and equivalent_id
+        Returns error for backwards compatibility.
         """
-        conn = get_db_connection_dict_with_retry()
-        cursor = conn.cursor()
-
-        try:
-            # Check if mapping already exists
-            cursor.execute("""
-                SELECT id FROM channel_equivalents
-                WHERE shopify_product_id = %s AND mercadolibre_product_id = %s
-            """, (shopify_product_id, mercadolibre_product_id))
-
-            existing = cursor.fetchone()
-            if existing:
-                return {
-                    'success': False,
-                    'error': 'Channel equivalent already exists'
-                }
-
-            # Create mapping
-            cursor.execute("""
-                INSERT INTO channel_equivalents (
-                    shopify_product_id,
-                    mercadolibre_product_id,
-                    equivalence_confidence,
-                    verified,
-                    notes
-                )
-                VALUES (%s, %s, %s, %s, %s)
-                RETURNING id
-            """, (shopify_product_id, mercadolibre_product_id, equivalence_confidence, verified, notes))
-
-            equivalent_id = cursor.fetchone()['id']
-            conn.commit()
-
-            return {
-                'success': True,
-                'equivalent_id': equivalent_id
-            }
-
-        except Exception as e:
-            conn.rollback()
-            return {
-                'success': False,
-                'error': str(e)
-            }
-
-        finally:
-            cursor.close()
-            conn.close()
+        logger.warning(
+            "create_channel_equivalent is deprecated. "
+            "Table channel_equivalents removed in migration 20260113."
+        )
+        return {
+            'success': False,
+            'error': 'Table channel_equivalents was removed. Feature was never implemented.'
+        }
 
     def delete_channel_equivalent(self, equivalent_id: int) -> Dict[str, Any]:
         """
-        Delete a channel equivalent
+        DEPRECATED: Table channel_equivalents was removed in migration 20260113.
 
-        Args:
-            equivalent_id: ID of the channel equivalent
-
-        Returns:
-            Result dict with success status
+        Returns error for backwards compatibility.
         """
-        conn = get_db_connection_dict_with_retry()
-        cursor = conn.cursor()
-
-        try:
-            cursor.execute("""
-                DELETE FROM channel_equivalents
-                WHERE id = %s
-                RETURNING id
-            """, (equivalent_id,))
-
-            result = cursor.fetchone()
-            if not result:
-                return {
-                    'success': False,
-                    'error': 'Channel equivalent not found'
-                }
-
-            conn.commit()
-            return {'success': True}
-
-        except Exception as e:
-            conn.rollback()
-            return {
-                'success': False,
-                'error': str(e)
-            }
-
-        finally:
-            cursor.close()
-            conn.close()
+        logger.warning(
+            "delete_channel_equivalent is deprecated. "
+            "Table channel_equivalents removed in migration 20260113."
+        )
+        return {
+            'success': False,
+            'error': 'Table channel_equivalents was removed.'
+        }
 
     # ========================================
-    # Detection & Search Queries
+    # Detection & Search Queries (Still functional)
     # ========================================
 
     def find_potential_variants_by_sku_pattern(
@@ -515,8 +204,9 @@ class ProductMappingRepository:
         base_product_id: int
     ) -> List[Dict[str, Any]]:
         """
-        Find potential variant products by SKU pattern matching
+        Find potential variant products by SKU pattern matching.
 
+        This method still works as it queries the products table directly.
         Used for auto-detection of packaging variants.
 
         Args:
@@ -526,6 +216,8 @@ class ProductMappingRepository:
         Returns:
             List of potential variant products
         """
+        from app.core.database import get_db_connection_dict_with_retry
+
         conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 
@@ -560,8 +252,9 @@ class ProductMappingRepository:
         exclude_product_id: int
     ) -> List[Dict[str, Any]]:
         """
-        Find potential equivalent products from another channel
+        Find potential equivalent products from another channel.
 
+        This method still works as it queries the products table directly.
         Used for auto-detection of cross-channel equivalents.
 
         Args:
@@ -571,6 +264,8 @@ class ProductMappingRepository:
         Returns:
             List of potential equivalent products
         """
+        from app.core.database import get_db_connection_dict_with_retry
+
         conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
 

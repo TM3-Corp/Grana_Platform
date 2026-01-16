@@ -448,12 +448,12 @@ class SyncService:
         cursor = conn.cursor()
 
         try:
-            # Get token from database
+            # Get token from database (now uses api_credentials instead of ml_tokens)
             cursor.execute("""
-                SELECT access_token, refresh_token, expires_at
-                FROM ml_tokens
-                ORDER BY updated_at DESC
-                LIMIT 1
+                SELECT access_token, refresh_token, token_expires_at
+                FROM api_credentials
+                WHERE service_name = 'mercadolibre'
+                  AND access_token IS NOT NULL
             """)
             row = cursor.fetchone()
 
@@ -461,8 +461,11 @@ class SyncService:
                 access_token, refresh_token, expires_at = row
 
                 # Check if token is expired or will expire in next 30 minutes
-                cursor.execute("SELECT NOW() + INTERVAL '30 minutes' > %s", (expires_at,))
-                is_expired = cursor.fetchone()[0]
+                if expires_at:
+                    cursor.execute("SELECT NOW() + INTERVAL '30 minutes' > %s", (expires_at,))
+                    is_expired = cursor.fetchone()[0]
+                else:
+                    is_expired = True  # No expiry set, try to refresh
 
                 if is_expired:
                     logger.info("ML token expired or expiring soon, refreshing...")
@@ -518,16 +521,22 @@ class SyncService:
             new_access = token_data['access_token']
             new_refresh = token_data.get('refresh_token', refresh_token)
 
-            # Store in database
+            # Store in database (uses api_credentials instead of ml_tokens)
             conn = get_db_connection_with_retry()
             cursor = conn.cursor()
             try:
                 cursor.execute("""
-                    INSERT INTO ml_tokens (access_token, refresh_token, expires_at)
-                    VALUES (%s, %s, NOW() + INTERVAL '6 hours')
+                    INSERT INTO api_credentials (service_name, access_token, refresh_token, token_expires_at)
+                    VALUES ('mercadolibre', %s, %s, NOW() + INTERVAL '6 hours')
+                    ON CONFLICT (service_name)
+                    DO UPDATE SET
+                        access_token = EXCLUDED.access_token,
+                        refresh_token = EXCLUDED.refresh_token,
+                        token_expires_at = EXCLUDED.token_expires_at,
+                        updated_at = NOW()
                 """, (new_access, new_refresh))
                 conn.commit()
-                logger.info("✅ ML token refreshed and stored in database")
+                logger.info("✅ ML token refreshed and stored in api_credentials")
             finally:
                 cursor.close()
                 conn.close()

@@ -5,14 +5,16 @@ Comprehensive client-channel relationship management
 Purpose:
 - Analyze which clients belong to which channels (from orders data)
 - Detect anomalies: clients with multiple channels or no channel
-- Create override rules that take precedence over RelBase data
+- Assign channels to customers (stored in customers.assigned_channel_id)
 - Sync channels from RelBase API
 - Filter clients by channel
 
-These rules correct customer channel assignments when RelBase has errors or omissions.
+REFACTORED: Now uses customers.assigned_channel_id instead of customer_channel_rules table.
+The customer_channel_rules table was removed in migration 20260113000001.
 
 Author: TM3
 Date: 2025-01-16
+Refactored: 2026-01-16
 """
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional, List
@@ -42,24 +44,18 @@ if not DATABASE_URL:
 # Pydantic Models
 # =====================================================================
 
-class ChannelMappingCreate(BaseModel):
-    """Request model for creating a new channel mapping"""
+class ChannelAssignmentCreate(BaseModel):
+    """Request model for assigning a channel to a customer"""
     customer_external_id: str = Field(..., min_length=1, max_length=50, description="RelBase customer_id")
     channel_external_id: int = Field(..., description="RelBase channel_id")
     channel_name: str = Field(..., min_length=1, max_length=100, description="Channel name")
-    rule_reason: str = Field(..., min_length=1, description="Business reason for this mapping")
-    priority: int = Field(default=1, ge=1, le=10, description="Priority (1-10, higher = higher priority)")
-    created_by: Optional[str] = Field(None, max_length=100, description="Who created this rule")
+    assigned_by: Optional[str] = Field(None, max_length=100, description="Who assigned this channel")
 
 
-class ChannelMappingUpdate(BaseModel):
-    """Request model for updating an existing channel mapping"""
-    customer_external_id: Optional[str] = Field(None, min_length=1, max_length=50)
+class ChannelAssignmentUpdate(BaseModel):
+    """Request model for updating a channel assignment"""
     channel_external_id: Optional[int] = None
     channel_name: Optional[str] = Field(None, min_length=1, max_length=100)
-    rule_reason: Optional[str] = Field(None, min_length=1)
-    priority: Optional[int] = Field(None, ge=1, le=10)
-    is_active: Optional[bool] = None
 
 
 # =====================================================================
@@ -70,35 +66,37 @@ class ChannelMappingUpdate(BaseModel):
 async def get_channel_mapping_stats():
     """
     Get statistics for KPI cards.
-    Returns total rules, active rules, channels covered, customers mapped.
+    Returns total assignments, channels covered, customers mapped.
     """
     try:
         conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
         cursor = conn.cursor(cursor_factory=RealDictCursor)
 
-        # Total rules
-        cursor.execute("SELECT COUNT(*) as count FROM customer_channel_rules")
-        total_rules = cursor.fetchone()['count']
-
-        # Active rules
-        cursor.execute("SELECT COUNT(*) as count FROM customer_channel_rules WHERE is_active = TRUE")
-        active_rules = cursor.fetchone()['count']
+        # Total customers with channel assignments
+        cursor.execute("""
+            SELECT COUNT(*) as count
+            FROM customers
+            WHERE source = 'relbase'
+              AND assigned_channel_id IS NOT NULL
+        """)
+        total_assignments = cursor.fetchone()['count']
 
         # Unique channels used
         cursor.execute("""
-            SELECT COUNT(DISTINCT channel_external_id) as count
-            FROM customer_channel_rules
-            WHERE is_active = TRUE
+            SELECT COUNT(DISTINCT assigned_channel_id) as count
+            FROM customers
+            WHERE source = 'relbase'
+              AND assigned_channel_id IS NOT NULL
         """)
         channels_covered = cursor.fetchone()['count']
 
-        # Unique customers mapped
+        # Total relbase customers
         cursor.execute("""
-            SELECT COUNT(DISTINCT customer_external_id) as count
-            FROM customer_channel_rules
-            WHERE is_active = TRUE
+            SELECT COUNT(*) as count
+            FROM customers
+            WHERE source = 'relbase'
         """)
-        customers_mapped = cursor.fetchone()['count']
+        total_customers = cursor.fetchone()['count']
 
         cursor.close()
         conn.close()
@@ -106,10 +104,11 @@ async def get_channel_mapping_stats():
         return {
             "status": "success",
             "data": {
-                "total_rules": total_rules,
-                "active_rules": active_rules,
+                "total_rules": total_assignments,  # backwards compat
+                "active_rules": total_assignments,  # all assignments are "active"
                 "channels_covered": channels_covered,
-                "customers_mapped": customers_mapped
+                "customers_mapped": total_assignments,
+                "total_customers": total_customers
             }
         }
 
@@ -167,7 +166,9 @@ async def search_customers(
                 external_id,
                 name,
                 rut,
-                source
+                source,
+                assigned_channel_id,
+                assigned_channel_name
             FROM customers
             WHERE source = 'relbase'
               AND (
@@ -194,73 +195,71 @@ async def search_customers(
 
 @router.get("/")
 async def list_channel_mappings(
-    search: Optional[str] = Query(None, description="Search in customer_external_id, channel_name, or rule_reason"),
+    search: Optional[str] = Query(None, description="Search in customer name, external_id, or channel"),
     channel_name: Optional[str] = Query(None, description="Filter by channel name"),
-    is_active: Optional[bool] = Query(None, description="Filter by active status"),
+    is_active: Optional[bool] = Query(None, description="Filter by active status (assigned_channel_id IS NOT NULL)"),
     limit: int = Query(50, ge=1, le=500, description="Max results to return"),
     offset: int = Query(0, ge=0, description="Offset for pagination")
 ):
     """
-    List all channel mapping rules with filters and pagination.
-    Returns mappings with customer details joined.
+    List all customers with channel assignments.
+    Returns customers that have assigned_channel_id set.
     """
     try:
         conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
         cursor = conn.cursor(cursor_factory=RealDictCursor)
 
         # Build query
-        where_clauses = []
+        where_clauses = ["source = 'relbase'"]
         params = []
 
         if search:
             where_clauses.append("""
-                (ccr.customer_external_id ILIKE %s OR
-                 ccr.channel_name ILIKE %s OR
-                 ccr.rule_reason ILIKE %s OR
-                 c.name ILIKE %s)
+                (external_id ILIKE %s OR
+                 assigned_channel_name ILIKE %s OR
+                 name ILIKE %s)
             """)
             search_param = f"%{search}%"
-            params.extend([search_param, search_param, search_param, search_param])
+            params.extend([search_param, search_param, search_param])
 
         if channel_name:
-            where_clauses.append("ccr.channel_name ILIKE %s")
+            where_clauses.append("assigned_channel_name ILIKE %s")
             params.append(f"%{channel_name}%")
 
         if is_active is not None:
-            where_clauses.append("ccr.is_active = %s")
-            params.append(is_active)
+            if is_active:
+                where_clauses.append("assigned_channel_id IS NOT NULL")
+            else:
+                where_clauses.append("assigned_channel_id IS NULL")
 
-        where_sql = " AND ".join(where_clauses) if where_clauses else "TRUE"
+        where_sql = " AND ".join(where_clauses)
 
         # Get total count
         count_sql = f"""
             SELECT COUNT(*)
-            FROM customer_channel_rules ccr
-            LEFT JOIN customers c ON c.external_id = ccr.customer_external_id AND c.source = 'relbase'
+            FROM customers
             WHERE {where_sql}
         """
         cursor.execute(count_sql, params)
         total = cursor.fetchone()['count']
 
-        # Get paginated results with customer details
+        # Get paginated results
         query_sql = f"""
             SELECT
-                ccr.id,
-                ccr.customer_external_id,
-                ccr.channel_external_id,
-                ccr.channel_name,
-                ccr.rule_reason,
-                ccr.priority,
-                ccr.is_active,
-                ccr.created_by,
-                ccr.created_at,
-                ccr.updated_at,
-                c.name as customer_name,
-                c.rut as customer_rut
-            FROM customer_channel_rules ccr
-            LEFT JOIN customers c ON c.external_id = ccr.customer_external_id AND c.source = 'relbase'
+                id,
+                external_id as customer_external_id,
+                name as customer_name,
+                rut as customer_rut,
+                assigned_channel_id as channel_external_id,
+                assigned_channel_name as channel_name,
+                channel_assigned_by as created_by,
+                channel_assigned_at as created_at,
+                updated_at,
+                CASE WHEN assigned_channel_id IS NOT NULL THEN TRUE ELSE FALSE END as is_active
+            FROM customers
             WHERE {where_sql}
-            ORDER BY ccr.priority DESC, ccr.created_at DESC
+              AND assigned_channel_id IS NOT NULL
+            ORDER BY channel_assigned_at DESC NULLS LAST
             LIMIT %s OFFSET %s
         """
         cursor.execute(query_sql, params + [limit, offset])
@@ -416,7 +415,7 @@ async def get_client_channel_analysis(
     - All clients and their channel distribution (from orders)
     - Clients with multiple channels (data quality issue)
     - Clients with no channel assigned
-    - Whether an override rule exists for the client
+    - Whether an override assignment exists for the client (assigned_channel_id)
 
     Use this to identify and fix channel assignment issues.
     """
@@ -439,27 +438,23 @@ async def get_client_channel_analysis(
                     ARRAY_AGG(DISTINCT ch.name) FILTER (WHERE ch.name IS NOT NULL) as channels,
                     ARRAY_AGG(DISTINCT ch.external_id) FILTER (WHERE ch.external_id IS NOT NULL) as channel_ids,
                     COUNT(o.id) as order_count,
-                    SUM(o.total) as total_revenue
+                    SUM(o.total) as total_revenue,
+                    c.assigned_channel_id as override_channel_id,
+                    c.assigned_channel_name as override_channel,
+                    c.channel_assigned_by,
+                    c.channel_assigned_at
                 FROM customers c
                 JOIN orders o ON o.customer_id = c.id
                 LEFT JOIN channels ch ON ch.id = o.channel_id
                 WHERE c.source = 'relbase'
-                GROUP BY c.id, c.external_id, c.name, c.rut
-            ),
-            with_rules AS (
-                SELECT
-                    cc.*,
-                    ccr.id as rule_id,
-                    ccr.channel_name as override_channel,
-                    ccr.channel_external_id as override_channel_id,
-                    ccr.rule_reason,
-                    ccr.is_active as rule_active
-                FROM client_channels cc
-                LEFT JOIN customer_channel_rules ccr
-                    ON ccr.customer_external_id = cc.customer_external_id
-                    AND ccr.is_active = TRUE
+                GROUP BY c.id, c.external_id, c.name, c.rut,
+                         c.assigned_channel_id, c.assigned_channel_name,
+                         c.channel_assigned_by, c.channel_assigned_at
             )
-            SELECT * FROM with_rules
+            SELECT
+                *,
+                CASE WHEN assigned_channel_id IS NOT NULL THEN TRUE ELSE FALSE END as has_override
+            FROM client_channels
         """
 
         # Apply filters
@@ -498,7 +493,7 @@ async def get_client_channel_analysis(
                 COUNT(DISTINCT c.id) as total_clients,
                 COUNT(DISTINCT CASE WHEN sub.channel_count > 1 THEN c.id END) as multi_channel_clients,
                 COUNT(DISTINCT CASE WHEN sub.channel_count = 0 OR sub.channel_count IS NULL THEN c.id END) as no_channel_clients,
-                COUNT(DISTINCT ccr.customer_external_id) as clients_with_rules
+                COUNT(DISTINCT CASE WHEN c.assigned_channel_id IS NOT NULL THEN c.id END) as clients_with_override
             FROM customers c
             JOIN (
                 SELECT
@@ -509,9 +504,6 @@ async def get_client_channel_analysis(
                 WHERE c.source = 'relbase'
                 GROUP BY customer_id
             ) sub ON sub.customer_id = c.id
-            LEFT JOIN customer_channel_rules ccr
-                ON ccr.customer_external_id = c.external_id
-                AND ccr.is_active = TRUE
             WHERE c.source = 'relbase'
         """)
         stats = cursor.fetchone()
@@ -529,7 +521,7 @@ async def get_client_channel_analysis(
                 "total_clients": stats['total_clients'],
                 "multi_channel_clients": stats['multi_channel_clients'],
                 "no_channel_clients": stats['no_channel_clients'],
-                "clients_with_rules": stats['clients_with_rules']
+                "clients_with_rules": stats['clients_with_override']  # backwards compat
             }
         }
 
@@ -542,7 +534,7 @@ async def get_client_channel_analysis(
 async def get_analysis_stats():
     """
     Get comprehensive stats for the channel analysis dashboard.
-    Returns KPIs about clients, channels, anomalies, and rules.
+    Returns KPIs about clients, channels, anomalies, and assignments.
     """
     try:
         conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
@@ -578,14 +570,15 @@ async def get_analysis_stats():
         """)
         channel_stats = cursor.fetchone()
 
-        # Get override rules count
+        # Get customers with channel assignments
         cursor.execute("""
             SELECT
-                COUNT(*) as total_rules,
-                COUNT(*) FILTER (WHERE is_active = TRUE) as active_rules
-            FROM customer_channel_rules
+                COUNT(*) as total_assignments
+            FROM customers
+            WHERE source = 'relbase'
+              AND assigned_channel_id IS NOT NULL
         """)
-        rule_stats = cursor.fetchone()
+        assignment_stats = cursor.fetchone()
 
         cursor.close()
         conn.close()
@@ -603,9 +596,9 @@ async def get_analysis_stats():
                     "active_relbase": channel_stats['active_channels'],
                     "total_relbase": channel_stats['total_channels']
                 },
-                "rules": {
-                    "total": rule_stats['total_rules'],
-                    "active": rule_stats['active_rules']
+                "rules": {  # backwards compat naming
+                    "total": assignment_stats['total_assignments'],
+                    "active": assignment_stats['total_assignments']
                 }
             }
         }
@@ -615,13 +608,13 @@ async def get_analysis_stats():
 
 
 # =====================================================================
-# Single Mapping CRUD (these routes must come AFTER specific routes)
+# Customer Channel Assignment (replaces customer_channel_rules CRUD)
 # =====================================================================
 
-@router.get("/{mapping_id}")
-async def get_channel_mapping(mapping_id: int):
+@router.get("/customer/{customer_external_id}")
+async def get_customer_channel(customer_external_id: str):
     """
-    Get a single channel mapping by ID.
+    Get channel assignment for a specific customer.
     """
     try:
         conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
@@ -629,12 +622,276 @@ async def get_channel_mapping(mapping_id: int):
 
         cursor.execute("""
             SELECT
-                ccr.*,
-                c.name as customer_name,
-                c.rut as customer_rut
-            FROM customer_channel_rules ccr
-            LEFT JOIN customers c ON c.external_id = ccr.customer_external_id AND c.source = 'relbase'
-            WHERE ccr.id = %s
+                id,
+                external_id as customer_external_id,
+                name as customer_name,
+                rut as customer_rut,
+                assigned_channel_id as channel_external_id,
+                assigned_channel_name as channel_name,
+                channel_assigned_by as created_by,
+                channel_assigned_at as created_at,
+                CASE WHEN assigned_channel_id IS NOT NULL THEN TRUE ELSE FALSE END as is_active
+            FROM customers
+            WHERE external_id = %s AND source = 'relbase'
+        """, [customer_external_id])
+        customer = cursor.fetchone()
+
+        cursor.close()
+        conn.close()
+
+        if not customer:
+            raise HTTPException(status_code=404, detail="Customer not found")
+
+        return {
+            "status": "success",
+            "data": customer
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching customer: {str(e)}")
+
+
+@router.post("/")
+async def assign_channel_to_customer(assignment: ChannelAssignmentCreate):
+    """
+    Assign a channel to a customer.
+    Updates customers.assigned_channel_id and related fields.
+    """
+    try:
+        conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        # Check if customer exists
+        cursor.execute("""
+            SELECT id, assigned_channel_id
+            FROM customers
+            WHERE external_id = %s AND source = 'relbase'
+        """, [assignment.customer_external_id])
+        customer = cursor.fetchone()
+
+        if not customer:
+            cursor.close()
+            conn.close()
+            raise HTTPException(
+                status_code=404,
+                detail=f"Cliente no encontrado: {assignment.customer_external_id}"
+            )
+
+        if customer['assigned_channel_id'] is not None:
+            cursor.close()
+            conn.close()
+            raise HTTPException(
+                status_code=400,
+                detail=f"El cliente {assignment.customer_external_id} ya tiene un canal asignado"
+            )
+
+        # Assign the channel
+        cursor.execute("""
+            UPDATE customers
+            SET
+                assigned_channel_id = %s,
+                assigned_channel_name = %s,
+                channel_assigned_by = %s,
+                channel_assigned_at = NOW(),
+                updated_at = NOW()
+            WHERE external_id = %s AND source = 'relbase'
+            RETURNING
+                id,
+                external_id as customer_external_id,
+                name as customer_name,
+                assigned_channel_id as channel_external_id,
+                assigned_channel_name as channel_name,
+                channel_assigned_by as created_by,
+                channel_assigned_at as created_at
+        """, [
+            assignment.channel_external_id,
+            assignment.channel_name,
+            assignment.assigned_by,
+            assignment.customer_external_id
+        ])
+        updated = cursor.fetchone()
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {
+            "status": "success",
+            "message": "Canal asignado exitosamente",
+            "data": updated
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error assigning channel: {str(e)}")
+
+
+@router.put("/customer/{customer_external_id}")
+async def update_customer_channel(customer_external_id: str, assignment: ChannelAssignmentUpdate):
+    """
+    Update channel assignment for a customer.
+    """
+    try:
+        conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        # Check if customer exists
+        cursor.execute("""
+            SELECT id FROM customers
+            WHERE external_id = %s AND source = 'relbase'
+        """, [customer_external_id])
+        customer = cursor.fetchone()
+
+        if not customer:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Cliente no encontrado")
+
+        # Build update query
+        updates = []
+        params = []
+
+        if assignment.channel_external_id is not None:
+            updates.append("assigned_channel_id = %s")
+            params.append(assignment.channel_external_id)
+
+        if assignment.channel_name is not None:
+            updates.append("assigned_channel_name = %s")
+            params.append(assignment.channel_name)
+
+        if not updates:
+            cursor.close()
+            conn.close()
+            return {
+                "status": "success",
+                "message": "No changes to apply"
+            }
+
+        updates.append("updated_at = NOW()")
+        params.append(customer_external_id)
+
+        cursor.execute(f"""
+            UPDATE customers
+            SET {', '.join(updates)}
+            WHERE external_id = %s AND source = 'relbase'
+            RETURNING
+                id,
+                external_id as customer_external_id,
+                name as customer_name,
+                assigned_channel_id as channel_external_id,
+                assigned_channel_name as channel_name,
+                channel_assigned_by as created_by,
+                channel_assigned_at as created_at
+        """, params)
+        updated = cursor.fetchone()
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {
+            "status": "success",
+            "message": "Asignación actualizada exitosamente",
+            "data": updated
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating assignment: {str(e)}")
+
+
+@router.delete("/customer/{customer_external_id}")
+async def remove_customer_channel(customer_external_id: str):
+    """
+    Remove channel assignment from a customer.
+    Sets assigned_channel_id to NULL.
+    """
+    try:
+        conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        # Check if customer exists
+        cursor.execute("""
+            SELECT id, assigned_channel_id
+            FROM customers
+            WHERE external_id = %s AND source = 'relbase'
+        """, [customer_external_id])
+        customer = cursor.fetchone()
+
+        if not customer:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Cliente no encontrado")
+
+        if customer['assigned_channel_id'] is None:
+            cursor.close()
+            conn.close()
+            return {
+                "status": "success",
+                "message": "El cliente no tiene canal asignado"
+            }
+
+        # Remove the assignment
+        cursor.execute("""
+            UPDATE customers
+            SET
+                assigned_channel_id = NULL,
+                assigned_channel_name = NULL,
+                channel_assigned_by = NULL,
+                channel_assigned_at = NULL,
+                updated_at = NOW()
+            WHERE external_id = %s AND source = 'relbase'
+        """, [customer_external_id])
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {
+            "status": "success",
+            "message": "Asignación de canal eliminada"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error removing assignment: {str(e)}")
+
+
+# =====================================================================
+# Legacy routes for backwards compatibility
+# These map old /{mapping_id} routes to the new customer-based system
+# =====================================================================
+
+@router.get("/{mapping_id}")
+async def get_channel_mapping_legacy(mapping_id: int):
+    """
+    Legacy route - Get customer by internal ID.
+    Note: The old customer_channel_rules table used its own IDs.
+    This now uses the customers table id.
+    """
+    try:
+        conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        cursor.execute("""
+            SELECT
+                id,
+                external_id as customer_external_id,
+                name as customer_name,
+                rut as customer_rut,
+                assigned_channel_id as channel_external_id,
+                assigned_channel_name as channel_name,
+                channel_assigned_by as created_by,
+                channel_assigned_at as created_at,
+                updated_at,
+                CASE WHEN assigned_channel_id IS NOT NULL THEN TRUE ELSE FALSE END as is_active
+            FROM customers
+            WHERE id = %s AND source = 'relbase'
         """, [mapping_id])
         mapping = cursor.fetchone()
 
@@ -642,7 +899,7 @@ async def get_channel_mapping(mapping_id: int):
         conn.close()
 
         if not mapping:
-            raise HTTPException(status_code=404, detail="Mapping not found")
+            raise HTTPException(status_code=404, detail="Customer not found")
 
         return {
             "status": "success",
@@ -655,176 +912,50 @@ async def get_channel_mapping(mapping_id: int):
         raise HTTPException(status_code=500, detail=f"Error fetching mapping: {str(e)}")
 
 
-@router.post("/")
-async def create_channel_mapping(mapping: ChannelMappingCreate):
+@router.delete("/{mapping_id}")
+async def delete_channel_mapping_legacy(
+    mapping_id: int,
+    hard_delete: bool = Query(False, description="Ignored - always removes assignment")
+):
     """
-    Create a new channel mapping rule.
-    """
-    try:
-        conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-
-        # Check for existing active mapping for this customer
-        cursor.execute("""
-            SELECT id FROM customer_channel_rules
-            WHERE customer_external_id = %s AND is_active = TRUE
-        """, [mapping.customer_external_id])
-        existing = cursor.fetchone()
-
-        if existing:
-            cursor.close()
-            conn.close()
-            raise HTTPException(
-                status_code=400,
-                detail=f"Ya existe un mapeo activo para el cliente {mapping.customer_external_id}"
-            )
-
-        # Insert new mapping
-        cursor.execute("""
-            INSERT INTO customer_channel_rules
-                (customer_external_id, channel_external_id, channel_name, rule_reason, priority, created_by)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING *
-        """, [
-            mapping.customer_external_id,
-            mapping.channel_external_id,
-            mapping.channel_name,
-            mapping.rule_reason,
-            mapping.priority,
-            mapping.created_by
-        ])
-        new_mapping = cursor.fetchone()
-
-        conn.commit()
-        cursor.close()
-        conn.close()
-
-        return {
-            "status": "success",
-            "message": "Mapeo creado exitosamente",
-            "data": new_mapping
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error creating mapping: {str(e)}")
-
-
-@router.put("/{mapping_id}")
-async def update_channel_mapping(mapping_id: int, mapping: ChannelMappingUpdate):
-    """
-    Update an existing channel mapping.
+    Legacy route - Remove channel assignment by customer ID.
     """
     try:
         conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
         cursor = conn.cursor(cursor_factory=RealDictCursor)
 
-        # Check if mapping exists
-        cursor.execute("SELECT * FROM customer_channel_rules WHERE id = %s", [mapping_id])
-        existing = cursor.fetchone()
+        # Check if customer exists
+        cursor.execute("""
+            SELECT id, external_id, assigned_channel_id
+            FROM customers
+            WHERE id = %s AND source = 'relbase'
+        """, [mapping_id])
+        customer = cursor.fetchone()
 
-        if not existing:
+        if not customer:
             cursor.close()
             conn.close()
-            raise HTTPException(status_code=404, detail="Mapping not found")
+            raise HTTPException(status_code=404, detail="Customer not found")
 
-        # Build update query dynamically
-        updates = []
-        params = []
-
-        if mapping.customer_external_id is not None:
-            updates.append("customer_external_id = %s")
-            params.append(mapping.customer_external_id)
-
-        if mapping.channel_external_id is not None:
-            updates.append("channel_external_id = %s")
-            params.append(mapping.channel_external_id)
-
-        if mapping.channel_name is not None:
-            updates.append("channel_name = %s")
-            params.append(mapping.channel_name)
-
-        if mapping.rule_reason is not None:
-            updates.append("rule_reason = %s")
-            params.append(mapping.rule_reason)
-
-        if mapping.priority is not None:
-            updates.append("priority = %s")
-            params.append(mapping.priority)
-
-        if mapping.is_active is not None:
-            updates.append("is_active = %s")
-            params.append(mapping.is_active)
-
-        if not updates:
+        if customer['assigned_channel_id'] is None:
             cursor.close()
             conn.close()
             return {
                 "status": "success",
-                "message": "No changes to apply",
-                "data": existing
+                "message": "El cliente no tiene canal asignado"
             }
 
-        updates.append("updated_at = NOW()")
-        params.append(mapping_id)
-
-        cursor.execute(f"""
-            UPDATE customer_channel_rules
-            SET {', '.join(updates)}
-            WHERE id = %s
-            RETURNING *
-        """, params)
-        updated = cursor.fetchone()
-
-        conn.commit()
-        cursor.close()
-        conn.close()
-
-        return {
-            "status": "success",
-            "message": "Mapeo actualizado exitosamente",
-            "data": updated
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error updating mapping: {str(e)}")
-
-
-@router.delete("/{mapping_id}")
-async def delete_channel_mapping(
-    mapping_id: int,
-    hard_delete: bool = Query(False, description="If true, permanently delete. Otherwise soft delete.")
-):
-    """
-    Delete a channel mapping.
-    By default, performs soft delete (sets is_active=false).
-    """
-    try:
-        conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-
-        # Check if mapping exists
-        cursor.execute("SELECT * FROM customer_channel_rules WHERE id = %s", [mapping_id])
-        existing = cursor.fetchone()
-
-        if not existing:
-            cursor.close()
-            conn.close()
-            raise HTTPException(status_code=404, detail="Mapping not found")
-
-        if hard_delete:
-            cursor.execute("DELETE FROM customer_channel_rules WHERE id = %s", [mapping_id])
-            message = "Mapeo eliminado permanentemente"
-        else:
-            cursor.execute("""
-                UPDATE customer_channel_rules
-                SET is_active = FALSE, updated_at = NOW()
-                WHERE id = %s
-            """, [mapping_id])
-            message = "Mapeo desactivado"
+        # Remove the assignment
+        cursor.execute("""
+            UPDATE customers
+            SET
+                assigned_channel_id = NULL,
+                assigned_channel_name = NULL,
+                channel_assigned_by = NULL,
+                channel_assigned_at = NULL,
+                updated_at = NOW()
+            WHERE id = %s AND source = 'relbase'
+        """, [mapping_id])
 
         conn.commit()
         cursor.close()
@@ -832,10 +963,10 @@ async def delete_channel_mapping(
 
         return {
             "status": "success",
-            "message": message
+            "message": "Asignación de canal eliminada"
         }
 
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error deleting mapping: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error removing assignment: {str(e)}")
