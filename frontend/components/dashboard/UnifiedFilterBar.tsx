@@ -69,14 +69,6 @@ export default function UnifiedFilterBar() {
             )}
           </div>
 
-          {/* Date Range Display (YTD context) */}
-          <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            <span>YTD: {formatDateRange()}</span>
-          </div>
-
           {/* Spacer */}
           <div className="flex-1" />
 
@@ -92,6 +84,14 @@ export default function UnifiedFilterBar() {
               Limpiar filtro
             </button>
           )}
+
+          {/* Current Date */}
+          <div className="flex items-center gap-2 text-sm text-gray-600 font-medium">
+            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <span>{new Date().toLocaleDateString('es-CL', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
+          </div>
         </div>
       </div>
 

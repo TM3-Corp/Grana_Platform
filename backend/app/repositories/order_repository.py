@@ -293,7 +293,7 @@ class OrderRepository:
                     COALESCE(SUM(total), 0) as total_revenue,
                     COALESCE(AVG(total), 0) as average_order_value
                 FROM orders
-                WHERE (invoice_status IN ('accepted', 'accepted_objection') OR invoice_status IS NULL)
+                WHERE invoice_status IN ('accepted', 'accepted_objection')
             """)
             totals = cursor.fetchone()
 
@@ -304,7 +304,7 @@ class OrderRepository:
                     COUNT(*) as count,
                     COALESCE(SUM(total), 0) as revenue
                 FROM orders
-                WHERE (invoice_status IN ('accepted', 'accepted_objection') OR invoice_status IS NULL)
+                WHERE invoice_status IN ('accepted', 'accepted_objection')
                 GROUP BY source
                 ORDER BY count DESC
             """)
@@ -406,7 +406,7 @@ class OrderRepository:
                     SUM(total) as revenue,
                     AVG(total) as avg_ticket
                 FROM orders
-                WHERE (invoice_status IN ('accepted', 'accepted_objection') OR invoice_status IS NULL)
+                WHERE invoice_status IN ('accepted', 'accepted_objection')
                 {date_filter}
                 GROUP BY period, source
                 ORDER BY period, source
@@ -440,7 +440,7 @@ class OrderRepository:
                     SUM(total) as revenue,
                     AVG(total) as avg_ticket
                 FROM orders
-                WHERE (invoice_status IN ('accepted', 'accepted_objection') OR invoice_status IS NULL)
+                WHERE invoice_status IN ('accepted', 'accepted_objection')
                 {date_filter}
                 GROUP BY source
                 ORDER BY revenue DESC
@@ -459,7 +459,7 @@ class OrderRepository:
                 FROM order_items oi
                 JOIN orders o ON o.id = oi.order_id
                 LEFT JOIN products p ON p.sku = oi.product_sku
-                WHERE (o.invoice_status IN ('accepted', 'accepted_objection') OR o.invoice_status IS NULL)
+                WHERE o.invoice_status IN ('accepted', 'accepted_objection')
                 {date_filter.replace('order_date', 'o.order_date')}
                 GROUP BY COALESCE(p.name, oi.product_name), COALESCE(p.sku, oi.product_sku)
                 ORDER BY revenue DESC
@@ -477,7 +477,7 @@ class OrderRepository:
                     MIN(order_date) as first_order,
                     MAX(order_date) as last_order
                 FROM orders
-                WHERE (invoice_status IN ('accepted', 'accepted_objection') OR invoice_status IS NULL)
+                WHERE invoice_status IN ('accepted', 'accepted_objection')
                 {date_filter}
             """, params)
 

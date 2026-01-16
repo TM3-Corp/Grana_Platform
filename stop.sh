@@ -1,7 +1,12 @@
 #!/bin/bash
-# Script para detener Frontend + Backend de Grana Platform
+# ============================================
+# Stop Grana Platform services
+# ============================================
+# Note: This does NOT stop Supabase Docker.
+# To stop Supabase: npx supabase stop
+# ============================================
 
-echo "🛑 Deteniendo Grana Platform..."
+echo "🛑 Stopping Grana Platform..."
 echo ""
 
 # Detener Backend (puerto 8000)
@@ -31,4 +36,7 @@ pkill -f "uvicorn.*grana" 2>/dev/null
 pkill -f "next.*dev" 2>/dev/null
 
 echo ""
-echo "✅ Todos los servicios detenidos"
+echo "✅ Frontend and Backend stopped"
+echo ""
+echo "💡 Supabase Docker is still running."
+echo "   To stop it: npx supabase stop"

@@ -66,6 +66,22 @@ async def get_sales_analytics(
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
 
+        # Check if materialized view exists (production compatibility)
+        cur.execute("""
+            SELECT EXISTS (
+                SELECT 1 FROM pg_matviews WHERE matviewname = 'sales_facts_mv'
+            )
+        """)
+        mv_exists = cur.fetchone()[0]
+
+        if not mv_exists:
+            cur.close()
+            conn.close()
+            raise HTTPException(
+                status_code=503,
+                detail="Vista materializada 'sales_facts_mv' no existe. Ejecuta las migraciones de base de datos."
+            )
+
         # Build base filters
         # ✅ FORCE RelBase only - ignore sources parameter to avoid duplication
         where_clauses = ["mv.source = 'relbase'"]
@@ -194,24 +210,14 @@ async def get_sales_analytics(
 
         # === 1. SUMMARY METRICS ===
         # MUCH FASTER: Direct SUM on materialized view (no JOINs!)
-        # NOTE: Calculate individual units using package conversion factors
-        # - units_sold already includes quantity_multiplier from sku_mappings
-        # - We also apply units_per_display (for x5, x16) or items_per_master_box (for caja master)
+        # NOTE: After migration 20260114180000 (CORP-162), units_sold already includes
+        # ALL conversion factors (quantity_multiplier × units_per_display/items_per_master_box).
+        # No need to multiply again - just SUM directly.
         summary_query = f"""
             SELECT
                 SUM(mv.revenue) as total_revenue,
-                SUM(
-                    CASE
-                        WHEN mv.is_caja_master THEN mv.units_sold * COALESCE(mv.items_per_master_box, 1)
-                        ELSE mv.units_sold * COALESCE(mv.units_per_display, 1)
-                    END
-                ) as total_units,
-                SUM(
-                    CASE
-                        WHEN mv.is_caja_master THEN mv.units_sold * COALESCE(mv.items_per_master_box, 1) / NULLIF(COALESCE(mv.units_per_display, 1), 0)
-                        ELSE mv.units_sold
-                    END
-                ) as total_items,
+                SUM(mv.units_sold) as total_units,
+                SUM(mv.original_units_sold) as total_items,
                 COUNT(DISTINCT mv.order_id) as total_orders,
                 CASE
                     WHEN COUNT(DISTINCT mv.order_id) > 0 THEN SUM(mv.revenue) / COUNT(DISTINCT mv.order_id)
@@ -235,20 +241,11 @@ async def get_sales_analytics(
 
         # === 2. TIMELINE DATA ===
         # MUCH FASTER: 2 JOINs instead of 4-5 (only need dim_date)
-        # Helper expression for calculating individual units with package conversion
-        units_expr = """SUM(
-                    CASE
-                        WHEN mv.is_caja_master THEN mv.units_sold * COALESCE(mv.items_per_master_box, 1)
-                        ELSE mv.units_sold * COALESCE(mv.units_per_display, 1)
-                    END
-                )"""
-        # Helper expression for items (displays) - caja masters converted to displays
-        items_expr = """SUM(
-                    CASE
-                        WHEN mv.is_caja_master THEN mv.units_sold * COALESCE(mv.items_per_master_box, 1) / NULLIF(COALESCE(mv.units_per_display, 1), 0)
-                        ELSE mv.units_sold
-                    END
-                )"""
+        # NOTE: After migration 20260114180000 (CORP-162), units_sold already includes
+        # ALL conversion factors. Just SUM directly.
+        units_expr = """SUM(mv.units_sold)"""
+        # Items = original order quantity (before conversion)
+        items_expr = """SUM(mv.original_units_sold)"""
 
         if group_by and stack_by and stack_field:
             # DOUBLE GROUPING: period + group + stack
@@ -635,15 +632,9 @@ async def get_sku_sales_timeline(
                 WITH monthly_sales AS (
                     SELECT
                         DATE_TRUNC('month', order_date) as month,
-                        -- Calculate individual units (applying package conversion factors)
-                        -- units_sold already includes quantity_multiplier from sku_mappings
-                        -- Now we also apply units_per_display (for x5, x16) or items_per_master_box (for caja master)
-                        SUM(
-                            CASE
-                                WHEN is_caja_master THEN units_sold * COALESCE(items_per_master_box, 1)
-                                ELSE units_sold * COALESCE(units_per_display, 1)
-                            END
-                        ) as units_sold,
+                        -- NOTE: After migration 20260114180000 (CORP-162), units_sold already
+                        -- includes ALL conversion factors. Just SUM directly.
+                        SUM(units_sold) as units_sold,
                         SUM(revenue) as revenue
                     FROM sales_facts_mv
                     WHERE sku_primario = %s
@@ -927,18 +918,10 @@ async def export_sales_analytics(
         group_field, group_label = group_field_map.get(group_by, ('mv.category', 'Familia'))
 
         # Helper expressions for unit calculations
-        units_expr = """SUM(
-            CASE
-                WHEN mv.is_caja_master THEN mv.units_sold * COALESCE(mv.items_per_master_box, 1)
-                ELSE mv.units_sold * COALESCE(mv.units_per_display, 1)
-            END
-        )"""
-        items_expr = """SUM(
-            CASE
-                WHEN mv.is_caja_master THEN mv.units_sold * COALESCE(mv.items_per_master_box, 1) / NULLIF(COALESCE(mv.units_per_display, 1), 0)
-                ELSE mv.units_sold
-            END
-        )"""
+        # NOTE: After migration 20260114180000 (CORP-162), units_sold already includes
+        # ALL conversion factors. Just SUM directly.
+        units_expr = """SUM(mv.units_sold)"""
+        items_expr = """SUM(mv.original_units_sold)"""
 
         # Query grouped data (all rows, no pagination for export)
         export_query = f"""

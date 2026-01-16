@@ -9,12 +9,16 @@ from contextlib import contextmanager
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environment variables
-env_path = Path(__file__).parent.parent / '.env'
+# Load environment variables based on APP_ENV
+app_env = os.getenv('APP_ENV', 'development')
+if app_env == 'production':
+    env_path = Path(__file__).parent.parent / '.env.production'
+else:
+    env_path = Path(__file__).parent.parent / '.env.development'
 load_dotenv(env_path)
 
 # Import API routers
-from app.api import conversion, shopify, products, orders, mercadolibre, product_mapping, relbase, audit, inventory, sales_analytics, sales_analytics_realtime, admin, warehouses, chat, sync, sku_mappings, analytics, auth, product_catalog, inventory_planning, channel_mappings
+from app.api import conversion, shopify, products, orders, mercadolibre, product_mapping, relbase, audit, inventory, sales_analytics, sales_analytics_realtime, admin, warehouses, chat, sync, sku_mappings, analytics, auth, product_catalog, inventory_planning, channel_mappings, debug_mapping
 
 # Import centralized database connection with retry logic
 from app.core.database import get_db_connection_with_retry, CONNECTION_TIMEOUT
@@ -147,6 +151,9 @@ app.include_router(auth.router)
 
 # Inventory Planning API (production recommendations)
 app.include_router(inventory_planning.router)
+
+# Debug Mapping API (visual debugging for SKU mapping)
+app.include_router(debug_mapping.router, prefix="/api/v1/debug-mapping", tags=["Debug Mapping"])
 
 @app.get("/")
 async def root():

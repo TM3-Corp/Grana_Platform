@@ -85,6 +85,10 @@ export default function AuditView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Generate years dynamically: 2023 to current year (ascending order)
+  const currentYear = new Date().getFullYear();
+  const availableYears = Array.from({ length: currentYear - 2022 }, (_, i) => String(2023 + i));
+
   // Filter states (multi-select arrays)
   const [selectedFamilia, setSelectedFamilia] = useState<string[]>([]);
   const [selectedSource, setSelectedSource] = useState<string[]>([]);
@@ -92,12 +96,7 @@ export default function AuditView() {
   const [selectedCustomer, setSelectedCustomer] = useState<string[]>([]);
   const [selectedSKU, setSelectedSKU] = useState<string>('');
   const [skuSearchInput, setSkuSearchInput] = useState<string>('');
-  const [showNullsOnly, setShowNullsOnly] = useState(false);
-  const [showNotInCatalogOnly, setShowNotInCatalogOnly] = useState(false);
-
-  // Generate years dynamically: current year + 2 previous years
-  const currentYear = new Date().getFullYear()
-  const availableYears = Array.from({ length: 3 }, (_, i) => String(currentYear - 2 + i)).reverse()
+  const [mappingFilter, setMappingFilter] = useState<'all' | 'mapped' | 'unmapped'>('all');
 
   // Date filter states (multi-select arrays for year and month)
   const [dateFilterType, setDateFilterType] = useState<string>('all'); // 'all', 'year', 'month', 'custom'
@@ -105,6 +104,9 @@ export default function AuditView() {
   const [selectedMonth, setSelectedMonth] = useState<string[]>([]);
   const [customFromDate, setCustomFromDate] = useState<string>('');
   const [customToDate, setCustomToDate] = useState<string>('');
+
+  // Check if 2023 is the only selected year (restrictions apply)
+  const is2023Only = selectedYear.length === 1 && selectedYear[0] === '2023';
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -142,7 +144,7 @@ export default function AuditView() {
       setExpandedGroupDetails({});
       fetchData();
     }
-  }, [status, selectedFamilia, selectedSource, selectedChannel, selectedCustomer, selectedSKU, showNullsOnly, showNotInCatalogOnly, currentPage, pageSize, groupBy, dateFilterType, selectedYear, selectedMonth, customFromDate, customToDate]);
+  }, [status, selectedFamilia, selectedSource, selectedChannel, selectedCustomer, selectedSKU, mappingFilter, currentPage, pageSize, groupBy, dateFilterType, selectedYear, selectedMonth, customFromDate, customToDate]);
 
   // Debounce SKU search input
   useEffect(() => {
@@ -197,35 +199,38 @@ export default function AuditView() {
       selectedCustomer.forEach(customer => params.append('customer', customer));
 
       if (selectedSKU) params.append('sku', selectedSKU);
-      if (showNullsOnly) params.append('has_nulls', 'true');
-      if (showNotInCatalogOnly) params.append('not_in_catalog', 'true');
+      if (mappingFilter === 'unmapped') params.append('not_in_catalog', 'true');
+      if (mappingFilter === 'mapped') params.append('in_catalog', 'true');
 
       // Date filters with multi-select support
       if (dateFilterType === 'year' && selectedYear.length > 0) {
-        // For multiple years, use the earliest start and latest end
         const years = selectedYear.map(y => parseInt(y)).sort();
-        params.append('from_date', `${years[0]}-01-01`);
-        params.append('to_date', `${years[years.length - 1]}-12-31`);
-      } else if (dateFilterType === 'month' && selectedYear.length > 0 && selectedMonth.length > 0) {
-        // For multiple months, calculate range from earliest to latest
-        const yearMonths = selectedYear.flatMap(year =>
-          selectedMonth.map(month => ({ year: parseInt(year), month: parseInt(month) }))
-        ).sort((a, b) => {
-          if (a.year !== b.year) return a.year - b.year;
-          return a.month - b.month;
-        });
 
-        const first = yearMonths[0];
-        const last = yearMonths[yearMonths.length - 1];
-        const lastDay = new Date(last.year, last.month, 0).getDate();
-
-        params.append('from_date', `${first.year}-${first.month.toString().padStart(2, '0')}-01`);
-        params.append('to_date', `${last.year}-${last.month.toString().padStart(2, '0')}-${lastDay}`);
+        if (selectedMonth.length > 0) {
+          // Year + Month filter: filter by specific month(s) within year(s)
+          const month = parseInt(selectedMonth[0]);
+          const lastDay = new Date(years[0], month, 0).getDate();
+          params.append('from_date', `${years[0]}-${month.toString().padStart(2, '0')}-01`);
+          params.append('to_date', `${years[years.length - 1]}-${month.toString().padStart(2, '0')}-${lastDay}`);
+        } else {
+          // Year only filter
+          params.append('from_date', `${years[0]}-01-01`);
+          params.append('to_date', `${years[years.length - 1]}-12-31`);
+        }
       } else if (dateFilterType === 'custom' && customFromDate && customToDate) {
         params.append('from_date', customFromDate);
         params.append('to_date', customToDate);
       } else if (dateFilterType === 'all') {
-        // No date filters - show all data
+        // "Todo" selected - but still apply month filter if set
+        if (selectedMonth.length > 0) {
+          const month = parseInt(selectedMonth[0]);
+          // Filter by month across all years (2023 to current)
+          const currentYear = new Date().getFullYear();
+          const lastDay = new Date(currentYear, month, 0).getDate();
+          params.append('from_date', `2023-${month.toString().padStart(2, '0')}-01`);
+          params.append('to_date', `${currentYear}-${month.toString().padStart(2, '0')}-${lastDay}`);
+        }
+        // If no month selected, no date filters - show all data
       }
 
       // Add server-side group_by parameter (when backend supports it)
@@ -317,31 +322,30 @@ export default function AuditView() {
       selectedCustomer.forEach(customer => params.append('customer', customer));
 
       if (selectedSKU) params.append('sku', selectedSKU);
-      if (showNullsOnly) params.append('has_nulls', 'true');
-      if (showNotInCatalogOnly) params.append('not_in_catalog', 'true');
+      if (mappingFilter === 'unmapped') params.append('not_in_catalog', 'true');
+      if (mappingFilter === 'mapped') params.append('in_catalog', 'true');
 
       // Add date filters
       if (dateFilterType === 'year' && selectedYear.length > 0) {
         const years = selectedYear.map(y => parseInt(y)).sort();
-        params.append('from_date', `${years[0]}-01-01`);
-        params.append('to_date', `${years[years.length - 1]}-12-31`);
-      } else if (dateFilterType === 'month' && selectedYear.length > 0 && selectedMonth.length > 0) {
-        const yearMonths = selectedYear.flatMap(year =>
-          selectedMonth.map(month => ({ year: parseInt(year), month: parseInt(month) }))
-        ).sort((a, b) => {
-          if (a.year !== b.year) return a.year - b.year;
-          return a.month - b.month;
-        });
-
-        const first = yearMonths[0];
-        const last = yearMonths[yearMonths.length - 1];
-        const lastDay = new Date(last.year, last.month, 0).getDate();
-
-        params.append('from_date', `${first.year}-${first.month.toString().padStart(2, '0')}-01`);
-        params.append('to_date', `${last.year}-${last.month.toString().padStart(2, '0')}-${lastDay}`);
+        if (selectedMonth.length > 0) {
+          const month = parseInt(selectedMonth[0]);
+          const lastDay = new Date(years[0], month, 0).getDate();
+          params.append('from_date', `${years[0]}-${month.toString().padStart(2, '0')}-01`);
+          params.append('to_date', `${years[years.length - 1]}-${month.toString().padStart(2, '0')}-${lastDay}`);
+        } else {
+          params.append('from_date', `${years[0]}-01-01`);
+          params.append('to_date', `${years[years.length - 1]}-12-31`);
+        }
       } else if (dateFilterType === 'custom' && customFromDate && customToDate) {
         params.append('from_date', customFromDate);
         params.append('to_date', customToDate);
+      } else if (dateFilterType === 'all' && selectedMonth.length > 0) {
+        const month = parseInt(selectedMonth[0]);
+        const currentYear = new Date().getFullYear();
+        const lastDay = new Date(currentYear, month, 0).getDate();
+        params.append('from_date', `2023-${month.toString().padStart(2, '0')}-01`);
+        params.append('to_date', `${currentYear}-${month.toString().padStart(2, '0')}-${lastDay}`);
       }
 
       // Add specific filter for this group value
@@ -415,14 +419,18 @@ export default function AuditView() {
     setSelectedCustomer([]);
     setSelectedSKU('');
     setSkuSearchInput('');
-    setShowNullsOnly(false);
-    setShowNotInCatalogOnly(false);
-    setDateFilterType('all');
+    setMappingFilter('all');
+    setDateFilterType('year');
     setSelectedYear([String(currentYear)]);
     setSelectedMonth([]);
     setCustomFromDate('');
     setCustomToDate('');
     setCurrentPage(1);
+    // Clear grouping
+    setGroupBy('');
+    setGroupSortColumn('none');
+    setGroupSortDirection('desc');
+    setCollapsedGroups(new Set());
     // Clear expanded group details when filters change
     setExpandedGroupDetails({});
   };
@@ -440,31 +448,30 @@ export default function AuditView() {
       selectedCustomer.forEach(customer => params.append('customer', customer));
 
       if (selectedSKU) params.append('sku', selectedSKU);
-      if (showNullsOnly) params.append('has_nulls', 'true');
-      if (showNotInCatalogOnly) params.append('not_in_catalog', 'true');
+      if (mappingFilter === 'unmapped') params.append('not_in_catalog', 'true');
+      if (mappingFilter === 'mapped') params.append('in_catalog', 'true');
 
       // Date filters
       if (dateFilterType === 'year' && selectedYear.length > 0) {
         const years = selectedYear.map(y => parseInt(y)).sort();
-        params.append('from_date', `${years[0]}-01-01`);
-        params.append('to_date', `${years[years.length - 1]}-12-31`);
-      } else if (dateFilterType === 'month' && selectedYear.length > 0 && selectedMonth.length > 0) {
-        const yearMonths = selectedYear.flatMap(year =>
-          selectedMonth.map(month => ({ year: parseInt(year), month: parseInt(month) }))
-        ).sort((a, b) => {
-          if (a.year !== b.year) return a.year - b.year;
-          return a.month - b.month;
-        });
-
-        const first = yearMonths[0];
-        const last = yearMonths[yearMonths.length - 1];
-        const lastDay = new Date(last.year, last.month, 0).getDate();
-
-        params.append('from_date', `${first.year}-${first.month.toString().padStart(2, '0')}-01`);
-        params.append('to_date', `${last.year}-${last.month.toString().padStart(2, '0')}-${lastDay}`);
+        if (selectedMonth.length > 0) {
+          const month = parseInt(selectedMonth[0]);
+          const lastDay = new Date(years[0], month, 0).getDate();
+          params.append('from_date', `${years[0]}-${month.toString().padStart(2, '0')}-01`);
+          params.append('to_date', `${years[years.length - 1]}-${month.toString().padStart(2, '0')}-${lastDay}`);
+        } else {
+          params.append('from_date', `${years[0]}-01-01`);
+          params.append('to_date', `${years[years.length - 1]}-12-31`);
+        }
       } else if (dateFilterType === 'custom' && customFromDate && customToDate) {
         params.append('from_date', customFromDate);
         params.append('to_date', customToDate);
+      } else if (dateFilterType === 'all' && selectedMonth.length > 0) {
+        const month = parseInt(selectedMonth[0]);
+        const currentYear = new Date().getFullYear();
+        const lastDay = new Date(currentYear, month, 0).getDate();
+        params.append('from_date', `2023-${month.toString().padStart(2, '0')}-01`);
+        params.append('to_date', `${currentYear}-${month.toString().padStart(2, '0')}-${lastDay}`);
       }
 
       // Include grouping if active
@@ -653,6 +660,45 @@ export default function AuditView() {
   const groupedData = groupData(data, groupBy);
   const totalPages = Math.ceil(totalCount / pageSize);
 
+  // Generate dynamic filter description for KPI cards
+  const getFilterDescription = () => {
+    const parts: string[] = [];
+
+    // Date/Year filter
+    if (dateFilterType === 'year' && selectedYear.length > 0) {
+      if (selectedYear.length === 1) {
+        parts.push(selectedYear[0]);
+      } else {
+        parts.push(`${selectedYear[0]}-${selectedYear[selectedYear.length - 1]}`);
+      }
+    } else if (dateFilterType === 'all') {
+      parts.push('Todo el período');
+    }
+
+    // Month filter
+    if (selectedMonth.length > 0) {
+      const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+      parts.push(monthNames[parseInt(selectedMonth[0]) - 1]);
+    }
+
+    // Other filters count
+    const otherFilters = [
+      selectedFamilia.length > 0,
+      selectedChannel.length > 0,
+      selectedCustomer.length > 0,
+      selectedSKU !== '',
+      mappingFilter !== 'all'
+    ].filter(Boolean).length;
+
+    if (otherFilters > 0) {
+      parts.push(`+${otherFilters} filtro${otherFilters > 1 ? 's' : ''}`);
+    }
+
+    return parts.length > 0 ? parts.join(' · ') : 'Sin filtros';
+  };
+
+  const filterDescription = getFilterDescription();
+
   // Use filtered totals from API (all filtered data) instead of current page totals
   // Add defensive defaults (|| 0) in case API doesn't return all fields
   const overallTotals = filteredTotals ? {
@@ -711,93 +757,56 @@ export default function AuditView() {
         </div>
       )}
 
-      {/* Summary Cards - Always visible, with loading skeleton */}
+      {/* Summary Cards - Colorful style with icons */}
       {loading ? (
         <StatCardsGridSkeleton count={4} />
       ) : data.length === 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+        <div className="grid grid-cols-4 gap-4 mb-6">
           {[
-            { label: 'Total Pedidos', icon: '📦', gradient: 'from-blue-500 to-blue-600' },
-            { label: 'Total Unidades', icon: '📊', gradient: 'from-green-500 to-green-600' },
-            { label: 'Peso Total', icon: '⚖️', gradient: 'from-orange-500 to-orange-600' },
-            { label: 'Total Ingresos', icon: '💰', gradient: 'from-purple-500 to-purple-600' },
+            { label: 'TOTAL PEDIDOS', gradient: 'bg-gradient-to-br from-blue-500 to-blue-600' },
+            { label: 'TOTAL UNIDADES', gradient: 'bg-gradient-to-br from-green-500 to-green-600' },
+            { label: 'PESO TOTAL', gradient: 'bg-gradient-to-br from-orange-500 to-orange-600' },
+            { label: 'TOTAL INGRESOS', gradient: 'bg-gradient-to-br from-violet-500 to-violet-600' },
           ].map((card, i) => (
-            <div key={i} className={cn('bg-gradient-to-br rounded-xl shadow-lg p-6 text-white opacity-60', card.gradient)}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-white/70 text-sm font-medium uppercase tracking-wide">{card.label}</p>
-                  <p className="text-4xl font-bold mt-2">--</p>
-                  <p className="text-white/50 text-xs mt-1">Sin datos</p>
-                </div>
-                <div className="text-5xl opacity-20">{card.icon}</div>
-              </div>
+            <div key={i} className={cn('rounded-2xl p-4 text-white relative overflow-hidden opacity-60', card.gradient)}>
+              <div className="text-xs font-semibold text-white/90 uppercase tracking-wide mb-1">{card.label}</div>
+              <div className="text-2xl font-bold mb-1">--</div>
+              <div className="text-xs text-white/70">Sin datos</div>
             </div>
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-          {/* Total Pedidos */}
-          <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg p-6 text-white transform hover:scale-[1.02] transition-all duration-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-blue-100 text-sm font-medium uppercase tracking-wide">Total Pedidos</p>
-                <p className="text-4xl font-bold mt-2">{overallTotals.totalPedidos.toLocaleString('es-CL')}</p>
-                <p className="text-blue-100 text-xs mt-1">
-                  {filteredTotals ? 'Filtros aplicados' : 'En esta página'}
-                </p>
-              </div>
-              <div className="text-5xl opacity-20">
-                📦
-              </div>
-            </div>
+        <div className="grid grid-cols-4 gap-4 mb-6">
+          {/* Total Pedidos - Blue Gradient */}
+          <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-4 text-white relative overflow-hidden">
+            <div className="text-xs font-semibold text-white/90 uppercase tracking-wide mb-1">TOTAL PEDIDOS</div>
+            <div className="text-2xl font-bold mb-1">{overallTotals.totalPedidos.toLocaleString('es-CL')}</div>
+            <div className="text-xs text-white/70">{filterDescription}</div>
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 text-5xl opacity-25">📦</div>
           </div>
 
-          {/* Total Unidades */}
-          <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-lg p-6 text-white transform hover:scale-[1.02] transition-all duration-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-green-100 text-sm font-medium uppercase tracking-wide">Total Unidades</p>
-                <p className="text-4xl font-bold mt-2">{overallTotals.totalUnidades.toLocaleString('es-CL')}</p>
-                <p className="text-green-100 text-xs mt-1">
-                  {filteredTotals ? 'Todas las páginas' : 'En esta página'}
-                </p>
-              </div>
-              <div className="text-5xl opacity-20">
-                📊
-              </div>
-            </div>
+          {/* Total Unidades - Green Gradient */}
+          <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-4 text-white relative overflow-hidden">
+            <div className="text-xs font-semibold text-white/90 uppercase tracking-wide mb-1">TOTAL UNIDADES</div>
+            <div className="text-2xl font-bold mb-1">{overallTotals.totalUnidades.toLocaleString('es-CL')}</div>
+            <div className="text-xs text-white/70">{filterDescription}</div>
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 text-5xl opacity-25">📊</div>
           </div>
 
-          {/* Total Peso */}
-          <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl shadow-lg p-6 text-white transform hover:scale-[1.02] transition-all duration-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-orange-100 text-sm font-medium uppercase tracking-wide">Peso Total</p>
-                <p className="text-4xl font-bold mt-2">{overallTotals.totalPeso.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg</p>
-                <p className="text-orange-100 text-xs mt-1">
-                  {filteredTotals ? 'Todas las páginas' : 'En esta página'}
-                </p>
-              </div>
-              <div className="text-5xl opacity-20">
-                ⚖️
-              </div>
-            </div>
+          {/* Peso Total - Orange Gradient */}
+          <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-4 text-white relative overflow-hidden">
+            <div className="text-xs font-semibold text-white/90 uppercase tracking-wide mb-1">PESO TOTAL</div>
+            <div className="text-2xl font-bold mb-1">{Math.round(overallTotals.totalPeso).toLocaleString('es-CL')} kg</div>
+            <div className="text-xs text-white/70">{filterDescription}</div>
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 text-5xl opacity-25">⚖️</div>
           </div>
 
-          {/* Total Revenue */}
-          <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl shadow-lg p-6 text-white transform hover:scale-[1.02] transition-all duration-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-purple-100 text-sm font-medium uppercase tracking-wide">Total Ingresos</p>
-                <p className="text-4xl font-bold mt-2">${(overallTotals.totalRevenue / 1000000).toFixed(1)}M</p>
-                <p className="text-purple-100 text-xs mt-1">
-                  ${overallTotals.totalRevenue.toLocaleString('es-CL')} CLP • {filteredTotals ? 'Filtrados' : 'Página actual'}
-                </p>
-              </div>
-              <div className="text-5xl opacity-20">
-                💰
-              </div>
-            </div>
+          {/* Total Ingresos - Purple Gradient */}
+          <div className="bg-gradient-to-br from-violet-500 to-violet-600 rounded-2xl p-4 text-white relative overflow-hidden">
+            <div className="text-xs font-semibold text-white/90 uppercase tracking-wide mb-1">TOTAL INGRESOS</div>
+            <div className="text-2xl font-bold mb-1">${(overallTotals.totalRevenue / 1000000).toFixed(1)}M</div>
+            <div className="text-xs text-white/70">${overallTotals.totalRevenue.toLocaleString('es-CL')} CLP · {filterDescription}</div>
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 text-5xl opacity-25">💰</div>
           </div>
         </div>
       )}
@@ -821,432 +830,182 @@ export default function AuditView() {
         </div>
       )}
 
-      {/* Filters */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-gray-100 rounded-lg">
-              <svg className="w-5 h-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-              </svg>
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Filtros</h2>
-              <p className="text-xs text-gray-500">Refina tu búsqueda para obtener resultados específicos</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleExport}
-              disabled={isExporting || loading}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-green-400 disabled:cursor-not-allowed rounded-lg transition-colors shadow-sm"
-            >
-              {isExporting ? (
-                <>
-                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Exportando...
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  Exportar Excel
-                </>
-              )}
-            </button>
-            <button
-              onClick={clearFilters}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-              Limpiar filtros
-            </button>
-          </div>
-        </div>
-
-        {/* Familia Selector */}
-        <div className="mb-6">
-          <h3 className="text-sm font-medium text-gray-700 mb-3">Familia de Producto</h3>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <button
-              onClick={() => { setSelectedFamilia([]); setCurrentPage(1); }}
-              className={`flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-all ${
-                selectedFamilia.length === 0
-                  ? 'border-green-500 bg-green-50 shadow-md'
-                  : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
-              }`}
-            >
-              <span className="text-3xl mb-1">📦</span>
-              <span className={`text-sm font-medium ${selectedFamilia.length === 0 ? 'text-green-700' : 'text-gray-700'}`}>
-                Todas
-              </span>
-            </button>
-            <button
-              onClick={() => {
-                if (selectedFamilia.includes('BARRAS')) {
-                  setSelectedFamilia(selectedFamilia.filter(f => f !== 'BARRAS'));
-                } else {
-                  setSelectedFamilia([...selectedFamilia, 'BARRAS']);
-                }
-                setCurrentPage(1);
-              }}
-              className={`flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-all ${
-                selectedFamilia.includes('BARRAS')
-                  ? 'border-green-500 bg-green-50 shadow-md'
-                  : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
-              }`}
-            >
-              <span className="text-3xl mb-1">🍫</span>
-              <span className={`text-sm font-medium ${selectedFamilia.includes('BARRAS') ? 'text-green-700' : 'text-gray-700'}`}>
-                BARRAS
-              </span>
-            </button>
-            <button
-              onClick={() => {
-                if (selectedFamilia.includes('CRACKERS')) {
-                  setSelectedFamilia(selectedFamilia.filter(f => f !== 'CRACKERS'));
-                } else {
-                  setSelectedFamilia([...selectedFamilia, 'CRACKERS']);
-                }
-                setCurrentPage(1);
-              }}
-              className={`flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-all ${
-                selectedFamilia.includes('CRACKERS')
-                  ? 'border-green-500 bg-green-50 shadow-md'
-                  : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
-              }`}
-            >
-              <span className="text-3xl mb-1">🍘</span>
-              <span className={`text-sm font-medium ${selectedFamilia.includes('CRACKERS') ? 'text-green-700' : 'text-gray-700'}`}>
-                CRACKERS
-              </span>
-            </button>
-            <button
-              onClick={() => {
-                if (selectedFamilia.includes('GRANOLAS')) {
-                  setSelectedFamilia(selectedFamilia.filter(f => f !== 'GRANOLAS'));
-                } else {
-                  setSelectedFamilia([...selectedFamilia, 'GRANOLAS']);
-                }
-                setCurrentPage(1);
-              }}
-              className={`flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-all ${
-                selectedFamilia.includes('GRANOLAS')
-                  ? 'border-green-500 bg-green-50 shadow-md'
-                  : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
-              }`}
-            >
-              <span className="text-3xl mb-1">🥣</span>
-              <span className={`text-sm font-medium ${selectedFamilia.includes('GRANOLAS') ? 'text-green-700' : 'text-gray-700'}`}>
-                GRANOLAS
-              </span>
-            </button>
-            <button
-              onClick={() => {
-                if (selectedFamilia.includes('KEEPERS')) {
-                  setSelectedFamilia(selectedFamilia.filter(f => f !== 'KEEPERS'));
-                } else {
-                  setSelectedFamilia([...selectedFamilia, 'KEEPERS']);
-                }
-                setCurrentPage(1);
-              }}
-              className={`flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-all ${
-                selectedFamilia.includes('KEEPERS')
-                  ? 'border-green-500 bg-green-50 shadow-md'
-                  : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
-              }`}
-            >
-              <span className="text-3xl mb-1">🍪</span>
-              <span className={`text-sm font-medium ${selectedFamilia.includes('KEEPERS') ? 'text-green-700' : 'text-gray-700'}`}>
-                KEEPERS
-              </span>
-            </button>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-          {/* Channel Filter - Modern MultiSelect */}
-          <MultiSelect
-            label="Canal"
-            options={filters.channels}
-            selected={selectedChannel}
-            onChange={(values) => { setSelectedChannel(values); setCurrentPage(1); }}
-            placeholder="Seleccionar canales..."
-            searchable={true}
-            maxHeight="200px"
-          />
-
-          {/* Customer Filter - Modern MultiSelect */}
-          <MultiSelect
-            label="Cliente"
-            options={filters.customers}
-            selected={selectedCustomer}
-            onChange={(values) => { setSelectedCustomer(values); setCurrentPage(1); }}
-            placeholder="Seleccionar clientes..."
-            searchable={true}
-            maxHeight="250px"
-          />
-
-          {/* Multi-field Search */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Búsqueda Global</label>
-            <div className="relative">
-              <svg
-                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
+      {/* Filters - Organized by sections */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-6">
+        {/* Top Row: Year selector + Search + Actions */}
+        <div className="flex items-center gap-3 mb-2">
+          {/* Year Selector - Prominent */}
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+            {availableYears.map(year => (
+              <button
+                key={year}
+                onClick={() => {
+                  setDateFilterType('year');
+                  setSelectedYear([year]);
+                  setSelectedMonth([]);
+                  // Clear restrictions when switching from 2023
+                  if (year === '2023') {
+                    setSelectedFamilia([]);
+                    setMappingFilter('all');
+                    setGroupBy('');
+                  }
+                  setCurrentPage(1);
+                }}
+                className={`px-4 py-2 text-sm font-semibold rounded-md transition-all ${
+                  dateFilterType === 'year' && selectedYear[0] === year
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
               >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input
-                type="text"
-                value={skuSearchInput}
-                onChange={(e) => setSkuSearchInput(e.target.value)}
-                placeholder="Cliente, Producto, Pedido, Canal, SKU..."
-                className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-              />
-              {skuSearchInput && (
-                <button
-                  type="button"
-                  onClick={() => setSkuSearchInput('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              )}
-            </div>
+                {year}
+              </button>
+            ))}
+            <button
+              onClick={() => {
+                setDateFilterType('all');
+                setSelectedMonth([]);
+                setCurrentPage(1);
+              }}
+              className={`px-3 py-2 text-sm font-medium rounded-md transition-all ${
+                dateFilterType === 'all'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Todo
+            </button>
+          </div>
+
+          {/* Search */}
+          <div className="flex-1 relative">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="text"
+              value={skuSearchInput}
+              onChange={(e) => setSkuSearchInput(e.target.value)}
+              placeholder="Buscar cliente, producto, pedido, SKU..."
+              className="w-full pl-10 pr-10 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            />
             {skuSearchInput && (
-              <div className="mt-1.5 text-xs text-gray-500 flex items-center gap-1">
-                <span className="inline-block w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
-                Buscando: "{skuSearchInput}"
-              </div>
+              <button
+                type="button"
+                onClick={() => setSkuSearchInput('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             )}
           </div>
-        </div>
 
-        {/* Quality Toggles */}
-        <div className="flex flex-wrap gap-4">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showNullsOnly}
-              onChange={(e) => { setShowNullsOnly(e.target.checked); setCurrentPage(1); }}
-              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-            />
-            <span className="text-sm text-gray-700">Solo registros con NULLs</span>
-          </label>
-
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showNotInCatalogOnly}
-              onChange={(e) => { setShowNotInCatalogOnly(e.target.checked); setCurrentPage(1); }}
-              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-            />
-            <span className="text-sm text-gray-700">Solo SKUs no mapeados</span>
-          </label>
-        </div>
-
-        {/* Group By */}
-        <div className="mt-4">
-          <label className="block text-sm font-medium text-gray-700 mb-1">Agrupar por</label>
-          <select
-            value={groupBy}
-            onChange={(e) => setGroupBy(e.target.value)}
-            className="w-full md:w-64 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          {/* Actions */}
+          <button
+            onClick={handleExport}
+            disabled={isExporting || loading}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-green-400 rounded-lg transition-colors"
           >
-            <option value="">Sin agrupación</option>
-            <option value="order_external_id">Pedido</option>
-            <option value="order_source">Fuente</option>
-            <option value="channel_name">Canal</option>
-            <option value="customer_name">Cliente</option>
-            <option value="order_month">Mes</option>
-            <option value="sku">SKU Original</option>
-            <option value="sku_primario">SKU Primario</option>
-            <option value="family">Producto</option>
-            <option value="format">🔢 Unidades por SKU</option>
-          </select>
+            {isExporting ? (
+              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            )}
+            Excel
+          </button>
         </div>
 
-        {/* Group Controls - Show only when grouping is active */}
-        {groupBy && (
-          <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-            <h4 className="text-sm font-medium text-gray-700 mb-3">Controles de Grupos</h4>
-
-            <div className="flex flex-col md:flex-row gap-4">
-              {/* Toggle Expand/Collapse All */}
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-2">Vista</label>
-                <button
-                  onClick={toggleAllGroups}
-                  className={`px-4 py-2 text-white text-sm rounded-lg transition-colors flex items-center gap-2 ${
-                    collapsedGroups.size === Object.keys(groupData(data, groupBy)).length
-                      ? 'bg-blue-500 hover:bg-blue-600'
-                      : 'bg-gray-500 hover:bg-gray-600'
-                  }`}
-                >
-                  <span>{collapsedGroups.size === Object.keys(groupData(data, groupBy)).length ? '▼' : '▶'}</span>
-                  {collapsedGroups.size === Object.keys(groupData(data, groupBy)).length ? 'Expandir Todos' : 'Colapsar Todos'}
-                </button>
-              </div>
-
-              {/* Group Sorting Buttons */}
-              <div className="flex-1">
-                <label className="block text-xs font-medium text-gray-600 mb-2">Ordenar grupos por</label>
-                <div className="flex gap-2 flex-wrap">
-                  {/* Alphabetical (default) */}
-                  <button
-                    onClick={() => {
-                      setGroupSortColumn('none');
-                      setGroupSortDirection('asc');
-                    }}
-                    className={`px-4 py-2 text-sm rounded-lg border transition-colors flex items-center gap-2 ${
-                      groupSortColumn === 'none'
-                        ? 'bg-blue-500 text-white border-blue-600'
-                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    Alfabético
-                    <span className="text-gray-400">{groupSortColumn === 'none' ? '🔤' : ''}</span>
-                  </button>
-
-                  {/* Sort by Unidades */}
-                  <button
-                    onClick={() => handleGroupSort('unidades')}
-                    className={`px-4 py-2 text-sm rounded-lg border transition-colors flex items-center gap-2 ${
-                      groupSortColumn === 'unidades'
-                        ? 'bg-green-500 text-white border-green-600'
-                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    Unidades
-                    <span className="text-xs">
-                      {groupSortColumn === 'unidades' ? (
-                        groupSortDirection === 'asc' ? '▲' : '▼'
-                      ) : (
-                        '⇅'
-                      )}
-                    </span>
-                  </button>
-
-                  {/* Sort by Revenue */}
-                  <button
-                    onClick={() => handleGroupSort('revenue')}
-                    className={`px-4 py-2 text-sm rounded-lg border transition-colors flex items-center gap-2 ${
-                      groupSortColumn === 'revenue'
-                        ? 'bg-purple-500 text-white border-purple-600'
-                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    Total $
-                    <span className="text-xs">
-                      {groupSortColumn === 'revenue' ? (
-                        groupSortDirection === 'asc' ? '▲' : '▼'
-                      ) : (
-                        '⇅'
-                      )}
-                    </span>
-                  </button>
-                </div>
-              </div>
-            </div>
+        {/* Filters Section */}
+        <div className="flex flex-wrap items-center gap-4 pb-4 border-b border-gray-100">
+          <div className="flex items-center gap-2 text-xs text-gray-500 font-medium uppercase tracking-wide">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+            </svg>
+            Filtros
           </div>
-        )}
 
-        {/* Date Filters */}
-        <div className="mt-6 border-t border-gray-200 pt-6">
-          <h3 className="text-sm font-medium text-gray-700 mb-3">📅 Filtros Temporales</h3>
-
-          {/* Date Filter Type Selector */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de filtro</label>
-            <select
-              value={dateFilterType}
-              onChange={(e) => { setDateFilterType(e.target.value); setCurrentPage(1); }}
-              className="w-full md:w-64 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          {/* Family Pills - Disabled for 2023 */}
+          <div className={`flex flex-wrap items-center gap-2 ${is2023Only ? 'opacity-50 pointer-events-none' : ''}`}>
+            <button
+              onClick={() => { setSelectedFamilia([]); setCurrentPage(1); }}
+              disabled={is2023Only}
+              className={`px-3 py-1.5 text-xs font-medium rounded-full transition-all ${
+                selectedFamilia.length === 0
+                  ? 'bg-green-100 text-green-700 ring-1 ring-green-500'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
             >
-              <option value="all">📦 Todos los periodos</option>
-              <option value="year">📅 Por año</option>
-              <option value="month">📆 Por mes</option>
-              <option value="custom">🗓️ Rango personalizado</option>
-            </select>
-          </div>
-
-          {/* Year Filter */}
-          {(dateFilterType === 'year' || dateFilterType === 'month') && (
-            <div className="mb-4">
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-sm font-medium text-gray-700">
-                  Año <span className="text-xs text-gray-500">(Ctrl/Cmd + click)</span>
-                </label>
-                {selectedYear.length > 0 && (
-                  <button
-                    onClick={() => { setSelectedYear([String(currentYear)]); setCurrentPage(1); }}
-                    className="text-xs text-blue-600 hover:text-blue-800 underline"
-                  >
-                    Limpiar
-                  </button>
-                )}
-              </div>
-              <select
-                multiple
-                value={selectedYear}
-                onChange={(e) => {
-                  const options = Array.from(e.target.selectedOptions, option => option.value);
-                  setSelectedYear(options);
+              Todas
+            </button>
+            {['BARRAS', 'CRACKERS', 'GRANOLAS', 'KEEPERS'].map((familia) => (
+              <button
+                key={familia}
+                onClick={() => {
+                  if (selectedFamilia.includes(familia)) {
+                    setSelectedFamilia(selectedFamilia.filter(f => f !== familia));
+                  } else {
+                    setSelectedFamilia([...selectedFamilia, familia]);
+                  }
                   setCurrentPage(1);
                 }}
-                size={3}
-                className="w-full md:w-48 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={is2023Only}
+                className={`px-3 py-1.5 text-xs font-medium rounded-full transition-all ${
+                  selectedFamilia.includes(familia)
+                    ? 'bg-green-100 text-green-700 ring-1 ring-green-500'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
               >
-                {availableYears.map(year => (
-                  <option key={year} value={year}>{year}</option>
+                {familia}
+              </button>
+            ))}
+            {is2023Only && <span className="text-xs text-gray-400 ml-2">No disponible para 2023</span>}
+          </div>
+
+          {/* Dropdown Filters - Stretch to fill width */}
+          <div className="flex items-center gap-3 flex-1">
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Canal</label>
+              <select
+                value={selectedChannel[0] || ''}
+                onChange={(e) => { setSelectedChannel(e.target.value ? [e.target.value] : []); setCurrentPage(1); }}
+                className="w-full border border-gray-200 rounded-lg px-2.5 py-[7px] text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
+              >
+                <option value="">Todos</option>
+                <option value="__null__">Sin canal</option>
+                {filters.channels.map(channel => (
+                  <option key={channel} value={channel}>{channel}</option>
                 ))}
               </select>
-              {selectedYear.length > 0 && (
-                <div className="mt-1 text-xs text-blue-600">
-                  {selectedYear.length} año{selectedYear.length > 1 ? 's' : ''} seleccionado{selectedYear.length > 1 ? 's' : ''}
-                </div>
-              )}
             </div>
-          )}
 
-          {/* Month Filter */}
-          {dateFilterType === 'month' && (
-            <div className="mb-4">
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-sm font-medium text-gray-700">
-                  Mes <span className="text-xs text-gray-500">(Ctrl/Cmd + click)</span>
-                </label>
-                {selectedMonth.length > 0 && (
-                  <button
-                    onClick={() => { setSelectedMonth([]); setCurrentPage(1); }}
-                    className="text-xs text-blue-600 hover:text-blue-800 underline"
-                  >
-                    Limpiar
-                  </button>
-                )}
-              </div>
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Cliente</label>
               <select
-                multiple
-                value={selectedMonth}
-                onChange={(e) => {
-                  const options = Array.from(e.target.selectedOptions, option => option.value);
-                  setSelectedMonth(options);
-                  setCurrentPage(1);
-                }}
-                size={6}
-                className="w-full md:w-48 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={selectedCustomer[0] || ''}
+                onChange={(e) => { setSelectedCustomer(e.target.value ? [e.target.value] : []); setCurrentPage(1); }}
+                className="w-full border border-gray-200 rounded-lg px-2.5 py-[7px] text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
               >
+                <option value="">Todos</option>
+                {filters.customers.map(customer => (
+                  <option key={customer} value={customer}>{customer}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Mes</label>
+              <select
+                value={selectedMonth[0] || ''}
+                onChange={(e) => { setSelectedMonth(e.target.value ? [e.target.value] : []); setCurrentPage(1); }}
+                className="w-full border border-gray-200 rounded-lg px-2.5 py-[7px] text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
+              >
+                <option value="">Todos</option>
                 <option value="1">Enero</option>
                 <option value="2">Febrero</option>
                 <option value="3">Marzo</option>
@@ -1260,73 +1019,75 @@ export default function AuditView() {
                 <option value="11">Noviembre</option>
                 <option value="12">Diciembre</option>
               </select>
-              {selectedMonth.length > 0 && (
-                <div className="mt-1 text-xs text-blue-600">
-                  {selectedMonth.length} mes{selectedMonth.length > 1 ? 'es' : ''} seleccionado{selectedMonth.length > 1 ? 's' : ''}
-                </div>
-              )}
             </div>
+
+            <div className={`flex-1 ${is2023Only ? 'opacity-50 pointer-events-none' : ''}`}>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Mapeo</label>
+              <select
+                value={mappingFilter}
+                onChange={(e) => { setMappingFilter(e.target.value as 'all' | 'mapped' | 'unmapped'); setCurrentPage(1); }}
+                disabled={is2023Only}
+                className="w-full border border-gray-200 rounded-lg px-2.5 py-[7px] text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
+              >
+                <option value="all">Todos</option>
+                <option value="mapped">Mapeados</option>
+                <option value="unmapped">No mapeados</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Grouping Section */}
+        <div className="flex items-center gap-4 pt-4">
+          <div className="flex items-center gap-2 text-xs text-gray-500 font-medium uppercase tracking-wide">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+            Agrupar
+          </div>
+
+          <select
+            value={groupBy}
+            onChange={(e) => setGroupBy(e.target.value)}
+            disabled={is2023Only}
+            className={`border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white ${is2023Only ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            <option value="">Sin agrupar</option>
+            <option value="order_external_id">Pedido</option>
+            <option value="order_source">Fuente</option>
+            <option value="channel_name">Canal</option>
+            <option value="customer_name">Cliente</option>
+            <option value="order_month">Mes</option>
+            <option value="sku">SKU Original</option>
+            <option value="sku_primario">SKU Primario</option>
+            <option value="family">Producto</option>
+            <option value="format">Unidades por SKU</option>
+          </select>
+          {is2023Only && <span className="text-xs text-gray-400">No disponible para 2023</span>}
+
+          {/* Group Controls when grouping is active */}
+          {groupBy && !is2023Only && (
+            <>
+              <div className="h-4 w-px bg-gray-200" />
+              <button
+                onClick={toggleAllGroups}
+                className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+              >
+                {collapsedGroups.size === Object.keys(groupData(data, groupBy)).length ? 'Expandir' : 'Colapsar'}
+              </button>
+            </>
           )}
 
-          {/* Custom Date Range */}
-          {dateFilterType === 'custom' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Desde
-                  <span className="text-xs text-gray-500 ml-1">(desde may 2021)</span>
-                </label>
-                <input
-                  type="date"
-                  value={customFromDate}
-                  onChange={(e) => { setCustomFromDate(e.target.value); setCurrentPage(1); }}
-                  min="2021-05-06"
-                  max="2025-11-05"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Hasta
-                  <span className="text-xs text-gray-500 ml-1">(hasta nov 2025)</span>
-                </label>
-                <input
-                  type="date"
-                  value={customToDate}
-                  onChange={(e) => { setCustomToDate(e.target.value); setCurrentPage(1); }}
-                  min="2021-05-06"
-                  max="2025-11-05"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Date Filter Summary */}
-          {dateFilterType !== 'all' && (
-            <div className="mt-3 p-3 bg-blue-50 rounded-lg">
-              <div className="text-sm text-blue-800">
-                <strong>Filtro activo:</strong>{' '}
-                {dateFilterType === 'year' && selectedYear.length > 0 && (
-                  selectedYear.length === 1
-                    ? `Año ${selectedYear[0]}`
-                    : `Años ${selectedYear.join(', ')}`
-                )}
-                {dateFilterType === 'month' && selectedYear.length > 0 && selectedMonth.length > 0 && (
-                  (() => {
-                    const months = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-                    const combinations = selectedYear.flatMap(year =>
-                      selectedMonth.map(month => `${months[parseInt(month)]} ${year}`)
-                    );
-                    return combinations.join(', ');
-                  })()
-                )}
-                {dateFilterType === 'custom' && customFromDate && customToDate && (
-                  `Desde ${customFromDate} hasta ${customToDate}`
-                )}
-              </div>
-            </div>
-          )}
+          {/* Clear All - Right aligned */}
+          <button
+            onClick={clearFilters}
+            className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-red-600 hover:bg-red-50 border border-gray-200 hover:border-red-200 rounded-lg transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+            Limpiar filtros
+          </button>
         </div>
       </div>
 
@@ -1487,7 +1248,7 @@ export default function AuditView() {
                                     ].map(({ label, field }) => (
                                       <th
                                         key={field}
-                                        className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-tight"
+                                        className="px-2 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-tight"
                                       >
                                         {label}
                                       </th>
@@ -1546,7 +1307,7 @@ export default function AuditView() {
                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-right">
                                         <span className="font-semibold text-green-600">
                                           {item.conversion_factor && item.conversion_factor > 1 && (
-                                            <span className="text-gray-400 text-xs">(x{item.conversion_factor}) </span>
+                                            <span className="text-gray-600 text-xs">(x{item.conversion_factor}) </span>
                                           )}
                                           {item.unidades ? item.unidades.toLocaleString('es-CL') : '-'}
                                         </span>
@@ -1601,7 +1362,7 @@ export default function AuditView() {
                           <th
                             key={field}
                             onClick={() => handleSort(field)}
-                            className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-tight cursor-pointer hover:bg-gray-100 select-none"
+                            className="px-2 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-tight cursor-pointer hover:bg-gray-100 select-none"
                           >
                             <div className="flex items-center gap-1">
                               {label}
@@ -1669,7 +1430,7 @@ export default function AuditView() {
                           <td className="px-2 py-2 whitespace-nowrap text-xs text-right">
                             <span className="font-semibold text-green-600">
                               {item.conversion_factor && item.conversion_factor > 1 && (
-                                <span className="text-gray-400 text-xs">(x{item.conversion_factor}) </span>
+                                <span className="text-gray-600 text-xs">(x{item.conversion_factor}) </span>
                               )}
                               {item.unidades ? item.unidades.toLocaleString('es-CL') : '-'}
                             </span>

@@ -170,65 +170,13 @@ class ProductMappingRepository:
         base_product_id: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """
-        Get product families from database view
+        DEPRECATED: View product_families was removed in migration 029.
+        Use product_catalog with sku_primario for family grouping.
 
-        Args:
-            base_product_id: Optional filter for specific product family
-
-        Returns:
-            List of product family records
+        Returns empty list for backwards compatibility.
         """
-        conn = get_db_connection_dict_with_retry()
-        cursor = conn.cursor()
-
-        try:
-            if base_product_id:
-                cursor.execute("""
-                    SELECT
-                        base_product_id,
-                        base_sku,
-                        base_name,
-                        variant_product_id,
-                        variant_sku,
-                        variant_name,
-                        quantity_multiplier,
-                        packaging_type,
-                        variant_stock,
-                        variant_stock_as_base_units,
-                        variant_price,
-                        base_unit_price,
-                        variant_unit_price,
-                        discount_percentage
-                    FROM product_families
-                    WHERE base_product_id = %s
-                    ORDER BY quantity_multiplier
-                """, (base_product_id,))
-            else:
-                cursor.execute("""
-                    SELECT
-                        base_product_id,
-                        base_sku,
-                        base_name,
-                        variant_product_id,
-                        variant_sku,
-                        variant_name,
-                        quantity_multiplier,
-                        packaging_type,
-                        variant_stock,
-                        variant_stock_as_base_units,
-                        variant_price,
-                        base_unit_price,
-                        variant_unit_price,
-                        discount_percentage
-                    FROM product_families
-                    ORDER BY base_name, quantity_multiplier
-                """)
-
-            return cursor.fetchall()
-
-        finally:
-            cursor.close()
-            conn.close()
+        # View removed in migration 029_cleanup_obsolete_tables.sql
+        return []
 
     def create_variant_mapping(
         self,

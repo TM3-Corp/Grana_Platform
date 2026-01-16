@@ -84,14 +84,10 @@ async def get_sales_analytics_realtime(
                 params.append(f"%{ch}%")
 
         if customers:
-            # Support both direct customer match and channel-based mapping (same as Audit)
-            customer_conditions = ' OR '.join([
-                'cust_direct.name ILIKE %s',
-                'cust_channel.name ILIKE %s'
-            ] * len(customers))
+            # Filter by customer name
+            customer_conditions = ' OR '.join(['cust_direct.name ILIKE %s'] * len(customers))
             where_clauses.append(f"({customer_conditions})")
             for cust in customers:
-                params.append(f"%{cust}%")
                 params.append(f"%{cust}%")
 
         if categories:
@@ -137,8 +133,8 @@ async def get_sales_analytics_realtime(
         # Build GROUP BY field
         group_fields = {
             'category': 'p.category',
-            'channel': 'ch.name',
-            'customer': 'COALESCE(cust_direct.name, cust_channel.name)',
+            'channel': 'COALESCE(ch.name, ch_assigned.name)',
+            'customer': 'cust_direct.name',
             'format': 'p.format',
             'sku_primario': 'oi.product_sku'  # Using original SKU for now
         }
@@ -151,17 +147,9 @@ async def get_sales_analytics_realtime(
                 LEFT JOIN customers cust_direct
                     ON cust_direct.id = o.customer_id
                     AND cust_direct.source = o.source
-                LEFT JOIN LATERAL (
-                    SELECT customer_external_id
-                    FROM customer_channel_rules ccr
-                    WHERE ccr.channel_external_id::text = (
-                        o.customer_notes::json->>'channel_id_relbase'
-                    )
-                    AND ccr.is_active = TRUE
-                ) ccr_match ON true
-                LEFT JOIN customers cust_channel
-                    ON cust_channel.external_id = ccr_match.customer_external_id
-                    AND cust_channel.source = 'relbase'
+                LEFT JOIN channels ch_assigned
+                    ON ch_assigned.external_id = cust_direct.assigned_channel_id::text
+                    AND ch_assigned.source = 'relbase'
             """
         else:
             customer_joins = ""
@@ -201,17 +189,9 @@ async def get_sales_analytics_realtime(
             LEFT JOIN customers cust_direct
                 ON cust_direct.id = o.customer_id
                 AND cust_direct.source = o.source
-            LEFT JOIN LATERAL (
-                SELECT customer_external_id
-                FROM customer_channel_rules ccr
-                WHERE ccr.channel_external_id::text = (
-                    o.customer_notes::json->>'channel_id_relbase'
-                )
-                AND ccr.is_active = TRUE
-            ) ccr_match ON true
-            LEFT JOIN customers cust_channel
-                ON cust_channel.external_id = ccr_match.customer_external_id
-                AND cust_channel.source = 'relbase'
+            LEFT JOIN channels ch_assigned
+                ON ch_assigned.external_id = cust_direct.assigned_channel_id::text
+                AND ch_assigned.source = 'relbase'
             WHERE {where_clause}
             GROUP BY {period_sql}
             ORDER BY {period_sql}
@@ -234,17 +214,9 @@ async def get_sales_analytics_realtime(
             LEFT JOIN customers cust_direct
                 ON cust_direct.id = o.customer_id
                 AND cust_direct.source = o.source
-            LEFT JOIN LATERAL (
-                SELECT customer_external_id
-                FROM customer_channel_rules ccr
-                WHERE ccr.channel_external_id::text = (
-                    o.customer_notes::json->>'channel_id_relbase'
-                )
-                AND ccr.is_active = TRUE
-            ) ccr_match ON true
-            LEFT JOIN customers cust_channel
-                ON cust_channel.external_id = ccr_match.customer_external_id
-                AND cust_channel.source = 'relbase'
+            LEFT JOIN channels ch_assigned
+                ON ch_assigned.external_id = cust_direct.assigned_channel_id::text
+                AND ch_assigned.source = 'relbase'
             WHERE {where_clause} AND {group_field} IS NOT NULL
             GROUP BY {group_field}
             ORDER BY revenue DESC
@@ -279,17 +251,9 @@ async def get_sales_analytics_realtime(
             LEFT JOIN customers cust_direct
                 ON cust_direct.id = o.customer_id
                 AND cust_direct.source = o.source
-            LEFT JOIN LATERAL (
-                SELECT customer_external_id
-                FROM customer_channel_rules ccr
-                WHERE ccr.channel_external_id::text = (
-                    o.customer_notes::json->>'channel_id_relbase'
-                )
-                AND ccr.is_active = TRUE
-            ) ccr_match ON true
-            LEFT JOIN customers cust_channel
-                ON cust_channel.external_id = ccr_match.customer_external_id
-                AND cust_channel.source = 'relbase'
+            LEFT JOIN channels ch_assigned
+                ON ch_assigned.external_id = cust_direct.assigned_channel_id::text
+                AND ch_assigned.source = 'relbase'
             WHERE {where_clause} AND {group_field} IS NOT NULL
             GROUP BY {group_field}
             ORDER BY revenue DESC
@@ -309,17 +273,9 @@ async def get_sales_analytics_realtime(
             LEFT JOIN customers cust_direct
                 ON cust_direct.id = o.customer_id
                 AND cust_direct.source = o.source
-            LEFT JOIN LATERAL (
-                SELECT customer_external_id
-                FROM customer_channel_rules ccr
-                WHERE ccr.channel_external_id::text = (
-                    o.customer_notes::json->>'channel_id_relbase'
-                )
-                AND ccr.is_active = TRUE
-            ) ccr_match ON true
-            LEFT JOIN customers cust_channel
-                ON cust_channel.external_id = ccr_match.customer_external_id
-                AND cust_channel.source = 'relbase'
+            LEFT JOIN channels ch_assigned
+                ON ch_assigned.external_id = cust_direct.assigned_channel_id::text
+                AND ch_assigned.source = 'relbase'
             WHERE {where_clause} AND {group_field} IS NOT NULL
         """
 

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts'
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 
 // Types
 interface DistributionItem {
@@ -162,6 +162,78 @@ const renderCustomLabel = ({ name, percentage }: any) => {
   return `${percentage.toFixed(0)}%`
 }
 
+// Detail Modal component
+interface DetailModalProps {
+  isOpen: boolean
+  onClose: () => void
+  title: string
+  icon: string
+  data: { name: string; value: number; percentage: number; color: string }[]
+  total: number
+}
+
+const DetailModal = ({ isOpen, onClose, title, icon, data, total }: DetailModalProps) => {
+  if (!isOpen) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        onClick={onClose}
+      />
+
+      {/* Modal */}
+      <div className="relative bg-white rounded-2xl shadow-2xl max-w-lg w-full mx-4 max-h-[80vh] overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <span>{icon}</span> {title}
+          </h3>
+          <button
+            onClick={onClose}
+            className="p-1 rounded-lg hover:bg-gray-100 transition-colors"
+          >
+            <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-4 overflow-y-auto max-h-[60vh]">
+          <div className="text-sm text-gray-500 mb-4">
+            Total: <span className="font-semibold text-gray-900">{formatCurrency(total)}</span>
+          </div>
+
+          <div className="space-y-2">
+            {data.map((item, index) => (
+              <div
+                key={index}
+                className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                <div
+                  className="w-4 h-4 rounded flex-shrink-0"
+                  style={{ backgroundColor: item.color }}
+                />
+                <span className="flex-1 font-medium text-gray-800">
+                  {item.name}
+                </span>
+                <span className="text-gray-600">
+                  {formatCurrency(item.value)}
+                </span>
+                <span className="text-gray-400 text-sm w-12 text-right">
+                  {item.percentage.toFixed(1)}%
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // Single Pie Chart component
 interface SinglePieChartProps {
   title: string
@@ -172,6 +244,8 @@ interface SinglePieChartProps {
 }
 
 const SinglePieChart = ({ title, icon, data, colors, loading }: SinglePieChartProps) => {
+  const [showModal, setShowModal] = useState(false)
+
   const chartData = useMemo(() => {
     return data.map((item, index) => ({
       name: item.group_value || 'Sin Asignar',
@@ -189,7 +263,7 @@ const SinglePieChart = ({ title, icon, data, colors, loading }: SinglePieChartPr
     return (
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="h-6 bg-gray-200 rounded w-1/2 mb-4 animate-pulse" />
-        <div className="h-72 bg-gray-100 rounded animate-pulse" />
+        <div className="h-64 bg-gray-100 rounded animate-pulse" />
       </div>
     )
   }
@@ -200,7 +274,7 @@ const SinglePieChart = ({ title, icon, data, colors, loading }: SinglePieChartPr
         <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2 mb-4">
           <span>{icon}</span> {title}
         </h3>
-        <div className="h-72 flex items-center justify-center text-gray-400">
+        <div className="h-64 flex items-center justify-center text-gray-400">
           No hay datos disponibles
         </div>
       </div>
@@ -208,62 +282,85 @@ const SinglePieChart = ({ title, icon, data, colors, loading }: SinglePieChartPr
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-          <span>{icon}</span> {title}
-        </h3>
-        <span className="text-sm text-gray-500">
-          Total: {formatCurrency(total)}
-        </span>
-      </div>
+    <>
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <span>{icon}</span> {title}
+          </h3>
+          <span className="text-sm text-gray-500">
+            Total: {formatCurrency(total)}
+          </span>
+        </div>
 
-      <div className="h-72">
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-            <Pie
-              data={chartData}
-              cx="50%"
-              cy="50%"
-              innerRadius={45}
-              outerRadius={70}
-              paddingAngle={2}
-              dataKey="value"
-              label={renderCustomLabel}
-              labelLine={false}
+        <div className="h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={chartData}
+                cx="50%"
+                cy="50%"
+                innerRadius={50}
+                outerRadius={80}
+                dataKey="value"
+                label={renderCustomLabel}
+                labelLine={false}
+                stroke="none"
+              >
+                {chartData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.color} />
+                ))}
+              </Pie>
+              <Tooltip content={<CustomTooltip />} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Legend */}
+        <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+          {chartData.slice(0, 8).map((item, index) => (
+            <div key={index} className="flex items-center gap-2 truncate">
+              <div
+                className="w-3 h-3 rounded-sm flex-shrink-0"
+                style={{ backgroundColor: item.color }}
+              />
+              <span className="truncate" title={item.name}>
+                {item.name}
+              </span>
+              <span className="text-gray-400 ml-auto">
+                {item.percentage.toFixed(0)}%
+              </span>
+            </div>
+          ))}
+          {chartData.length > 8 && (
+            <button
+              onClick={() => setShowModal(true)}
+              className="text-green-600 hover:text-green-700 col-span-2 text-center font-medium hover:underline cursor-pointer"
             >
-              {chartData.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={entry.color} />
-              ))}
-            </Pie>
-            <Tooltip content={<CustomTooltip />} />
-          </PieChart>
-        </ResponsiveContainer>
+              +{chartData.length - 8} más →
+            </button>
+          )}
+        </div>
+
+        {/* View All Button */}
+        <button
+          onClick={() => setShowModal(true)}
+          className="mt-3 w-full py-2 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
+        >
+          Ver detalle completo
+        </button>
       </div>
 
-      {/* Legend */}
-      <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-        {chartData.slice(0, 8).map((item, index) => (
-          <div key={index} className="flex items-center gap-2 truncate">
-            <div
-              className="w-3 h-3 rounded-sm flex-shrink-0"
-              style={{ backgroundColor: item.color }}
-            />
-            <span className="truncate" title={item.name}>
-              {item.name}
-            </span>
-            <span className="text-gray-400 ml-auto">
-              {item.percentage.toFixed(0)}%
-            </span>
-          </div>
-        ))}
-        {chartData.length > 8 && (
-          <div className="text-gray-400 col-span-2 text-center">
-            +{chartData.length - 8} más
-          </div>
-        )}
-      </div>
-    </div>
+      {/* Detail Modal */}
+      <DetailModal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        title={title}
+        icon={icon}
+        data={chartData}
+        total={total}
+      />
+    </>
   )
 }
 

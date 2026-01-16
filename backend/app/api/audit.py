@@ -192,6 +192,7 @@ def get_pack_component_mappings(sku: str, cursor) -> list:
     - sku_primario: Primary SKU for grouping
     - category: Product category
     - sku_value: Value for proportional revenue calculation
+    - units_per_display: Conversion factor for unit calculation
 
     Example for PACKNAVIDAD2:
     [
@@ -509,6 +510,19 @@ async def get_audit_data(
         with psycopg2.connect(DATABASE_URL) as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
 
+                # Check which columns exist in the database (for production compatibility)
+                cursor.execute("""
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_name = 'orders' AND column_name = 'invoice_status'
+                """)
+                has_invoice_status = cursor.fetchone() is not None
+
+                cursor.execute("""
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_name = 'order_items' AND column_name = 'sku_primario'
+                """)
+                has_sku_primario = cursor.fetchone() is not None
+
                 # Build WHERE clause based on filters
                 where_clauses = []
                 params = []
@@ -516,11 +530,9 @@ async def get_audit_data(
                 # ✅ BASE FILTER: Only show RelBase data to avoid duplication
                 where_clauses.append("o.source = 'relbase'")
 
-                # ✅ INVOICE STATUS FILTER: Only show accepted invoices (exclude cancelled, declined, NULL)
-                # This aligns with Sales Analytics endpoint and ensures data consistency
-                where_clauses.append("o.invoice_status IN ('accepted', 'accepted_objection')")
-
-                # NOTE: ANU- SKUs are now included - map_sku_with_quantity() handles mapping
+                # ✅ INVOICE STATUS FILTER: Only if column exists
+                if has_invoice_status:
+                    where_clauses.append("o.invoice_status IN ('accepted', 'accepted_objection')")
 
                 # Multi-value filters using IN operator
                 if source:
@@ -580,14 +592,13 @@ async def get_audit_data(
 
                 if customer:
                     # For customer, use OR with ILIKE for partial matching
-                    customer_conditions = ' OR '.join(['(cust_direct.name ILIKE %s OR cust_channel.name ILIKE %s)'] * len(customer))
+                    customer_conditions = ' OR '.join(['cust_direct.name ILIKE %s'] * len(customer))
                     where_clauses.append(f"({customer_conditions})")
                     for cust in customer:
                         params.append(f"%{cust}%")
-                        params.append(f"%{cust}%")
 
-                # SKU Primario filter (now using database column)
-                if sku_primario:
+                # SKU Primario filter (only if column exists in database)
+                if sku_primario and has_sku_primario:
                     placeholders = ','.join(['%s'] * len(sku_primario))
                     where_clauses.append(f"oi.sku_primario IN ({placeholders})")
                     params.extend(sku_primario)
@@ -595,11 +606,11 @@ async def get_audit_data(
                 # Multi-field search: Cliente, Producto, Pedido, Canal, SKU Original
                 if sku:
                     search_conditions = [
-                        "COALESCE(cust_direct.name, cust_channel.name, '') ILIKE %s",  # Cliente
-                        "oi.product_name ILIKE %s",                                     # Producto
-                        "o.external_id ILIKE %s",                                       # Pedido
-                        "ch.name ILIKE %s",                                             # Canal
-                        "oi.product_sku ILIKE %s"                                       # SKU Original
+                        "COALESCE(cust_direct.name, '') ILIKE %s",  # Cliente
+                        "oi.product_name ILIKE %s",                  # Producto
+                        "o.external_id ILIKE %s",                    # Pedido
+                        "ch.name ILIKE %s",                          # Canal
+                        "oi.product_sku ILIKE %s"                    # SKU Original
                     ]
                     where_clauses.append(f"({' OR '.join(search_conditions)})")
                     # Add the same search term for each condition
@@ -609,7 +620,7 @@ async def get_audit_data(
                 # Add has_nulls filter to SQL query
                 if has_nulls:
                     where_clauses.append("""(
-                        (cust_direct.id IS NULL AND cust_channel.id IS NULL) OR
+                        cust_direct.id IS NULL OR
                         o.channel_id IS NULL OR
                         oi.product_sku IS NULL OR
                         oi.product_sku = ''
@@ -654,22 +665,6 @@ async def get_audit_data(
                         LEFT JOIN customers cust_direct
                             ON cust_direct.id = o.customer_id
                             AND cust_direct.source = o.source
-                        LEFT JOIN LATERAL (
-                            SELECT customer_external_id
-                            FROM customer_channel_rules ccr
-                            WHERE ccr.channel_external_id::text = (
-                                CASE
-                                    WHEN o.customer_notes ~ '^\\s*\\{{'
-                                    THEN o.customer_notes::json->>'channel_id_relbase'
-                                    ELSE NULL
-                                END
-                            )
-                            AND ccr.is_active = TRUE
-                            LIMIT 1
-                        ) ccr_match ON true
-                        LEFT JOIN customers cust_channel
-                            ON cust_channel.external_id = ccr_match.customer_external_id
-                            AND cust_channel.source = 'relbase'
                         WHERE {where_sql}
                         LIMIT 50000
                     """
@@ -769,7 +764,7 @@ async def get_audit_data(
                 # Map frontend groupBy values to SQL group fields
                 # sku_primario is handled above as a special case
                 group_field_map = {
-                    'customer_name': "COALESCE(cust_direct.name, cust_channel.name, 'SIN NOMBRE')",
+                    'customer_name': "COALESCE(cust_direct.name, 'SIN NOMBRE')",
                     'category': 'p.category',
                     'channel_name': "COALESCE(ch.name, 'SIN CANAL')",
                     'order_date': 'o.order_date::date',
@@ -800,22 +795,6 @@ async def get_audit_data(
                         LEFT JOIN customers cust_direct
                             ON cust_direct.id = o.customer_id
                             AND cust_direct.source = o.source
-                        LEFT JOIN LATERAL (
-                            SELECT customer_external_id
-                            FROM customer_channel_rules ccr
-                            WHERE ccr.channel_external_id::text = (
-                                CASE
-                                    WHEN o.customer_notes ~ '^\\s*\\{{'
-                                    THEN o.customer_notes::json->>'channel_id_relbase'
-                                    ELSE NULL
-                                END
-                            )
-                            AND ccr.is_active = TRUE
-                            LIMIT 1
-                        ) ccr_match ON true
-                        LEFT JOIN customers cust_channel
-                            ON cust_channel.external_id = ccr_match.customer_external_id
-                            AND cust_channel.source = 'relbase'
                         WHERE {where_sql}
                         GROUP BY {group_field}
                         HAVING {group_field} IS NOT NULL
@@ -839,23 +818,7 @@ async def get_audit_data(
                             LEFT JOIN customers cust_direct
                                 ON cust_direct.id = o.customer_id
                                 AND cust_direct.source = o.source
-                            LEFT JOIN LATERAL (
-                                SELECT customer_external_id
-                                FROM customer_channel_rules ccr
-                                WHERE ccr.channel_external_id::text = (
-                                    CASE
-                                        WHEN o.customer_notes ~ '^\\s*\\{{'
-                                        THEN o.customer_notes::json->>'channel_id_relbase'
-                                        ELSE NULL
-                                    END
-                                )
-                                AND ccr.is_active = TRUE
-                                LIMIT 1
-                            ) ccr_match ON true
-                            LEFT JOIN customers cust_channel
-                                ON cust_channel.external_id = ccr_match.customer_external_id
-                                AND cust_channel.source = 'relbase'
-                            WHERE {where_sql}
+                                                        WHERE {where_sql}
                             GROUP BY {group_field}
                             HAVING {group_field} IS NOT NULL
                         ) subquery
@@ -877,23 +840,7 @@ async def get_audit_data(
                         LEFT JOIN customers cust_direct
                             ON cust_direct.id = o.customer_id
                             AND cust_direct.source = o.source
-                        LEFT JOIN LATERAL (
-                            SELECT customer_external_id
-                            FROM customer_channel_rules ccr
-                            WHERE ccr.channel_external_id::text = (
-                                CASE
-                                    WHEN o.customer_notes ~ '^\\s*\\{{'
-                                    THEN o.customer_notes::json->>'channel_id_relbase'
-                                    ELSE NULL
-                                END
-                            )
-                            AND ccr.is_active = TRUE
-                            LIMIT 1
-                        ) ccr_match ON true
-                        LEFT JOIN customers cust_channel
-                            ON cust_channel.external_id = ccr_match.customer_external_id
-                            AND cust_channel.source = 'relbase'
-                        WHERE {where_sql}
+                                                WHERE {where_sql}
                     """
 
                     cursor.execute(summary_query, params[:-2])  # Exclude limit/offset
@@ -923,23 +870,7 @@ async def get_audit_data(
                             LEFT JOIN customers cust_direct
                                 ON cust_direct.id = o.customer_id
                                 AND cust_direct.source = o.source
-                            LEFT JOIN LATERAL (
-                                SELECT customer_external_id
-                                FROM customer_channel_rules ccr
-                                WHERE ccr.channel_external_id::text = (
-                                    CASE
-                                        WHEN o.customer_notes ~ '^\\s*\\{{'
-                                        THEN o.customer_notes::json->>'channel_id_relbase'
-                                        ELSE NULL
-                                    END
-                                )
-                                AND ccr.is_active = TRUE
-                                LIMIT 1
-                            ) ccr_match ON true
-                            LEFT JOIN customers cust_channel
-                                ON cust_channel.external_id = ccr_match.customer_external_id
-                                AND cust_channel.source = 'relbase'
-                            WHERE {where_sql}
+                                                        WHERE {where_sql}
                               AND {group_field} = %s
                               AND oi.product_sku IS NOT NULL
                         """
@@ -999,23 +930,7 @@ async def get_audit_data(
                         LEFT JOIN customers cust_direct
                             ON cust_direct.id = o.customer_id
                             AND cust_direct.source = o.source
-                        LEFT JOIN LATERAL (
-                            SELECT customer_external_id
-                            FROM customer_channel_rules ccr
-                            WHERE ccr.channel_external_id::text = (
-                                CASE
-                                    WHEN o.customer_notes ~ '^\\s*\\{{'
-                                    THEN o.customer_notes::json->>'channel_id_relbase'
-                                    ELSE NULL
-                                END
-                            )
-                            AND ccr.is_active = TRUE
-                            LIMIT 1
-                        ) ccr_match ON true
-                        LEFT JOIN customers cust_channel
-                            ON cust_channel.external_id = ccr_match.customer_external_id
-                            AND cust_channel.source = 'relbase'
-                        WHERE {where_sql}
+                                                WHERE {where_sql}
                           AND oi.product_sku IS NOT NULL
                           AND oi.product_sku != ''
                     """, params)
@@ -1076,25 +991,12 @@ async def get_audit_data(
                         o.total as order_total,
                         o.source as order_source,
 
-                        -- Customer info (improved with channel-based mapping)
-                        COALESCE(
-                            cust_direct.id::text,
-                            cust_channel.id::text,
-                            'NULL'
-                        ) as customer_id,
-                        COALESCE(
-                            cust_direct.external_id,
-                            cust_channel.external_id,
-                            'NULL'
-                        ) as customer_external_id,
-                        COALESCE(
-                            cust_direct.name,
-                            cust_channel.name,
-                            'SIN NOMBRE'
-                        ) as customer_name,
+                        -- Customer info
+                        COALESCE(cust_direct.id::text, 'NULL') as customer_id,
+                        COALESCE(cust_direct.external_id, 'NULL') as customer_external_id,
+                        COALESCE(cust_direct.name, 'SIN NOMBRE') as customer_name,
                         CASE
                             WHEN cust_direct.id IS NOT NULL THEN 'direct'
-                            WHEN cust_channel.id IS NOT NULL THEN 'channel_mapped'
                             ELSE 'null'
                         END as customer_source,
 
@@ -1126,7 +1028,7 @@ async def get_audit_data(
                         p.format,
 
                         -- Flags
-                        CASE WHEN cust_direct.id IS NULL AND cust_channel.id IS NULL THEN true ELSE false END as customer_null,
+                        CASE WHEN cust_direct.id IS NULL THEN true ELSE false END as customer_null,
                         CASE WHEN o.channel_id IS NULL THEN true ELSE false END as channel_null,
                         CASE WHEN oi.product_sku IS NULL OR oi.product_sku = '' THEN true ELSE false END as sku_null
 
@@ -1140,25 +1042,8 @@ async def get_audit_data(
                         ON cust_direct.id = o.customer_id
                         AND cust_direct.source = o.source
 
-                    -- Channel-based customer mapping via customer_channel_rules
-                    LEFT JOIN LATERAL (
-                        SELECT customer_external_id
-                        FROM customer_channel_rules ccr
-                        WHERE ccr.channel_external_id::text = (
-                            CASE
-                                WHEN o.customer_notes ~ '^\\s*\\{{'
-                                THEN o.customer_notes::json->>'channel_id_relbase'
-                                ELSE NULL
-                            END
-                        )
-                        AND ccr.is_active = TRUE
-                        LIMIT 1
-                    ) ccr_match ON true
-
-                    LEFT JOIN customers cust_channel
-                        ON cust_channel.external_id = ccr_match.customer_external_id
-                        AND cust_channel.source = 'relbase'
-
+                    -- Customer lookup (direct via customer_id)
+                    
                     WHERE {where_sql}
                     ORDER BY o.order_date DESC, o.id, oi.id
                     LIMIT %s OFFSET %s
@@ -1178,23 +1063,7 @@ async def get_audit_data(
                     LEFT JOIN customers cust_direct
                         ON cust_direct.id = o.customer_id
                         AND cust_direct.source = o.source
-                    LEFT JOIN LATERAL (
-                        SELECT customer_external_id
-                        FROM customer_channel_rules ccr
-                        WHERE ccr.channel_external_id::text = (
-                            CASE
-                                WHEN o.customer_notes ~ '^\\s*\\{{'
-                                THEN o.customer_notes::json->>'channel_id_relbase'
-                                ELSE NULL
-                            END
-                        )
-                        AND ccr.is_active = TRUE
-                        LIMIT 1
-                    ) ccr_match ON true
-                    LEFT JOIN customers cust_channel
-                        ON cust_channel.external_id = ccr_match.customer_external_id
-                        AND cust_channel.source = 'relbase'
-                    WHERE {where_sql}
+                                        WHERE {where_sql}
                 """
 
                 cursor.execute(count_query, params[:-2])  # Exclude limit/offset
@@ -1215,23 +1084,7 @@ async def get_audit_data(
                     LEFT JOIN customers cust_direct
                         ON cust_direct.id = o.customer_id
                         AND cust_direct.source = o.source
-                    LEFT JOIN LATERAL (
-                        SELECT customer_external_id
-                        FROM customer_channel_rules ccr
-                        WHERE ccr.channel_external_id::text = (
-                            CASE
-                                WHEN o.customer_notes ~ '^\\s*\\{{'
-                                THEN o.customer_notes::json->>'channel_id_relbase'
-                                ELSE NULL
-                            END
-                        )
-                        AND ccr.is_active = TRUE
-                        LIMIT 1
-                    ) ccr_match ON true
-                    LEFT JOIN customers cust_channel
-                        ON cust_channel.external_id = ccr_match.customer_external_id
-                        AND cust_channel.source = 'relbase'
-                    WHERE {where_sql}
+                                        WHERE {where_sql}
                 """
 
                 cursor.execute(summary_query, params[:-2])  # Exclude limit/offset
@@ -1244,36 +1097,57 @@ async def get_audit_data(
                     "total_revenue": float(summary_row['total_revenue'] or 0)
                 }
 
-                # ===== UNITS TOTALS FROM MV =====
-                # Get accurate unit totals from sales_facts_mv (applies conversion factors)
-                # This ensures consistency with Sales Analytics view
-                mv_units_query = """
-                    SELECT
-                        SUM(
-                            CASE
-                                WHEN is_caja_master THEN units_sold * COALESCE(items_per_master_box, 1)
-                                ELSE units_sold * COALESCE(units_per_display, 1)
-                            END
-                        ) as total_units
-                    FROM sales_facts_mv
-                    WHERE order_date >= %s AND order_date <= %s
-                """
-                # Get date params - dates are added LAST to params (before limit/offset)
-                # So we need to extract from the end, not the beginning
-                date_params = []
-                if from_date and to_date:
-                    date_params = [from_date, to_date]
-                elif from_date:
-                    date_params = [from_date, from_date]  # Use same date for range
-                elif to_date:
-                    date_params = [to_date, to_date]  # Use same date for range
+                # ===== UNITS TOTALS FROM SAME SOURCE AS LISTING =====
+                # Calculate total_unidades from orders/order_items with proper enrichment
+                # This ensures totals match EXACTLY what the listing shows
+                #
+                # We fetch all filtered order_items and calculate units using the same
+                # ProductCatalogService.calculate_units() logic as the enriched rows
 
-                if len(date_params) >= 2:
-                    cursor.execute(mv_units_query, date_params[:2])
-                    mv_row = cursor.fetchone()
-                    filtered_totals["total_unidades_mv"] = int(mv_row['total_units'] or 0) if mv_row else 0
-                else:
-                    filtered_totals["total_unidades_mv"] = 0
+                units_query = f"""
+                    SELECT
+                        oi.product_sku,
+                        oi.quantity,
+                        o.source as order_source
+                    FROM orders o
+                    LEFT JOIN order_items oi ON oi.order_id = o.id
+                    LEFT JOIN products p ON p.sku = oi.product_sku
+                    LEFT JOIN channels ch ON ch.id = o.channel_id
+                    LEFT JOIN customers cust_direct
+                        ON cust_direct.id = o.customer_id
+                        AND cust_direct.source = o.source
+                    WHERE {where_sql}
+                      AND oi.product_sku IS NOT NULL
+                """
+
+                cursor.execute(units_query, params[:-2])  # Exclude limit/offset
+                all_items_for_units = cursor.fetchall()
+
+                # Calculate total units using same logic as row enrichment
+                service = get_product_catalog_service()
+                total_calculated_units = 0
+                total_calculated_peso = 0.0
+
+                for item in all_items_for_units:
+                    item_sku = item['product_sku']
+                    item_qty = item['quantity'] or 0
+                    item_source = item.get('order_source')
+
+                    # Use ProductCatalogService to calculate units (same as enrichment)
+                    units = service.calculate_units(item_sku, item_qty, item_source)
+                    total_calculated_units += units
+
+                    # Also calculate peso for consistency
+                    # First need to map SKU to get official SKU
+                    official_sku, _, _, _, _ = map_sku_with_quantity(
+                        item_sku, '', product_catalog, catalog_skus, catalog_master_skus, item_source
+                    )
+                    if official_sku:
+                        peso = service.calculate_peso_total(official_sku, item_qty)
+                        total_calculated_peso += peso
+
+                filtered_totals["total_unidades_calculated"] = total_calculated_units
+                filtered_totals["total_peso_calculated"] = round(total_calculated_peso, 4)
 
                 # Enrich with product catalog data using conservative mapping
                 enriched_rows = []
@@ -1338,27 +1212,16 @@ async def get_audit_data(
                         row_dict['in_catalog'] = False
                         row_dict['conversion_factor'] = 1
 
-                    # ✅ PACK EXPANSION: Check if this is a variety pack (multiple component mappings)
-                    # If so, expand into individual component rows with proportional revenue
-                    pack_mappings = get_pack_component_mappings(sku, cursor)
-                    if pack_mappings:
-                        # Expand PACK into component rows
-                        component_rows = expand_pack_to_components(row_dict, pack_mappings, cursor)
-                        enriched_rows.extend(component_rows)
-                    else:
-                        # Normal product - add as-is
-                        enriched_rows.append(row_dict)
+                    enriched_rows.append(row_dict)
 
                 # Calculate totals from enriched data
-                # total_unidades: Use MV-based calculation for accuracy (full dataset)
-                # Fallback to page sum if MV returns 0 (no date filter case)
-                # total_peso: Calculated from current page only (acceptable approximation)
-                page_unidades = sum(row.get('unidades', 0) for row in enriched_rows)
-                mv_unidades = filtered_totals.get("total_unidades_mv", 0)
-                filtered_totals["total_unidades"] = mv_unidades if mv_unidades > 0 else page_unidades
-                filtered_totals["total_peso"] = round(sum(row.get('peso_total', 0) for row in enriched_rows), 4)
+                # total_unidades: Use same-source calculation (orders/order_items) for consistency
+                # total_peso: Also from same-source calculation
+                # This ensures totals match EXACTLY what the listing shows
+                filtered_totals["total_unidades"] = filtered_totals.get("total_unidades_calculated", sum(row.get('unidades', 0) for row in enriched_rows))
+                filtered_totals["total_peso"] = filtered_totals.get("total_peso_calculated", round(sum(row.get('peso_total', 0) for row in enriched_rows), 4))
                 # Also keep page-only units for debugging
-                filtered_totals["page_unidades"] = page_unidades
+                filtered_totals["page_unidades"] = sum(row.get('unidades', 0) for row in enriched_rows)
 
                 return {
                     "status": "success",
@@ -1397,75 +1260,110 @@ async def get_available_filters():
     """
     Get available filter values (unique values for dropdowns).
     Returns unique sources, channels, customers, SKUs for filtering.
+    Compatible with both development and production database schemas.
     """
 
     if not DATABASE_URL:
         raise HTTPException(status_code=500, detail="DATABASE_URL not configured")
 
+    sources = []
+    channels = []
+    customers = []
+    skus = []
+    current_year = datetime.now().year
+
     try:
         with psycopg2.connect(DATABASE_URL) as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
 
-                # Get current year for filtering
-                current_year = datetime.now().year
+                # Get unique sources (simple query, should work on any schema)
+                try:
+                    cursor.execute("""
+                        SELECT DISTINCT source
+                        FROM orders
+                        WHERE source IS NOT NULL
+                        ORDER BY source
+                    """)
+                    sources = [row['source'] for row in cursor.fetchall() if row['source']]
+                except Exception as e:
+                    print(f"Warning: Error fetching sources: {e}")
 
-                # Get unique sources
-                cursor.execute("""
-                    SELECT DISTINCT source
-                    FROM orders
-                    WHERE EXTRACT(YEAR FROM order_date) = %s
-                    ORDER BY source
-                """, (current_year,))
-                sources = [row['source'] for row in cursor.fetchall() if row['source']]
+                # Get channels - try with is_active first, fallback to simpler query
+                try:
+                    # Check if is_active column exists
+                    cursor.execute("""
+                        SELECT column_name FROM information_schema.columns
+                        WHERE table_name = 'channels' AND column_name = 'is_active'
+                    """)
+                    has_is_active = cursor.fetchone() is not None
 
-                # Get official Relbase channels that have data for the current year
-                # Exclude channels with no orders (EXPORTACIÓN, HORECA, MARKETPLACES)
-                # Exclude "Relbase" as it's a data source, not a sales channel
-                current_year = datetime.now().year
-                cursor.execute("""
-                    SELECT DISTINCT ch.name as channel_name
-                    FROM channels ch
-                    INNER JOIN orders o ON o.channel_id = ch.id
-                    WHERE ch.external_id IS NOT NULL
-                      AND ch.source = 'relbase'
-                      AND ch.is_active = true
-                      AND ch.name NOT ILIKE 'relbase'
-                      AND o.source = 'relbase'
-                      AND o.invoice_status IN ('accepted', 'accepted_objection')
-                      AND EXTRACT(YEAR FROM o.order_date) = %s
-                    ORDER BY ch.name
-                """, (current_year,))
-                channels = [row['channel_name'] for row in cursor.fetchall()]
+                    # Check if invoice_status column exists in orders
+                    cursor.execute("""
+                        SELECT column_name FROM information_schema.columns
+                        WHERE table_name = 'orders' AND column_name = 'invoice_status'
+                    """)
+                    has_invoice_status = cursor.fetchone() is not None
 
-                # Always add "Sin Canal Asignado" as default for orders without channel
-                channels.append('Sin Canal Asignado')
+                    if has_is_active and has_invoice_status:
+                        # Full query with all filters
+                        cursor.execute("""
+                            SELECT DISTINCT ch.name as channel_name
+                            FROM channels ch
+                            INNER JOIN orders o ON o.channel_id = ch.id
+                            WHERE ch.name IS NOT NULL
+                              AND ch.name NOT ILIKE 'relbase'
+                              AND ch.is_active = true
+                              AND o.invoice_status IN ('accepted', 'accepted_objection')
+                            ORDER BY ch.name
+                        """)
+                    else:
+                        # Simplified query for production compatibility
+                        cursor.execute("""
+                            SELECT DISTINCT ch.name as channel_name
+                            FROM channels ch
+                            INNER JOIN orders o ON o.channel_id = ch.id
+                            WHERE ch.name IS NOT NULL
+                              AND ch.name NOT ILIKE 'relbase'
+                            ORDER BY ch.name
+                        """)
+                    channels = [row['channel_name'] for row in cursor.fetchall() if row['channel_name']]
+                except Exception as e:
+                    print(f"Warning: Error fetching channels: {e}")
 
-                # Get unique customers (limit to top 100 by order count)
-                cursor.execute("""
-                    SELECT cust.name as customer_name
-                    FROM orders o
-                    LEFT JOIN customers cust ON cust.id = o.customer_id
-                    WHERE EXTRACT(YEAR FROM order_date) = %s
-                      AND cust.name IS NOT NULL
-                    GROUP BY cust.name
-                    ORDER BY COUNT(*) DESC
-                    LIMIT 100
-                """, (current_year,))
-                customers = [row['customer_name'] for row in cursor.fetchall()]
+                # Always add "Sin Canal Asignado" option
+                if 'Sin Canal Asignado' not in channels:
+                    channels.append('Sin Canal Asignado')
 
-                # Get unique SKUs (limit to top 100 by quantity sold)
-                cursor.execute("""
-                    SELECT oi.product_sku as sku
-                    FROM order_items oi
-                    JOIN orders o ON o.id = oi.order_id
-                    WHERE EXTRACT(YEAR FROM o.order_date) = %s
-                      AND oi.product_sku IS NOT NULL
-                      AND oi.product_sku != ''
-                    GROUP BY oi.product_sku
-                    ORDER BY SUM(oi.quantity) DESC
-                    LIMIT 100
-                """, (current_year,))
-                skus = [row['sku'] for row in cursor.fetchall()]
+                # Get unique customers
+                try:
+                    cursor.execute("""
+                        SELECT cust.name as customer_name
+                        FROM orders o
+                        LEFT JOIN customers cust ON cust.id = o.customer_id
+                        WHERE cust.name IS NOT NULL
+                        GROUP BY cust.name
+                        ORDER BY COUNT(*) DESC
+                        LIMIT 100
+                    """)
+                    customers = [row['customer_name'] for row in cursor.fetchall()]
+                except Exception as e:
+                    print(f"Warning: Error fetching customers: {e}")
+
+                # Get unique SKUs
+                try:
+                    cursor.execute("""
+                        SELECT oi.product_sku as sku
+                        FROM order_items oi
+                        JOIN orders o ON o.id = oi.order_id
+                        WHERE oi.product_sku IS NOT NULL
+                          AND oi.product_sku != ''
+                        GROUP BY oi.product_sku
+                        ORDER BY SUM(oi.quantity) DESC
+                        LIMIT 100
+                    """)
+                    skus = [row['sku'] for row in cursor.fetchall()]
+                except Exception as e:
+                    print(f"Warning: Error fetching SKUs: {e}")
 
                 return {
                     "status": "success",
@@ -1499,65 +1397,79 @@ async def get_audit_summary():
         with psycopg2.connect(DATABASE_URL) as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
 
-                # Get current year for filtering (dynamic, won't break on year rollover)
-                current_year = datetime.now().year
+                # Check if invoice_status column exists (production compatibility)
+                cursor.execute("""
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_name = 'orders' AND column_name = 'invoice_status'
+                """)
+                has_invoice_status = cursor.fetchone() is not None
+
+                # Build invoice filter clause
+                invoice_filter = "AND invoice_status IN ('accepted', 'accepted_objection')" if has_invoice_status else ""
+                invoice_filter_o = "AND o.invoice_status IN ('accepted', 'accepted_objection')" if has_invoice_status else ""
 
                 # Total orders
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT COUNT(*) as total
                     FROM orders
-                    WHERE EXTRACT(YEAR FROM order_date) = %s
-                """, (current_year,))
+                    WHERE EXTRACT(YEAR FROM order_date) = 2025
+                      {invoice_filter}
+                """)
                 total_orders = cursor.fetchone()['total']
 
                 # Orders with NULL customer
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT COUNT(*) as total
                     FROM orders
-                    WHERE EXTRACT(YEAR FROM order_date) = %s
+                    WHERE EXTRACT(YEAR FROM order_date) = 2025
+                      {invoice_filter}
                       AND customer_id IS NULL
-                """, (current_year,))
+                """)
                 null_customers = cursor.fetchone()['total']
 
                 # Orders with NULL channel
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT COUNT(*) as total
                     FROM orders o
-                    WHERE EXTRACT(YEAR FROM order_date) = %s
+                    WHERE EXTRACT(YEAR FROM order_date) = 2025
+                      {invoice_filter}
                       AND o.channel_id IS NULL
-                """, (current_year,))
+                """)
                 null_channels = cursor.fetchone()['total']
 
                 # Order items with NULL or empty SKU
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT COUNT(*) as total
                     FROM order_items oi
                     JOIN orders o ON o.id = oi.order_id
-                    WHERE EXTRACT(YEAR FROM o.order_date) = %s
+                    WHERE EXTRACT(YEAR FROM o.order_date) = 2025
+                      {invoice_filter_o}
                       AND (oi.product_sku IS NULL OR oi.product_sku = '')
-                """, (current_year,))
+                """)
                 null_skus = cursor.fetchone()['total']
 
                 # Unique SKUs
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT COUNT(DISTINCT oi.product_sku) as total
                     FROM order_items oi
                     JOIN orders o ON o.id = oi.order_id
-                    WHERE EXTRACT(YEAR FROM o.order_date) = %s
+                    WHERE EXTRACT(YEAR FROM o.order_date) = 2025
+                      {invoice_filter_o}
                       AND oi.product_sku IS NOT NULL
                       AND oi.product_sku != ''
-                """, (current_year,))
+                """)
                 unique_skus = cursor.fetchone()['total']
 
                 # Get all SKUs with product names and source for mapping
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT DISTINCT oi.product_sku as sku, oi.product_name, o.source
                     FROM order_items oi
                     JOIN orders o ON o.id = oi.order_id
-                    WHERE EXTRACT(YEAR FROM o.order_date) = %s
+                    WHERE EXTRACT(YEAR FROM o.order_date) = 2025
+                      {invoice_filter_o}
                       AND oi.product_sku IS NOT NULL
                       AND oi.product_sku != ''
-                """, (current_year,))
+                """)
                 all_skus = cursor.fetchall()
 
                 # Apply conservative mapping to determine which SKUs are actually unmapped
@@ -1632,14 +1544,27 @@ async def export_audit_data(
         with psycopg2.connect(DATABASE_URL) as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
 
+                # Check which columns exist (for production compatibility)
+                cursor.execute("""
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_name = 'orders' AND column_name = 'invoice_status'
+                """)
+                has_invoice_status = cursor.fetchone() is not None
+
+                cursor.execute("""
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_name = 'order_items' AND column_name = 'sku_primario'
+                """)
+                has_sku_primario = cursor.fetchone() is not None
+
                 # Build WHERE clause (same as /data endpoint)
                 where_clauses = []
                 params = []
 
                 # Base filters
                 where_clauses.append("o.source = 'relbase'")
-                where_clauses.append("o.invoice_status IN ('accepted', 'accepted_objection')")
-                # NOTE: ANU- SKUs are now included - map_sku_with_quantity() handles mapping
+                if has_invoice_status:
+                    where_clauses.append("o.invoice_status IN ('accepted', 'accepted_objection')")
 
                 if source:
                     placeholders = ','.join(['%s'] * len(source))
@@ -1684,20 +1609,19 @@ async def export_audit_data(
                         params.append(f"%{ch}%")
 
                 if customer:
-                    customer_conditions = ' OR '.join(['(cust_direct.name ILIKE %s OR cust_channel.name ILIKE %s)'] * len(customer))
+                    customer_conditions = ' OR '.join(['cust_direct.name ILIKE %s'] * len(customer))
                     where_clauses.append(f"({customer_conditions})")
                     for cust in customer:
                         params.append(f"%{cust}%")
-                        params.append(f"%{cust}%")
 
-                if sku_primario:
+                if sku_primario and has_sku_primario:
                     placeholders = ','.join(['%s'] * len(sku_primario))
                     where_clauses.append(f"oi.sku_primario IN ({placeholders})")
                     params.extend(sku_primario)
 
                 if sku:
                     search_conditions = [
-                        "COALESCE(cust_direct.name, cust_channel.name, '') ILIKE %s",
+                        "COALESCE(cust_direct.name, '') ILIKE %s",
                         "oi.product_name ILIKE %s",
                         "o.external_id ILIKE %s",
                         "ch.name ILIKE %s",
@@ -1709,7 +1633,7 @@ async def export_audit_data(
 
                 if has_nulls:
                     where_clauses.append("""(
-                        (cust_direct.id IS NULL AND cust_channel.id IS NULL) OR
+                        cust_direct.id IS NULL OR
                         o.channel_id IS NULL OR
                         oi.product_sku IS NULL OR
                         oi.product_sku = ''
@@ -1731,106 +1655,6 @@ async def export_audit_data(
                 # Create workbook
                 wb = Workbook()
                 ws = wb.active
-
-                # Add metadata sheet with export info and filters
-                meta_ws = wb.create_sheet(title="Metadata", index=0)
-
-                # Title styling
-                title_font = Font(bold=True, size=14, color="1F4E79")
-                label_font = Font(bold=True, color="444444")
-                value_font = Font(color="000000")
-
-                # Title
-                meta_ws.cell(row=1, column=1, value="Reporte de Auditoría - Grana Platform").font = title_font
-                meta_ws.merge_cells('A1:C1')
-
-                # Export timestamp
-                meta_ws.cell(row=3, column=1, value="Fecha de Exportación:").font = label_font
-                meta_ws.cell(row=3, column=2, value=datetime.now().strftime('%Y-%m-%d %H:%M:%S')).font = value_font
-
-                # Build filters info
-                row_num = 5
-                meta_ws.cell(row=row_num, column=1, value="Filtros Aplicados:").font = Font(bold=True, size=12, color="1F4E79")
-                row_num += 1
-
-                # Date range
-                if from_date or to_date:
-                    meta_ws.cell(row=row_num, column=1, value="Rango de Fechas:").font = label_font
-                    date_range_str = f"{from_date or 'Sin límite'} a {to_date or 'Sin límite'}"
-                    meta_ws.cell(row=row_num, column=2, value=date_range_str).font = value_font
-                    row_num += 1
-
-                # Category/Familia
-                if category:
-                    meta_ws.cell(row=row_num, column=1, value="Familia:").font = label_font
-                    meta_ws.cell(row=row_num, column=2, value=', '.join(category)).font = value_font
-                    row_num += 1
-
-                # Channel
-                if channel:
-                    meta_ws.cell(row=row_num, column=1, value="Canal:").font = label_font
-                    meta_ws.cell(row=row_num, column=2, value=', '.join(channel)).font = value_font
-                    row_num += 1
-
-                # Customer
-                if customer:
-                    meta_ws.cell(row=row_num, column=1, value="Cliente:").font = label_font
-                    meta_ws.cell(row=row_num, column=2, value=', '.join(customer)).font = value_font
-                    row_num += 1
-
-                # SKU search
-                if sku:
-                    meta_ws.cell(row=row_num, column=1, value="Búsqueda SKU:").font = label_font
-                    meta_ws.cell(row=row_num, column=2, value=sku).font = value_font
-                    row_num += 1
-
-                # SKU Primario
-                if sku_primario:
-                    meta_ws.cell(row=row_num, column=1, value="SKU Primario:").font = label_font
-                    meta_ws.cell(row=row_num, column=2, value=', '.join(sku_primario)).font = value_font
-                    row_num += 1
-
-                # Source
-                if source:
-                    meta_ws.cell(row=row_num, column=1, value="Fuente:").font = label_font
-                    meta_ws.cell(row=row_num, column=2, value=', '.join(source)).font = value_font
-                    row_num += 1
-
-                # Group by
-                if group_by:
-                    meta_ws.cell(row=row_num, column=1, value="Agrupado por:").font = label_font
-                    group_labels = {
-                        'sku_primario': 'SKU Primario',
-                        'customer_name': 'Cliente',
-                        'channel_name': 'Canal',
-                        'order_month': 'Mes',
-                        'family': 'Familia',
-                        'format': 'Formato',
-                        'sku': 'SKU Original'
-                    }
-                    meta_ws.cell(row=row_num, column=2, value=group_labels.get(group_by, group_by)).font = value_font
-                    row_num += 1
-
-                # Special filters
-                if has_nulls:
-                    meta_ws.cell(row=row_num, column=1, value="Filtro Especial:").font = label_font
-                    meta_ws.cell(row=row_num, column=2, value="Solo registros con valores NULL").font = value_font
-                    row_num += 1
-
-                if not_in_catalog:
-                    meta_ws.cell(row=row_num, column=1, value="Filtro Especial:").font = label_font
-                    meta_ws.cell(row=row_num, column=2, value="Solo SKUs no encontrados en catálogo").font = value_font
-                    row_num += 1
-
-                # No filters applied message
-                if not any([from_date, to_date, category, channel, customer, sku, sku_primario, source, group_by, has_nulls, not_in_catalog]):
-                    meta_ws.cell(row=row_num, column=1, value="(Sin filtros aplicados)").font = Font(italic=True, color="666666")
-                    row_num += 1
-
-                # Column widths for metadata sheet
-                meta_ws.column_dimensions['A'].width = 25
-                meta_ws.column_dimensions['B'].width = 50
-                meta_ws.column_dimensions['C'].width = 20
 
                 # Styles
                 header_font = Font(bold=True, color="FFFFFF")
@@ -1872,15 +1696,7 @@ async def export_audit_data(
                         LEFT JOIN products p ON p.sku = oi.product_sku
                         LEFT JOIN channels ch ON ch.id = o.channel_id
                         LEFT JOIN customers cust_direct ON cust_direct.id = o.customer_id AND cust_direct.source = o.source
-                        LEFT JOIN LATERAL (
-                            SELECT customer_external_id FROM customer_channel_rules ccr
-                            WHERE ccr.channel_external_id::text = (
-                                CASE WHEN o.customer_notes ~ '^\\s*\\{{'
-                                THEN o.customer_notes::json->>'channel_id_relbase' ELSE NULL END
-                            ) AND ccr.is_active = TRUE LIMIT 1
-                        ) ccr_match ON true
-                        LEFT JOIN customers cust_channel ON cust_channel.external_id = ccr_match.customer_external_id AND cust_channel.source = 'relbase'
-                        WHERE {where_sql}
+                                                WHERE {where_sql}
                         LIMIT 100000
                     """
 
@@ -1937,7 +1753,7 @@ async def export_audit_data(
                 # ===== OTHER AGGREGATED MODES =====
                 elif group_by and group_by in ['customer_name', 'channel_name', 'order_month', 'family', 'format', 'sku']:
                     group_field_map = {
-                        'customer_name': ("COALESCE(cust_direct.name, cust_channel.name, 'SIN NOMBRE')", "Cliente"),
+                        'customer_name': ("COALESCE(cust_direct.name, 'SIN NOMBRE')", "Cliente"),
                         'channel_name': ("COALESCE(ch.name, 'SIN CANAL')", "Canal"),
                         'order_month': ("TO_CHAR(o.order_date, 'YYYY-MM')", "Mes"),
                         'family': ("COALESCE(p.subfamily, 'SIN FAMILIA')", "Familia"),
@@ -1969,15 +1785,7 @@ async def export_audit_data(
                         LEFT JOIN products p ON p.sku = oi.product_sku
                         LEFT JOIN channels ch ON ch.id = o.channel_id
                         LEFT JOIN customers cust_direct ON cust_direct.id = o.customer_id AND cust_direct.source = o.source
-                        LEFT JOIN LATERAL (
-                            SELECT customer_external_id FROM customer_channel_rules ccr
-                            WHERE ccr.channel_external_id::text = (
-                                CASE WHEN o.customer_notes ~ '^\\s*\\{{'
-                                THEN o.customer_notes::json->>'channel_id_relbase' ELSE NULL END
-                            ) AND ccr.is_active = TRUE LIMIT 1
-                        ) ccr_match ON true
-                        LEFT JOIN customers cust_channel ON cust_channel.external_id = ccr_match.customer_external_id AND cust_channel.source = 'relbase'
-                        WHERE {where_sql}
+                                                WHERE {where_sql}
                         GROUP BY {group_field}
                         HAVING {group_field} IS NOT NULL
                         ORDER BY total_revenue DESC
@@ -2022,15 +1830,7 @@ async def export_audit_data(
                             LEFT JOIN order_items oi ON oi.order_id = o.id
                             LEFT JOIN channels ch ON ch.id = o.channel_id
                             LEFT JOIN customers cust_direct ON cust_direct.id = o.customer_id AND cust_direct.source = o.source
-                            LEFT JOIN LATERAL (
-                                SELECT customer_external_id FROM customer_channel_rules ccr
-                                WHERE ccr.channel_external_id::text = (
-                                    CASE WHEN o.customer_notes ~ '^\\s*\\{{'
-                                    THEN o.customer_notes::json->>'channel_id_relbase' ELSE NULL END
-                                ) AND ccr.is_active = TRUE LIMIT 1
-                            ) ccr_match ON true
-                            LEFT JOIN customers cust_channel ON cust_channel.external_id = ccr_match.customer_external_id AND cust_channel.source = 'relbase'
-                            WHERE {where_sql} AND oi.product_sku IS NOT NULL AND oi.product_sku != ''
+                                                        WHERE {where_sql} AND oi.product_sku IS NOT NULL AND oi.product_sku != ''
                         """, params)
                         all_skus = cursor.fetchall()
 
@@ -2057,7 +1857,7 @@ async def export_audit_data(
                             o.external_id as order_external_id,
                             o.order_date,
                             o.source as order_source,
-                            COALESCE(cust_direct.name, cust_channel.name, 'SIN NOMBRE') as customer_name,
+                            COALESCE(cust_direct.name, 'SIN NOMBRE') as customer_name,
                             COALESCE(ch.name, 'SIN CANAL') as channel_name,
                             oi.product_sku as sku,
                             oi.product_name,
@@ -2071,15 +1871,7 @@ async def export_audit_data(
                         LEFT JOIN products p ON p.sku = oi.product_sku
                         LEFT JOIN channels ch ON ch.id = o.channel_id
                         LEFT JOIN customers cust_direct ON cust_direct.id = o.customer_id AND cust_direct.source = o.source
-                        LEFT JOIN LATERAL (
-                            SELECT customer_external_id FROM customer_channel_rules ccr
-                            WHERE ccr.channel_external_id::text = (
-                                CASE WHEN o.customer_notes ~ '^\\s*\\{{'
-                                THEN o.customer_notes::json->>'channel_id_relbase' ELSE NULL END
-                            ) AND ccr.is_active = TRUE LIMIT 1
-                        ) ccr_match ON true
-                        LEFT JOIN customers cust_channel ON cust_channel.external_id = ccr_match.customer_external_id AND cust_channel.source = 'relbase'
-                        WHERE {where_sql}
+                                                WHERE {where_sql}
                         ORDER BY o.order_date DESC, o.id, oi.id
                         LIMIT 100000
                     """
@@ -2089,51 +1881,26 @@ async def export_audit_data(
 
                     service = get_product_catalog_service()
 
-                    # ===== PACK EXPANSION for Export =====
-                    # First, expand PACK products into component rows
-                    processed_rows = []
-                    for row in rows:
-                        row_dict = dict(row)
-                        sku = row_dict.get('sku', '') or ''
-
-                        # Check if this is a PACK product
-                        pack_mappings = get_pack_component_mappings(sku, cursor)
-
-                        if pack_mappings:
-                            # Expand PACK into component rows
-                            component_rows = expand_pack_to_components(row_dict, pack_mappings, cursor)
-                            processed_rows.extend(component_rows)
-                        else:
-                            processed_rows.append(row_dict)
-
-                    # Now process and write all rows (including expanded components)
-                    for row_idx, row in enumerate(processed_rows, 2):
+                    for row_idx, row in enumerate(rows, 2):
                         row_sku = row.get('sku', '')
                         product_name = row.get('product_name', '')
                         order_source = row.get('order_source', '')
                         quantity = row.get('quantity', 0) or 0
-                        is_pack_component = row.get('is_pack_component', False)
 
-                        # For PACK components, use pre-computed values
-                        if is_pack_component:
-                            sku_prim = row.get('sku_primario', '')
-                            unidades = quantity  # Already in units
-                            familia = row.get('category', '')
+                        # Map SKU
+                        official_sku, _, _, product_info, _ = map_sku_with_quantity(
+                            row_sku, product_name, product_catalog, catalog_skus, catalog_master_skus, order_source
+                        )
+
+                        # Get enriched data
+                        if official_sku:
+                            sku_prim = get_sku_primario(official_sku, conversion_map)
+                            unidades = calculate_units(row_sku, quantity, conversion_map, order_source)
+                            familia = product_info.get('category', '') if product_info else row.get('category', '')
                         else:
-                            # Map SKU normally
-                            official_sku, _, _, product_info, _ = map_sku_with_quantity(
-                                row_sku, product_name, product_catalog, catalog_skus, catalog_master_skus, order_source
-                            )
-
-                            # Get enriched data
-                            if official_sku:
-                                sku_prim = get_sku_primario(official_sku, conversion_map)
-                                unidades = calculate_units(row_sku, quantity, conversion_map, order_source)
-                                familia = product_info.get('category', '') if product_info else row.get('category', '')
-                            else:
-                                sku_prim = None
-                                unidades = quantity
-                                familia = row.get('category', '')
+                            sku_prim = None
+                            unidades = quantity
+                            familia = row.get('category', '')
 
                         # Format date
                         order_date = row.get('order_date')

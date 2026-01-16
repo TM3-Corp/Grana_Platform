@@ -86,13 +86,13 @@ export default function Navigation() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           {/* Logo */}
-          <div className="flex items-center">
+          <div className="flex items-center ml-14">
             <Link href="/" className="flex items-center hover:opacity-80 transition-opacity">
               <Image
                 src="/images/logo_grana.avif"
                 alt="Grana"
-                width={40}
-                height={40}
+                width={80}
+                height={80}
                 className="object-contain"
                 style={{ height: 'auto' }}
               />

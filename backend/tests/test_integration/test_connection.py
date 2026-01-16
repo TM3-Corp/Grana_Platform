@@ -99,16 +99,29 @@ except Exception as e:
 print("\n4️⃣ Verificando que todas las tablas existen...")
 
 expected_tables = [
+    # Core tables
     "customers",
     "products",
     "channels",
     "orders",
     "order_items",
+    # Catalog tables
+    "product_catalog",
+    "sku_mappings",
+    # Inventory tables
+    "warehouses",
+    "warehouse_stock",
+    "product_inventory_settings",
+    # Audit tables
     "orders_audit",
-    "manual_corrections",
-    "inventory_movements",
     "sync_logs",
-    "alerts"
+    # Auth tables
+    "users",
+    "api_credentials"
+    # Removed in migration 20260113: product_variants, channel_equivalents,
+    # channel_product_equivalents, relbase_product_mappings, dim_date,
+    # ml_tokens, inventory_movements, customer_channel_rules,
+    # api_keys, alerts, manual_corrections
 ]
 
 try:

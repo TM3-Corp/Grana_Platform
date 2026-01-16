@@ -40,6 +40,8 @@ interface ExecutiveSalesChartProps {
   previous_year: number
   current_year: number
   next_year: number
+  // Optional MTD comparison info
+  mtdComparisonInfo?: string | null
 }
 
 // Custom label component for data points
@@ -53,35 +55,41 @@ const CustomLabel = ({ x, y, value, color }: { x?: number; y?: number; value?: n
   )
 }
 
-// Custom tooltip showing gaps between years AND projection - now receives year values
-const CustomTooltip = ({ active, payload, label, previousYear, currentYear, nextYear }: any) => {
+// Custom tooltip showing gaps between years AND projection - now receives year values and visibility
+const CustomTooltip = ({ active, payload, label, previousYear, currentYear, nextYear, showProjections }: any) => {
   if (!active || !payload || payload.length === 0) return null
 
-  const revenuePrevYear = payload.find((p: any) => p.dataKey === 'revenue_previous_year')?.value
-  const revenuePrevYearFull = payload.find((p: any) => p.dataKey === 'revenue_previous_year_full')?.value
-  const revenueCurrYearActual = payload.find((p: any) => p.dataKey === 'revenue_current_year_actual')?.value
-  const revenueCurrYearEstimated = payload.find((p: any) => p.dataKey === 'revenue_current_year_estimated')?.value
-  const revenueNextYearProjected = payload.find((p: any) => p.dataKey === 'revenue_next_year_projected')?.value
-
-  // Check if this is an MTD month
+  // Check if this is an MTD month - get dataPoint first for raw access
   const dataPoint = payload[0]?.payload
   const isMtd = dataPoint?.is_mtd
   const mtdDay = dataPoint?.mtd_day
 
+  const revenuePrevYear = payload.find((p: any) => p.dataKey === 'revenue_previous_year')?.value
+  // Get MTD value directly from dataPoint since there's no Line for it
+  const revenuePrevYearMtd = dataPoint?.revenue_previous_year_mtd
+  const revenueCurrYearActual = payload.find((p: any) => p.dataKey === 'revenue_current_year_actual')?.value
+  const revenueCurrYearEstimated = payload.find((p: any) => p.dataKey === 'revenue_current_year_estimated')?.value
+  const revenueCurrYearProjected = payload.find((p: any) => p.dataKey === 'revenue_current_year_projected')?.value
+  const revenueNextYearProjected = payload.find((p: any) => p.dataKey === 'revenue_next_year_projected')?.value
+
   // Calculate gap between years (previous vs current)
+  // For MTD months, compare MTD vs MTD for fair comparison
   let gapYearsAmount = 0
   let gapYearsPercent = 0
-  if (revenuePrevYear && revenueCurrYearActual) {
-    gapYearsAmount = revenueCurrYearActual - revenuePrevYear
-    gapYearsPercent = ((revenueCurrYearActual - revenuePrevYear) / revenuePrevYear) * 100
+  const prevYearForComparison = isMtd && revenuePrevYearMtd ? revenuePrevYearMtd : revenuePrevYear
+  if (prevYearForComparison && revenueCurrYearActual) {
+    gapYearsAmount = revenueCurrYearActual - prevYearForComparison
+    gapYearsPercent = ((revenueCurrYearActual - prevYearForComparison) / prevYearForComparison) * 100
   }
 
   // Calculate gap between current and next year
+  // For MTD months, use estimated full month for fair comparison with next year projection
   let gapNextAmount = 0
   let gapNextPercent = 0
-  if (revenueCurrYearActual && revenueNextYearProjected) {
-    gapNextAmount = revenueNextYearProjected - revenueCurrYearActual
-    gapNextPercent = ((revenueNextYearProjected - revenueCurrYearActual) / revenueCurrYearActual) * 100
+  const currYearForNextComparison = isMtd && revenueCurrYearEstimated ? revenueCurrYearEstimated : revenueCurrYearActual
+  if (currYearForNextComparison && revenueNextYearProjected) {
+    gapNextAmount = revenueNextYearProjected - currYearForNextComparison
+    gapNextPercent = ((revenueNextYearProjected - currYearForNextComparison) / currYearForNextComparison) * 100
   }
 
   return (
@@ -96,24 +104,24 @@ const CustomTooltip = ({ active, payload, label, previousYear, currentYear, next
         {revenuePrevYear !== undefined && revenuePrevYear !== null && (
           <div className="flex justify-between items-center">
             <span className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-gray-400"></span>
-              <span className="text-gray-600">{isMtd ? `${previousYear} (1-${mtdDay}):` : `${previousYear} Real:`}</span>
+              <span className="w-3 h-3 rounded-full bg-indigo-500"></span>
+              <span className="text-gray-600">{previousYear} Real:</span>
             </span>
-            <span className="font-semibold text-gray-800">
+            <span className="font-semibold text-indigo-600">
               ${revenuePrevYear.toLocaleString('es-CL')}
             </span>
           </div>
         )}
 
-        {/* Full previous year month for MTD months */}
-        {revenuePrevYearFull !== undefined && revenuePrevYearFull !== null && (
+        {/* MTD comparison for previous year - show when it's an MTD month */}
+        {isMtd && revenuePrevYearMtd !== undefined && revenuePrevYearMtd !== null && (
           <div className="flex justify-between items-center">
             <span className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-gray-500" style={{ border: '2px dashed #6B7280' }}></span>
-              <span className="text-gray-500 text-xs">{previousYear} Mes completo:</span>
+              <span className="w-3 h-3 rounded-full bg-indigo-300"></span>
+              <span className="text-indigo-400 text-xs">{previousYear} (días 1-{mtdDay}):</span>
             </span>
-            <span className="font-medium text-gray-600 text-sm">
-              ${revenuePrevYearFull.toLocaleString('es-CL')}
+            <span className="font-medium text-indigo-400 text-sm">
+              ${revenuePrevYearMtd.toLocaleString('es-CL')}
             </span>
           </div>
         )}
@@ -130,15 +138,28 @@ const CustomTooltip = ({ active, payload, label, previousYear, currentYear, next
           </div>
         )}
 
-        {/* Estimated full current year month for MTD months */}
-        {revenueCurrYearEstimated !== undefined && revenueCurrYearEstimated !== null && (
+        {/* Estimated full current year month for MTD months - only show with projections */}
+        {showProjections && revenueCurrYearEstimated !== undefined && revenueCurrYearEstimated !== null && (
           <div className="flex justify-between items-center">
             <span className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-emerald-600" style={{ border: '2px dashed #059669' }}></span>
+              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: '#14B8A6', border: '2px dashed #14B8A6' }}></span>
               <span className="text-gray-500 text-xs">{currentYear} Estimado mes:</span>
             </span>
-            <span className="font-medium text-emerald-600 text-sm">
+            <span className="font-medium text-sm" style={{ color: '#14B8A6' }}>
               ${revenueCurrYearEstimated.toLocaleString('es-CL')}
+            </span>
+          </div>
+        )}
+
+        {/* Current year projected (remaining months) - hide if MTD month since it's redundant with estimated */}
+        {revenueCurrYearProjected !== undefined && revenueCurrYearProjected !== null && !isMtd && (
+          <div className="flex justify-between items-center">
+            <span className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: '#14B8A6', border: '2px dashed #14B8A6' }}></span>
+              <span className="text-gray-600">{currentYear} Proyección:</span>
+            </span>
+            <span className="font-semibold" style={{ color: '#14B8A6' }}>
+              ${revenueCurrYearProjected.toLocaleString('es-CL')}
             </span>
           </div>
         )}
@@ -146,10 +167,10 @@ const CustomTooltip = ({ active, payload, label, previousYear, currentYear, next
         {revenueNextYearProjected !== undefined && revenueNextYearProjected !== null && (
           <div className="flex justify-between items-center">
             <span className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-purple-600"></span>
+              <span className="w-3 h-3 rounded-full bg-violet-500"></span>
               <span className="text-gray-600">{nextYear} Proyección:</span>
             </span>
-            <span className="font-semibold text-purple-700">
+            <span className="font-semibold text-violet-600">
               ${revenueNextYearProjected.toLocaleString('es-CL')}
             </span>
           </div>
@@ -160,7 +181,7 @@ const CustomTooltip = ({ active, payload, label, previousYear, currentYear, next
       {revenuePrevYear && revenueCurrYearActual && (
         <div className="pt-3 border-t border-gray-200">
           <div className="flex justify-between items-center">
-            <span className="text-gray-600 font-medium text-sm">{currentYear} vs {previousYear}:</span>
+            <span className="text-gray-600 font-medium text-sm">{previousYear} vs {currentYear}{isMtd ? ` (1-${mtdDay})` : ''}:</span>
             <div className="text-right">
               <span className={`font-bold ${gapYearsAmount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 {gapYearsAmount >= 0 ? '+' : ''}{gapYearsPercent.toFixed(1)}%
@@ -203,14 +224,15 @@ export default function ExecutiveSalesChart({
   sales_next_year_projected,
   previous_year,
   current_year,
-  next_year
+  next_year,
+  mtdComparisonInfo,
 }: ExecutiveSalesChartProps) {
-  // Series configuration with dynamic labels
+  // Series configuration with dynamic labels - improved colors
   const seriesConfigs: SeriesConfig[] = [
-    { key: 'currentYear', label: `${current_year} (Real)`, color: '#0D9488', defaultEnabled: true },
-    { key: 'previousYear', label: `${previous_year} (Real)`, color: '#9CA3AF', defaultEnabled: true },
-    { key: 'projectedCurrentYear', label: `${current_year} (Proyección)`, color: '#14B8A6', defaultEnabled: true },
-    { key: 'projectedNextYear', label: `${next_year} (Proyección)`, color: '#9333EA', defaultEnabled: false },
+    { key: 'currentYear', label: `${current_year} Real`, color: '#0D9488', defaultEnabled: true },
+    { key: 'previousYear', label: `${previous_year} Real`, color: '#6366F1', defaultEnabled: true },
+    { key: 'projectedCurrentYear', label: `${current_year} Proy.`, color: '#14B8A6', defaultEnabled: true },
+    { key: 'projectedNextYear', label: `${next_year} Proy.`, color: '#8B5CF6', defaultEnabled: false },
   ]
 
   // Initialize visibility state from localStorage or defaults
@@ -248,12 +270,14 @@ export default function ExecutiveSalesChart({
   }
 
   // Combine all data for the chart with dynamic year labels
-  // Note: Backend returns MTD-adjusted values as primary for current month (DRY principle)
+  // For previous year: always show FULL month value in line, store MTD-adjusted for tooltip context
   const chartData = sales_previous_year.map(m => ({
     month: m.month_name,
     monthNum: m.month,
-    revenue_previous_year: m.total_revenue,  // Already MTD-adjusted for current month by backend
-    revenue_previous_year_full: m.is_mtd ? (m.total_revenue_full_month ?? null) : null,  // Full month for MTD months (striped gray)
+    // Use full month value for main line (fallback to total_revenue for non-MTD months)
+    revenue_previous_year: m.is_mtd && m.total_revenue_full_month ? m.total_revenue_full_month : m.total_revenue,
+    // Store MTD-adjusted value for tooltip comparison (only meaningful for MTD months)
+    revenue_previous_year_mtd: m.is_mtd ? m.total_revenue : null,
     revenue_current_year_actual: null as number | null,
     revenue_current_year_estimated: null as number | null,  // Estimated full month for MTD months (striped green)
     revenue_current_year_projected: null as number | null,
@@ -305,13 +329,6 @@ export default function ExecutiveSalesChart({
     }
   })
 
-  // Extend previous year full month values to prior month using that month's ACTUAL value
-  chartData.forEach((d, index) => {
-    if (d.is_mtd && d.revenue_previous_year_full && index > 0) {
-      // Use prior month's actual previous year value so line connects properly
-      chartData[index - 1].revenue_previous_year_full = chartData[index - 1].revenue_previous_year
-    }
-  })
 
   // Add next year projected data and calculate gaps vs current year
   sales_next_year_projected.forEach(m => {
@@ -335,48 +352,50 @@ export default function ExecutiveSalesChart({
 
   return (
     <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-      <div className="mb-6">
-        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-          <div>
-            <h2 className="text-xl font-bold text-gray-900 mb-2">
-              Comparación de Ventas y Proyecciones
-            </h2>
-            <p className="text-sm text-gray-600">
-              Selecciona las series que deseas visualizar. Hover sobre cada punto para ver las diferencias.
-            </p>
+      {/* Header - Title left, MTD badge right */}
+      <div className="flex items-start justify-between mb-6">
+        <h2 className="text-xl font-bold text-gray-900">
+          Comparacion de Ventas y Proyecciones
+        </h2>
+        {mtdComparisonInfo && (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-lg">
+            <svg className="w-4 h-4 text-amber-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span className="text-xs text-amber-700 font-medium">{mtdComparisonInfo}</span>
           </div>
+        )}
+      </div>
 
-          {/* Series Toggle Buttons */}
-          <div className="flex flex-wrap gap-2">
-            {seriesConfigs.map((config) => (
-              <button
-                key={config.key}
-                onClick={() => toggleSeries(config.key)}
-                className={`
-                  flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium
-                  transition-all duration-200 border
-                  ${visibleSeries[config.key]
-                    ? 'border-transparent shadow-sm'
-                    : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50'
-                  }
-                `}
-                style={{
-                  backgroundColor: visibleSeries[config.key] ? `${config.color}15` : undefined,
-                  color: visibleSeries[config.key] ? config.color : undefined,
-                  borderColor: visibleSeries[config.key] ? config.color : undefined,
-                }}
+      {/* Year Selector - Elegant toggle buttons */}
+      <div className="mb-6">
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-gray-500 font-medium">Mostrar series:</span>
+          {seriesConfigs.map((config) => (
+            <button
+              key={config.key}
+              onClick={() => toggleSeries(config.key)}
+              className={`
+                flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium
+                transition-all duration-200 ease-out
+                ${visibleSeries[config.key]
+                  ? 'bg-white shadow-[0_2px_4px_rgba(0,0,0,0.12)]'
+                  : 'bg-gray-50 text-gray-400 hover:bg-gray-100'
+                }
+              `}
+            >
+              <span
+                className={`w-2.5 h-2.5 rounded-full transition-all duration-200`}
+                style={{ backgroundColor: visibleSeries[config.key] ? config.color : '#D1D5DB' }}
+              />
+              <span
+                className="transition-colors duration-200"
+                style={{ color: visibleSeries[config.key] ? config.color : undefined }}
               >
-                <span
-                  className="w-3 h-3 rounded-full border-2"
-                  style={{
-                    backgroundColor: visibleSeries[config.key] ? config.color : 'transparent',
-                    borderColor: config.color,
-                  }}
-                />
                 {config.label}
-              </button>
-            ))}
-          </div>
+              </span>
+            </button>
+          ))}
         </div>
       </div>
 
@@ -394,7 +413,7 @@ export default function ExecutiveSalesChart({
             stroke="#6B7280"
             domain={['auto', 'auto']}
           />
-          <Tooltip content={<CustomTooltip previousYear={previous_year} currentYear={current_year} nextYear={next_year} />} />
+          <Tooltip content={<CustomTooltip previousYear={previous_year} currentYear={current_year} nextYear={next_year} showProjections={visibleSeries.projectedCurrentYear} />} />
 
           {/* Confidence interval area for next year projections - only show when next year projection is visible */}
           {visibleSeries.projectedNextYear && (
@@ -403,10 +422,12 @@ export default function ExecutiveSalesChart({
                 type="monotone"
                 dataKey="confidence_upper_next"
                 stroke="none"
-                fill="#9333EA"
+                fill="#8B5CF6"
                 fillOpacity={0.1}
                 name={`Rango de confianza ${next_year}`}
                 legendType="none"
+                dot={false}
+                activeDot={false}
               />
               <Area
                 type="monotone"
@@ -415,20 +436,22 @@ export default function ExecutiveSalesChart({
                 fill="white"
                 fillOpacity={1}
                 legendType="none"
+                dot={false}
+                activeDot={false}
               />
             </>
           )}
 
-          {/* Previous year actual line - GRAY solid */}
+          {/* Previous year actual line - INDIGO solid */}
           {visibleSeries.previousYear && (
             <Line
               type="monotone"
               dataKey="revenue_previous_year"
-              stroke="#9CA3AF"
+              stroke="#6366F1"
               strokeWidth={2}
               name={`${previous_year} (Real)`}
-              dot={{ r: 4, fill: '#9CA3AF', strokeWidth: 1, stroke: '#6B7280' }}
-              activeDot={{ r: 7, fill: '#6B7280' }}
+              dot={{ r: 4, fill: '#6366F1', strokeWidth: 1, stroke: '#4F46E5' }}
+              activeDot={{ r: 7, fill: '#4F46E5' }}
             />
           )}
 
@@ -456,98 +479,88 @@ export default function ExecutiveSalesChart({
               strokeDasharray="6 3"
               name={`${current_year} (Proyección)`}
               dot={{ r: 4, fill: '#14B8A6', strokeWidth: 1, stroke: '#0D9488' }}
-              activeDot={{ r: 6, fill: '#0D9488' }}
+              activeDot={{ r: 6, fill: '#14B8A6' }}
             />
           )}
 
-          {/* Next year projected line - PURPLE dashed */}
+          {/* Next year projected line - VIOLET dashed */}
           {visibleSeries.projectedNextYear && (
             <Line
               type="monotone"
               dataKey="revenue_next_year_projected"
-              stroke="#9333EA"
+              stroke="#8B5CF6"
               strokeWidth={3}
               strokeDasharray="8 4"
               name={`${next_year} (Proyección)`}
-              dot={{ r: 5, fill: '#9333EA', strokeWidth: 2, stroke: '#7C3AED' }}
+              dot={{ r: 5, fill: '#8B5CF6', strokeWidth: 2, stroke: '#7C3AED' }}
               activeDot={{ r: 8, fill: '#7C3AED' }}
-              label={<CustomLabel color="#9333EA" />}
+              label={<CustomLabel color="#8B5CF6" />}
             />
           )}
 
-          {/* Striped gray line for full previous year month (incomplete months only) */}
-          {visibleSeries.previousYear && (
-            <Line
-              type="monotone"
-              dataKey="revenue_previous_year_full"
-              stroke="#6B7280"
-              strokeWidth={2}
-              strokeDasharray="5 5"
-              name={`${previous_year} Mes completo`}
-              dot={(props: any) => {
-                // Only show dot at MTD month
-                if (!props.payload?.is_mtd) return null
-                return <circle key={`dot-prev-full-${props.index}`} cx={props.cx} cy={props.cy} r={5} fill="#6B7280" stroke="#4B5563" strokeWidth={2} />
-              }}
-              connectNulls={false}
-              legendType="none"
-              label={(props: any) => {
-                // Only show label at MTD month
-                if (!props.payload?.is_mtd) return null
-                return <CustomLabel key={`label-prev-full-${props.index}`} {...props} color="#6B7280" />
-              }}
-            />
-          )}
 
-          {/* Striped green line for estimated current year full month (incomplete months only) */}
-          {visibleSeries.currentYear && (
+          {/* Striped teal line for estimated current year full month (incomplete months only) */}
+          {visibleSeries.projectedCurrentYear && (
             <Line
               type="monotone"
               dataKey="revenue_current_year_estimated"
-              stroke="#059669"
+              stroke="#14B8A6"
               strokeWidth={2}
               strokeDasharray="5 5"
               name={`${current_year} Estimado`}
               dot={(props: any) => {
                 // Only show dot at MTD month
                 if (!props.payload?.is_mtd) return null
-                return <circle key={`dot-curr-est-${props.index}`} cx={props.cx} cy={props.cy} r={5} fill="#059669" stroke="#047857" strokeWidth={2} />
+                return <circle key={`dot-curr-est-${props.index}`} cx={props.cx} cy={props.cy} r={5} fill="#14B8A6" stroke="#0D9488" strokeWidth={2} />
               }}
               connectNulls={false}
               legendType="none"
               label={(props: any) => {
                 // Only show label at MTD month
                 if (!props.payload?.is_mtd) return null
-                return <CustomLabel key={`label-curr-est-${props.index}`} {...props} color="#059669" />
+                return <CustomLabel key={`label-curr-est-${props.index}`} {...props} color="#14B8A6" />
               }}
             />
           )}
         </ComposedChart>
       </ResponsiveContainer>
 
-      {/* Striped lines legend for incomplete months - only show if relevant series are visible */}
-      {chartData.some(d => d.is_mtd) && (visibleSeries.previousYear || visibleSeries.currentYear) && (
-        <div className="mt-6 pt-4 border-t border-gray-200">
-          <div className="flex flex-wrap items-center justify-center gap-6 text-sm">
-            <span className="text-xs text-gray-500 font-medium">Mes en curso ({currentMonthName}):</span>
+      {/* Legend - show when any series is visible */}
+      {(visibleSeries.previousYear || visibleSeries.currentYear || visibleSeries.projectedNextYear) && (
+        <div className="mt-4 pt-3 border-t border-gray-100">
+          <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-gray-600">
             {visibleSeries.previousYear && (
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-0.5 rounded" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #6B7280 0px, #6B7280 4px, transparent 4px, transparent 8px)' }}></div>
-                <div className="w-2.5 h-2.5 rounded-full bg-gray-500 -ml-1"></div>
-                <span className="text-gray-600 text-xs">{previous_year} Mes completo</span>
+              <div className="flex items-center gap-1.5">
+                <div className="w-4 h-0.5 bg-indigo-500"></div>
+                <div className="w-2 h-2 rounded-full bg-indigo-500 -ml-1"></div>
+                <span>{previous_year} real</span>
               </div>
             )}
             {visibleSeries.currentYear && (
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-0.5 rounded" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #059669 0px, #059669 4px, transparent 4px, transparent 8px)' }}></div>
-                <div className="w-2.5 h-2.5 rounded-full bg-emerald-600 -ml-1"></div>
-                <span className="text-gray-600 text-xs">{current_year} Estimado mes completo</span>
+              <div className="flex items-center gap-1.5">
+                <div className="w-4 h-0.5 bg-teal-600"></div>
+                <div className="w-2 h-2 rounded-full bg-teal-600 -ml-1"></div>
+                <span>{current_year} real</span>
+              </div>
+            )}
+            {visibleSeries.projectedCurrentYear && chartData.some(d => d.is_mtd) && (
+              <div className="flex items-center gap-1.5">
+                <div className="w-4 h-0.5" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #14B8A6 0px, #14B8A6 2px, transparent 2px, transparent 4px)' }}></div>
+                <div className="w-2 h-2 rounded-full -ml-1" style={{ backgroundColor: '#14B8A6' }}></div>
+                <span>{current_year} estimado</span>
               </div>
             )}
             {visibleSeries.projectedNextYear && (
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-4 bg-purple-100 rounded border border-purple-200"></div>
-                <span className="text-gray-600 text-xs">Rango de confianza {next_year}</span>
+              <div className="flex items-center gap-1.5">
+                <div className="w-4 h-0.5" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #8B5CF6 0px, #8B5CF6 2px, transparent 2px, transparent 4px)' }}></div>
+                <div className="w-2 h-2 rounded-full bg-violet-500 -ml-1"></div>
+                <span>{next_year} proy.</span>
+              </div>
+            )}
+            {visibleSeries.projectedNextYear && (
+              <div className="flex items-center gap-1.5">
+                <div className="w-5 h-2.5 bg-violet-100 rounded border border-violet-200"></div>
+                <span>Intervalo de Confianza</span>
               </div>
             )}
           </div>

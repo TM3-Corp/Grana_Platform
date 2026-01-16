@@ -1,7 +1,7 @@
 """
 Modelos relacionados con órdenes/pedidos
 """
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, DECIMAL, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, Text, DECIMAL, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -48,11 +48,8 @@ class Order(Base):
     invoice_date = Column(DateTime(timezone=True))
     invoice_status = Column(String(50))
 
-    # Correcciones manuales ⭐
-    is_corrected = Column(Boolean, default=False, index=True)
-    correction_reason = Column(Text)
-    corrected_by = Column(String(100))
-    corrected_at = Column(DateTime(timezone=True))
+    # Correction columns removed in migration 20260113
+    # Use orders_audit table for tracking changes
 
     # Notas
     customer_notes = Column(Text)
@@ -129,20 +126,5 @@ class OrderAudit(Base):
     order = relationship("Order", back_populates="audit_entries")
 
 
-class ManualCorrection(Base):
-    """
-    Registro de correcciones manuales
-    """
-    __tablename__ = "manual_corrections"
-
-    id = Column(Integer, primary_key=True, index=True)
-    order_id = Column(Integer, ForeignKey("orders.id"), index=True)
-
-    correction_type = Column(String(50), nullable=False)
-    description = Column(Text, nullable=False)
-
-    corrected_by = Column(String(100), nullable=False)
-    corrected_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
-
-    # Para referencia a audit entries relacionadas
-    # audit_entries: lista de IDs (se maneja en aplicación, no FK)
+# ManualCorrection class removed in migration 031
+# Table was unused - orders_audit trigger system is the active audit mechanism

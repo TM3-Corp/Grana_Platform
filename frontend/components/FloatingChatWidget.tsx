@@ -423,7 +423,7 @@ function InventoryChatPanelEmbedded() {
             {/* Warehouse Codes - Compact */}
             <div className="bg-gray-50 rounded-lg p-2 border border-gray-100">
               <p className="text-[10px] font-medium text-gray-500 mb-1">Bodegas disponibles:</p>
-              <p className="text-[10px] text-gray-400">
+              <p className="text-[10px] text-gray-600">
                 Packner • Amplifica Centro/La Reina/Lo Barnechea/Quilicura • Orinoco • MercadoLibre
               </p>
             </div>

@@ -396,18 +396,18 @@ export default function AuditPage() {
                     <table className="min-w-full divide-y divide-gray-200">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pedido</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Canal</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU Original</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU Primario</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Producto</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoría</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Familia</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Formato</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cantidad</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Pedido</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Fecha</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Cliente</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Canal</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">SKU Original</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">SKU Primario</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Producto</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Categoría</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Familia</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Formato</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Cantidad</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Estado</th>
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">

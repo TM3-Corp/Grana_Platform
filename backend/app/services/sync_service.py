@@ -234,7 +234,7 @@ class SyncService:
                 return []  # No lots found (normal case)
             elif e.response.status_code in (401, 403):
                 # Don't log every 401/403 - it floods the logs
-                # 401 = unauthorized, 403 = forbidden (product not accessible)
+                # 401 = unauthorized, 403 = forbidden (product not accessible, e.g. ANU- legacy)
                 # Return special marker to indicate auth/permission failure
                 return [{'_auth_error': True}]
             logger.error(f"Error fetching lots for product {product_id}: {e}")
@@ -802,8 +802,7 @@ class SyncService:
                             sii_status = dte_data.get('sii_status', 'accepted')
 
                             # Map RelBase channel_id to internal channel via external_id
-                            # Logic: 1) Check DB, 2) Fetch from RelBase API cache and create,
-                            #        3) Apply customer_channel_rules, 4) Use NULL
+                            # Logic: 1) Check DB, 2) Fetch from RelBase API, 3) Use assigned_channel_id
                             channel_id = None  # Default to NULL (Sin Mapear)
                             if channel_id_relbase:
                                 # Step 1: Check if channel exists in our database
@@ -839,18 +838,19 @@ class SyncService:
                                         # Step 3: Channel not found in RelBase API either - use NULL
                                         logger.warning(f"Channel {channel_id_relbase} not found in RelBase API - order will have NULL channel")
 
-                            # Step 4: If no channel_id yet and customer has a rule, apply it
+                            # Step 4: If no channel_id yet and customer has assigned channel, use it
+                            # Uses customers.assigned_channel_id for customer-specific channel mapping
                             if channel_id is None and customer_id_relbase:
                                 cursor.execute("""
-                                    SELECT c.id, ccr.channel_name
-                                    FROM customer_channel_rules ccr
-                                    JOIN channels c ON c.external_id = ccr.channel_external_id::text
-                                    WHERE ccr.customer_external_id = %s AND ccr.is_active = true
+                                    SELECT assigned_channel_id
+                                    FROM customers
+                                    WHERE external_id = %s AND source = 'relbase'
+                                      AND assigned_channel_id IS NOT NULL
                                 """, (str(customer_id_relbase),))
-                                rule_result = cursor.fetchone()
-                                if rule_result:
-                                    channel_id = rule_result[0]
-                                    logger.info(f"Applied channel rule for customer {customer_id_relbase}: {rule_result[1]}")
+                                assigned_result = cursor.fetchone()
+                                if assigned_result:
+                                    channel_id = assigned_result[0]
+                                    logger.info(f"Applied assigned channel for customer {customer_id_relbase}")
 
                             # Map RelBase customer_id to internal customer via external_id
                             # If not found, fetch from API and create

@@ -51,8 +51,9 @@ class InventoryService:
             # Record inventory movement
             quantity_change = new_stock - old_stock
             cursor.execute("""
-                INSERT INTO inventory_movements
-                (product_id, movement_type, quantity, stock_before, stock_after, reason, created_by, created_at)
+            # NOTE: inventory_movements table removed in migration 029
+            # INSERT INTO inventory_movements
+            # (product_id, movement_type, quantity, stock_before, stock_after, reason, created_by, created_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """, (
                 product_id,

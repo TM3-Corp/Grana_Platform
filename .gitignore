@@ -2,14 +2,18 @@
 # .gitignore - Archivos que NUNCA deben subirse a Git
 # ============================================================================
 
-# Credenciales (MUY IMPORTANTE)
+# Credenciales - TODOS los .env (NUNCA commitear)
 .env
+.env.*
 .env.local
 .env.*.local
-backend/.env
-backend/.env.local
+backend/.env*
+frontend/.env*
 *.pem
 *.key
+
+# MCP config (puede tener API keys)
+.mcp.json
 
 # Python
 __pycache__/
@@ -54,6 +58,9 @@ tmp/
 temp/
 *.tmp
 
+# Claude Code sessions (debug scripts, exploration, temp tests)
+.claude_sessions/
+
 # Database
 *.db
 *.sqlite
@@ -74,3 +81,5 @@ data/
 
 # Docs directory (generated documentation)
 docs/
+# Credentials backup (NEVER commit)
+.credentials_backup/
