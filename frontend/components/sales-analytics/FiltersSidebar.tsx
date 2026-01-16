@@ -61,7 +61,9 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
   const formats = props.availableFormats || []
   const skuPrimarios = props.availableSkuPrimarios || []
 
-  const years = ['2023', '2024', '2025']
+  // Generate years dynamically: current year + 2 previous years
+  const currentYear = new Date().getFullYear()
+  const years = Array.from({ length: 3 }, (_, i) => String(currentYear - 2 + i))
   const months = [
     { value: '1', label: 'Enero' },
     { value: '2', label: 'Febrero' },
@@ -81,7 +83,7 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
     { value: '', label: 'Sin agrupación' },
     { value: 'category', label: 'Familia' },
     { value: 'channel', label: 'Canal' },
-    { value: 'format', label: 'Formato' },
+    { value: 'format', label: '📦 Tipo Empaque' },
     { value: 'sku_primario', label: 'SKU Primario' },
   ]
 
