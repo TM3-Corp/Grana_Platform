@@ -172,6 +172,31 @@ Frontend (Next.js on Vercel)
 | **Chipax** | Accounting | App ID + Secret Key |
 | **Lokal** | Distribution | API Key + Maker ID |
 
+### RelBase Inventory Sync Patterns
+
+**CRITICAL:** When syncing inventory from RelBase, always fetch the list of active products from the RelBase API first, NOT from the local `products` table.
+
+```python
+# ❌ WRONG: Using local products table (may include legacy/inactive products)
+cursor.execute("SELECT id, external_id FROM products WHERE source = 'relbase'")
+
+# ✅ CORRECT: Fetch active products from RelBase API first
+products = self._fetch_relbase_active_products()  # GET /api/v1/productos
+```
+
+**Why this matters:**
+- The `/api/v1/productos` endpoint returns ONLY active products in RelBase
+- Legacy products (e.g., SKU prefix `ANU-`) return 401/403 errors when querying lot/serial data
+- The local `products` table may contain stale records for inactive products
+- This pattern prevents sync failures and 401 Unauthorized errors
+
+**Endpoints:**
+| Endpoint | Purpose | Notes |
+|----------|---------|-------|
+| `GET /api/v1/productos` | List active products | Use this for inventory sync |
+| `GET /api/v1/productos/{id}/lotes_series/{warehouse_id}` | Get lot/serial stock | Only works for active products |
+| `GET /api/v1/bodegas` | List warehouses | Returns all enabled warehouses |
+
 ### Product Data Model
 
 **Product Families** group SKU variants:

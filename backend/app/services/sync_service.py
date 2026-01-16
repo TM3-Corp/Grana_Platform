@@ -243,6 +243,44 @@ class SyncService:
             logger.error(f"Error fetching lots for product {product_id}: {e}")
             return []
 
+    def _fetch_relbase_active_products(self) -> List[Dict]:
+        """
+        Fetch ACTIVE products from RelBase API.
+
+        IMPORTANT: This is the correct way to get products for inventory sync.
+        The /api/v1/productos endpoint returns ONLY active products in RelBase,
+        avoiding 401/403 errors when syncing legacy/inactive products (e.g., ANU- prefix).
+
+        Previously we used the local `products` table, which may contain stale data
+        about products that no longer exist or are inactive in RelBase.
+
+        Returns:
+            List of product dictionaries with 'id', 'name', 'sku', etc.
+            Empty list on error.
+
+        Note:
+            - This endpoint may be paginated for large catalogs
+            - Products returned here are guaranteed to be accessible for lot/serial queries
+            - SKUs starting with ANU- are legacy and should be filtered out
+        """
+        url = f"{self.relbase_base_url}/api/v1/productos"
+        headers = self._get_relbase_headers()
+
+        try:
+            response = requests.get(url, headers=headers, timeout=60)
+            response.raise_for_status()
+            data = response.json()
+            products = data.get('data', {}).get('products', [])
+
+            # Filter out legacy products (ANU- prefix) just in case
+            products = [p for p in products if not (p.get('sku', '') or '').upper().startswith('ANU')]
+
+            logger.info(f"Fetched {len(products)} active products from RelBase API")
+            return products
+        except Exception as e:
+            logger.error(f"Error fetching active products from RelBase: {e}")
+            return []
+
     def _fetch_relbase_channels(self) -> List[Dict]:
         """
         Fetch all sales channels from RelBase API
@@ -1130,99 +1168,116 @@ class SyncService:
             logger.info(f"Synced {warehouses_synced} warehouses")
 
             # ================================================================
-            # Phase 2: Sync Stock from RelBase (for products with external_id)
+            # Phase 2: Sync Stock from RelBase (ACTIVE products only)
             # ================================================================
-            logger.info("Phase 2: Syncing stock from RelBase...")
+            # IMPORTANT: Fetch active products from RelBase API, NOT local DB.
+            # The /api/v1/productos endpoint returns ONLY active products,
+            # avoiding 401/403 errors for legacy/inactive products (e.g., ANU- prefix).
+            # See: _fetch_relbase_active_products() docstring for details.
+            # ================================================================
+            logger.info("Phase 2: Fetching active products from RelBase API...")
 
-            # Get products with external_id (exclude ANU- legacy products which return 403)
-            cursor.execute("""
-                SELECT id, external_id, sku, name
-                FROM products
-                WHERE external_id IS NOT NULL
-                AND source = 'relbase'
-                AND is_active = true
-                AND (sku IS NULL OR sku NOT LIKE 'ANU-%%')
-            """)
-            products = cursor.fetchall()
+            # Fetch active products directly from RelBase (the correct approach)
+            relbase_products = self._fetch_relbase_active_products()
 
-            # Get warehouses from DB
-            cursor.execute("""
-                SELECT id, external_id, code
-                FROM warehouses
-                WHERE source = 'relbase' AND is_active = true
-            """)
-            db_warehouses = cursor.fetchall()
+            if not relbase_products:
+                logger.warning("No active products returned from RelBase API - skipping stock sync")
+                errors.append("Failed to fetch active products from RelBase API")
+            else:
+                # Get warehouses from DB
+                cursor.execute("""
+                    SELECT id, external_id, code
+                    FROM warehouses
+                    WHERE source = 'relbase' AND is_active = true
+                """)
+                db_warehouses = cursor.fetchall()
 
-            # For each product-warehouse combination, fetch stock
-            # No limit - sync all products (runs in background mode)
-            logger.info(f"Syncing stock for {len(products)} products across {len(db_warehouses)} warehouses...")
+                # Build a map of external_id -> db_id for products
+                # We need to look up local product IDs for warehouse_stock foreign key
+                cursor.execute("""
+                    SELECT id, external_id
+                    FROM products
+                    WHERE external_id IS NOT NULL AND source = 'relbase'
+                """)
+                product_db_map = {str(row[1]): row[0] for row in cursor.fetchall()}
 
-            # Track auth errors - if we get too many 401s, skip lot sync entirely
-            auth_error_count = 0
-            auth_error_threshold = 5  # Skip lot sync after 5 consecutive auth errors
-            skip_lot_sync = False
+                # For each product-warehouse combination, fetch stock
+                logger.info(f"Syncing stock for {len(relbase_products)} active products across {len(db_warehouses)} warehouses...")
 
-            for product in products:
-                if skip_lot_sync:
-                    break  # Stop trying if auth is failing
+                # Track auth errors - if we get too many 401s, skip lot sync entirely
+                auth_error_count = 0
+                auth_error_threshold = 5  # Skip lot sync after 5 consecutive auth errors
+                skip_lot_sync = False
 
-                product_id_db, product_external_id, product_sku, product_name = product
-
-                for warehouse in db_warehouses:
+                for product in relbase_products:
                     if skip_lot_sync:
-                        break
+                        break  # Stop trying if auth is failing
 
-                    warehouse_id_db, warehouse_external_id, warehouse_code = warehouse
+                    product_external_id = product.get('id')
+                    product_sku = product.get('sku', '')
+                    product_name = product.get('name', '')
+                    product_id_db = product_db_map.get(str(product_external_id))
 
-                    try:
-                        lots = self._fetch_relbase_lot_serial(
-                            int(product_external_id),
-                            int(warehouse_external_id)
-                        )
+                    # Skip if product doesn't exist in local DB
+                    # (it's in RelBase but hasn't been synced to our products table yet)
+                    if not product_id_db:
+                        continue
 
-                        # Check for auth error marker
-                        if lots and len(lots) == 1 and lots[0].get('_auth_error'):
-                            auth_error_count += 1
-                            if auth_error_count >= auth_error_threshold:
-                                logger.warning(f"Lot/serial API returning 401 Unauthorized - skipping lot sync (permissions issue)")
-                                errors.append("RelBase lot/serial API returned 401 Unauthorized - check API permissions")
-                                skip_lot_sync = True
-                            continue
+                    for warehouse in db_warehouses:
+                        if skip_lot_sync:
+                            break
 
-                        # Reset auth error count on success
-                        auth_error_count = 0
+                        warehouse_id_db, warehouse_external_id, warehouse_code = warehouse
 
-                        for lot in lots:
-                            cursor.execute("""
-                                INSERT INTO warehouse_stock (
-                                    product_id, warehouse_id, quantity, lot_number,
-                                    expiration_date, last_updated, updated_by
-                                )
-                                VALUES (%s, %s, %s, %s, %s, NOW(), 'sync_api')
-                                ON CONFLICT (product_id, warehouse_id, lot_number)
-                                DO UPDATE SET
-                                    quantity = EXCLUDED.quantity,
-                                    expiration_date = EXCLUDED.expiration_date,
-                                    last_updated = NOW(),
-                                    updated_by = 'sync_api'
-                            """, (
-                                product_id_db,
-                                warehouse_id_db,
-                                lot['stock'],
-                                lot['lot_serial_number'],
-                                lot.get('expiration_date')
-                            ))
-                            relbase_products_updated += 1
+                        try:
+                            lots = self._fetch_relbase_lot_serial(
+                                int(product_external_id),
+                                int(warehouse_external_id)
+                            )
 
-                        time.sleep(self.rate_limit_delay)
+                            # Check for auth error marker
+                            if lots and len(lots) == 1 and lots[0].get('_auth_error'):
+                                auth_error_count += 1
+                                if auth_error_count >= auth_error_threshold:
+                                    logger.warning(f"Lot/serial API returning 401 Unauthorized - skipping lot sync (permissions issue)")
+                                    errors.append("RelBase lot/serial API returned 401 Unauthorized - check API permissions")
+                                    skip_lot_sync = True
+                                continue
 
-                    except Exception as e:
-                        errors.append(f"Error syncing stock for {product_sku}: {str(e)}")
+                            # Reset auth error count on success
+                            auth_error_count = 0
 
-                # Commit after each product to prevent connection timeout
-                conn.commit()
+                            for lot in lots:
+                                cursor.execute("""
+                                    INSERT INTO warehouse_stock (
+                                        product_id, warehouse_id, quantity, lot_number,
+                                        expiration_date, last_updated, updated_by
+                                    )
+                                    VALUES (%s, %s, %s, %s, %s, NOW(), 'sync_api')
+                                    ON CONFLICT (product_id, warehouse_id, lot_number)
+                                    DO UPDATE SET
+                                        quantity = EXCLUDED.quantity,
+                                        expiration_date = EXCLUDED.expiration_date,
+                                        last_updated = NOW(),
+                                        updated_by = 'sync_api'
+                                """, (
+                                    product_id_db,
+                                    warehouse_id_db,
+                                    lot['stock'],
+                                    lot['lot_serial_number'],
+                                    lot.get('expiration_date')
+                                ))
+                                relbase_products_updated += 1
 
-            logger.info(f"Updated {relbase_products_updated} stock records from RelBase")
+                            time.sleep(self.rate_limit_delay)
+
+                        except Exception as e:
+                            errors.append(f"Error syncing stock for {product_sku}: {str(e)}")
+
+                    # Commit after each product to prevent connection timeout
+                    conn.commit()
+
+                logger.info(f"Updated {relbase_products_updated} stock records from RelBase")
 
             # ================================================================
             # Phase 3: Sync Stock from MercadoLibre
