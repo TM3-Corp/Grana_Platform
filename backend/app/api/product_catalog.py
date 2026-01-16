@@ -132,11 +132,13 @@ def refresh_sales_facts_mv():
 
     This should be called after any change to product_catalog that affects
     analytics data (category, sku_primario, is_active, etc.).
+
+    Uses CONCURRENTLY to avoid blocking read queries during refresh.
     """
     try:
         conn = psycopg2.connect(DATABASE_URL, connect_timeout=30)
         cursor = conn.cursor()
-        cursor.execute("REFRESH MATERIALIZED VIEW sales_facts_mv")
+        cursor.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY sales_facts_mv")
         conn.commit()
         cursor.close()
         conn.close()

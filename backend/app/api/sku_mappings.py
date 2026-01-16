@@ -39,14 +39,13 @@ def refresh_sales_facts_mv():
     This should be called after any change to sku_mappings to ensure
     analytics data reflects the latest mappings.
 
-    Note: This runs synchronously and may take a few seconds for large datasets.
-    For production, consider using REFRESH MATERIALIZED VIEW CONCURRENTLY
-    (requires a unique index on the MV).
+    Uses CONCURRENTLY to avoid blocking read queries during refresh.
+    Requires unique index on MV (added in migration 20260116000001).
     """
     try:
-        conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
+        conn = psycopg2.connect(DATABASE_URL, connect_timeout=30)
         cursor = conn.cursor()
-        cursor.execute("REFRESH MATERIALIZED VIEW sales_facts_mv")
+        cursor.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY sales_facts_mv")
         conn.commit()
         cursor.close()
         conn.close()

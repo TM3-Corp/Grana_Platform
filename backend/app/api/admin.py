@@ -27,9 +27,9 @@ async def refresh_analytics(background_tasks: BackgroundTasks) -> Dict[str, Any]
     - After Shopify order sync
     - Before generating executive reports
 
-    Note: Refresh will briefly lock the view (a few seconds).
-    To enable CONCURRENTLY, a unique index must be added to the MV.
-    Refresh time: ~1-2 seconds for current data size.
+    Uses CONCURRENTLY to avoid blocking read queries during refresh.
+    Unique index added in migration 20260116000001.
+    Refresh time: ~3-4 seconds for current data size.
 
     Returns:
         success: Boolean indicating if refresh was successful
@@ -43,10 +43,9 @@ async def refresh_analytics(background_tasks: BackgroundTasks) -> Dict[str, Any]
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
 
-        # Refresh materialized view
-        # Note: This will lock the view briefly during refresh
-        # For concurrent refresh, add: CREATE UNIQUE INDEX ON sales_facts_mv (order_id, product_id)
-        cur.execute("REFRESH MATERIALIZED VIEW sales_facts_mv")
+        # Refresh materialized view CONCURRENTLY (no read locks)
+        # Requires unique index on MV (migration 20260116000001)
+        cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY sales_facts_mv")
         conn.commit()
 
         # Get MV statistics
@@ -74,7 +73,7 @@ async def refresh_analytics(background_tasks: BackgroundTasks) -> Dict[str, Any]
 
         return {
             "success": True,
-            "message": "Materialized view refreshed successfully",
+            "message": "Materialized view refreshed successfully (CONCURRENTLY, no read locks)",
             "refresh_time_seconds": round(refresh_time, 2),
             "timestamp": end_time.isoformat(),
             "statistics": {
