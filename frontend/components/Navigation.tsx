@@ -65,6 +65,7 @@ export default function Navigation() {
       subItems: [
         { name: 'Catálogo', href: '/dashboard/product-catalog', icon: '📋' },
         { name: 'Mapeo SKUs', href: '/dashboard/sku-mappings', icon: '🔗' },
+        { name: 'Mapeo Canales', href: '/dashboard/channel-mappings', icon: '🔄' },
       ]
     },
   ];

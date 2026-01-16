@@ -665,3 +665,99 @@ async def bulk_update_category(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to bulk update category: {str(e)}")
+
+
+@router.post("/bulk-deactivate-by-language")
+async def bulk_deactivate_by_language(
+    language: str = Query(..., description="Language to deactivate (e.g., 'EN')"),
+    dry_run: bool = Query(False, description="If true, only return count without making changes")
+):
+    """
+    Bulk deactivate all products with the specified language.
+
+    This is used to hide English products from analytics dropdowns while
+    preserving the data in the database. Products can be reactivated later.
+
+    Args:
+        language: Language code to deactivate (EN, ES)
+        dry_run: If True, only return count of affected products without deactivating
+
+    Returns:
+        Count of deactivated products and cache refresh status
+    """
+    try:
+        # Validate language
+        language = language.upper()
+        if language not in ['EN', 'ES']:
+            raise HTTPException(status_code=400, detail="Language must be 'EN' or 'ES'")
+
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        # Get count of affected products
+        cursor.execute("""
+            SELECT COUNT(*) as count
+            FROM product_catalog
+            WHERE language = %s AND is_active = TRUE
+        """, [language])
+        affected_count = cursor.fetchone()['count']
+
+        if affected_count == 0:
+            cursor.close()
+            conn.close()
+            return {
+                "status": "success",
+                "message": f"No active products found with language '{language}'",
+                "deactivated_count": 0,
+                "dry_run": dry_run
+            }
+
+        # Get sample of affected SKUs for confirmation
+        cursor.execute("""
+            SELECT sku, product_name
+            FROM product_catalog
+            WHERE language = %s AND is_active = TRUE
+            ORDER BY sku
+            LIMIT 10
+        """, [language])
+        sample_products = [dict(row) for row in cursor.fetchall()]
+
+        if dry_run:
+            cursor.close()
+            conn.close()
+            return {
+                "status": "preview",
+                "message": f"Would deactivate {affected_count} products with language '{language}'",
+                "affected_count": affected_count,
+                "sample_products": sample_products,
+                "dry_run": True
+            }
+
+        # Perform bulk deactivation
+        cursor.execute("""
+            UPDATE product_catalog
+            SET is_active = FALSE, updated_at = NOW()
+            WHERE language = %s AND is_active = TRUE
+        """, [language])
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        # Refresh cache and materialized view
+        cache_refreshed, mv_refreshed = refresh_product_catalog_cache()
+
+        return {
+            "status": "success",
+            "message": f"Deactivated {affected_count} products with language '{language}'",
+            "deactivated_count": affected_count,
+            "sample_products": sample_products,
+            "cache_refreshed": cache_refreshed,
+            "mv_refreshed": mv_refreshed,
+            "dry_run": False
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to bulk deactivate: {str(e)}")

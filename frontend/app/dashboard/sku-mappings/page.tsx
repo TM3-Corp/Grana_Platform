@@ -426,9 +426,9 @@ export default function SKUMappingsPage() {
     if (!search.trim()) return catalogSKUs;
     const searchLower = search.toLowerCase();
     return catalogSKUs.filter(sku =>
-      sku.sku.toLowerCase().includes(searchLower) ||
-      sku.product_name.toLowerCase().includes(searchLower) ||
-      (sku.category && sku.category.toLowerCase().includes(searchLower))
+      (sku.sku?.toLowerCase() || '').includes(searchLower) ||
+      (sku.product_name?.toLowerCase() || '').includes(searchLower) ||
+      (sku.category?.toLowerCase() || '').includes(searchLower)
     );
   };
 
@@ -436,7 +436,7 @@ export default function SKUMappingsPage() {
   const getSkuDisplayText = (targetSku: string) => {
     if (!targetSku) return '';
     const found = catalogSKUs.find(s => s.sku === targetSku);
-    return found ? `${found.sku} - ${found.product_name}` : targetSku;
+    return found ? `${found.sku} - ${found.product_name || 'Sin nombre'}` : targetSku;
   };
 
   // Add component row

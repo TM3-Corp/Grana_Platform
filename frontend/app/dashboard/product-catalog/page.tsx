@@ -556,6 +556,14 @@ export default function ProductCatalogPage() {
                                 <span className="font-medium">{product.peso_caja_master_total ? `${product.peso_caja_master_total} kg` : '-'}</span>
                               </div>
                               <div>
+                                <span className="text-gray-500">Peso Film:</span>{' '}
+                                <span className="font-medium">{product.peso_film ? `${product.peso_film} kg` : '-'}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">Peso Etiqueta:</span>{' '}
+                                <span className="font-medium">{product.peso_etiqueta_total ? `${product.peso_etiqueta_total} kg` : '-'}</span>
+                              </div>
+                              <div>
                                 <span className="text-gray-500">Valor SKU:</span>{' '}
                                 <span className="font-medium">{product.sku_value ? `$${product.sku_value.toLocaleString()}` : '-'}</span>
                               </div>

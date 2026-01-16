@@ -233,36 +233,52 @@ async def get_catalog_skus(
     Get list of valid target SKUs from product_catalog.
 
     Used for the target SKU dropdown in the UI.
+    Includes both regular SKUs and master box SKUs (sku_master).
     """
     try:
         conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
         cursor = conn.cursor(cursor_factory=RealDictCursor)
 
-        where_clauses = ["is_active = TRUE"]
-        params = []
+        # Build query with UNION to include both regular SKUs and master box SKUs
+        search_param = f"%{search}%" if search else None
 
+        # Build WHERE conditions for regular SKUs
+        sku_where = ["is_active = TRUE", "sku IS NOT NULL"]
+        sku_params = []
         if search:
-            where_clauses.append("(sku ILIKE %s OR product_name ILIKE %s)")
-            search_param = f"%{search}%"
-            params.extend([search_param, search_param])
-
+            sku_where.append("(sku ILIKE %s OR product_name ILIKE %s)")
+            sku_params.extend([search_param, search_param])
         if category:
-            where_clauses.append("category = %s")
-            params.append(category)
+            sku_where.append("category = %s")
+            sku_params.append(category)
 
-        where_sql = " AND ".join(where_clauses)
+        # Build WHERE conditions for master box SKUs
+        master_where = ["is_active = TRUE", "sku_master IS NOT NULL"]
+        master_params = []
+        if search:
+            master_where.append("(sku_master ILIKE %s OR master_box_name ILIKE %s)")
+            master_params.extend([search_param, search_param])
+        if category:
+            master_where.append("category = %s")
+            master_params.append(category)
+
+        sku_where_sql = " AND ".join(sku_where)
+        master_where_sql = " AND ".join(master_where)
 
         cursor.execute(f"""
-            SELECT
-                sku,
-                product_name,
-                category,
-                units_per_display
+            SELECT sku, product_name, category, units_per_display, 'sku' as sku_type
             FROM product_catalog
-            WHERE {where_sql}
+            WHERE {sku_where_sql}
+
+            UNION
+
+            SELECT sku_master as sku, master_box_name as product_name, category, units_per_display, 'master' as sku_type
+            FROM product_catalog
+            WHERE {master_where_sql}
+
             ORDER BY sku
             LIMIT %s
-        """, params + [limit])
+        """, sku_params + master_params + [limit])
 
         skus = cursor.fetchall()
 
@@ -338,10 +354,10 @@ async def create_mapping(mapping: SKUMappingCreate):
         conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
         cursor = conn.cursor(cursor_factory=RealDictCursor)
 
-        # Validate target_sku exists in product_catalog
+        # Validate target_sku exists in product_catalog (check both sku and sku_master columns)
         cursor.execute("""
-            SELECT sku FROM product_catalog WHERE sku = %s AND is_active = TRUE
-        """, (mapping.target_sku,))
+            SELECT sku FROM product_catalog WHERE (sku = %s OR sku_master = %s) AND is_active = TRUE
+        """, (mapping.target_sku, mapping.target_sku))
 
         if not cursor.fetchone():
             cursor.close()
@@ -443,11 +459,11 @@ async def update_mapping(mapping_id: int, mapping: SKUMappingUpdate):
             conn.close()
             raise HTTPException(status_code=404, detail=f"Mapping with id {mapping_id} not found")
 
-        # Validate target_sku if provided
+        # Validate target_sku if provided (check both sku and sku_master columns)
         if mapping.target_sku:
             cursor.execute("""
-                SELECT sku FROM product_catalog WHERE sku = %s AND is_active = TRUE
-            """, (mapping.target_sku,))
+                SELECT sku FROM product_catalog WHERE (sku = %s OR sku_master = %s) AND is_active = TRUE
+            """, (mapping.target_sku, mapping.target_sku))
 
             if not cursor.fetchone():
                 cursor.close()

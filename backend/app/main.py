@@ -14,7 +14,7 @@ env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(env_path)
 
 # Import API routers
-from app.api import conversion, shopify, products, orders, mercadolibre, product_mapping, relbase, audit, inventory, sales_analytics, sales_analytics_realtime, admin, warehouses, chat, sync, sku_mappings, analytics, auth, product_catalog, inventory_planning
+from app.api import conversion, shopify, products, orders, mercadolibre, product_mapping, relbase, audit, inventory, sales_analytics, sales_analytics_realtime, admin, warehouses, chat, sync, sku_mappings, analytics, auth, product_catalog, inventory_planning, channel_mappings
 
 # Import centralized database connection with retry logic
 from app.core.database import get_db_connection_with_retry, CONNECTION_TIMEOUT
@@ -132,6 +132,9 @@ app.include_router(sync.router)
 
 # SKU Mappings API (database-driven SKU transformation rules)
 app.include_router(sku_mappings.router, prefix="/api/v1/sku-mappings", tags=["SKU Mappings"])
+
+# Channel Mappings API (customer-to-channel mapping rules)
+app.include_router(channel_mappings.router, prefix="/api/v1/channel-mappings", tags=["Channel Mappings"])
 
 # Product Catalog API (CRUD for product catalog management)
 app.include_router(product_catalog.router, prefix="/api/v1/product-catalog", tags=["Product Catalog"])

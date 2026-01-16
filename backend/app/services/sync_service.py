@@ -232,9 +232,10 @@ class SyncService:
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 404:
                 return []  # No lots found (normal case)
-            elif e.response.status_code == 401:
-                # Don't log every 401 - it floods the logs
-                # Return special marker to indicate auth failure
+            elif e.response.status_code in (401, 403):
+                # Don't log every 401/403 - it floods the logs
+                # 401 = unauthorized, 403 = forbidden (product not accessible)
+                # Return special marker to indicate auth/permission failure
                 return [{'_auth_error': True}]
             logger.error(f"Error fetching lots for product {product_id}: {e}")
             return []
@@ -1101,12 +1102,13 @@ class SyncService:
                 if not code:
                     code = "warehouse_unnamed"  # Fallback for empty codes
 
-                # Upsert warehouse
+                # Upsert warehouse using external_id as the key (Relbase ID is the true identifier)
+                # This handles cases where Relbase renames a warehouse (same ID, new name/code)
                 cursor.execute("""
                     INSERT INTO warehouses (code, name, location, external_id, source, update_method, is_active)
                     VALUES (%s, %s, %s, %s, 'relbase', 'api', %s)
-                    ON CONFLICT (code) DO UPDATE SET
-                        external_id = EXCLUDED.external_id,
+                    ON CONFLICT (external_id, source) WHERE external_id IS NOT NULL DO UPDATE SET
+                        code = EXCLUDED.code,
                         name = EXCLUDED.name,
                         location = EXCLUDED.location,
                         is_active = EXCLUDED.is_active,
@@ -1123,13 +1125,14 @@ class SyncService:
             # ================================================================
             logger.info("Phase 2: Syncing stock from RelBase...")
 
-            # Get products with external_id
+            # Get products with external_id (exclude ANU- legacy products which return 403)
             cursor.execute("""
                 SELECT id, external_id, sku, name
                 FROM products
                 WHERE external_id IS NOT NULL
                 AND source = 'relbase'
                 AND is_active = true
+                AND (sku IS NULL OR sku NOT LIKE 'ANU-%%')
             """)
             products = cursor.fetchall()
 

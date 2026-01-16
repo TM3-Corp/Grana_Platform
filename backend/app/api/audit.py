@@ -210,7 +210,8 @@ def get_pack_component_mappings(sku: str, cursor) -> list:
             pc.product_name,
             pc.sku_primario,
             pc.category,
-            COALESCE(pc.sku_value, 1000) as sku_value
+            COALESCE(pc.sku_value, 1000) as sku_value,
+            COALESCE(pc.units_per_display, 1) as units_per_display
         FROM sku_mappings sm
         LEFT JOIN product_catalog pc ON pc.sku = sm.target_sku AND pc.is_active = TRUE
         WHERE sm.source_pattern = %s
@@ -234,7 +235,8 @@ def get_pack_component_mappings(sku: str, cursor) -> list:
             'product_name': row['product_name'],
             'sku_primario': row['sku_primario'],
             'category': row['category'],
-            'sku_value': row['sku_value'] or 1000
+            'sku_value': row['sku_value'] or 1000,
+            'units_per_display': row['units_per_display'] or 1
         }
         for row in mappings
     ]
@@ -287,6 +289,11 @@ def expand_pack_to_components(row_dict: dict, pack_mappings: list, cursor) -> li
         # Calculate component quantity
         component_qty = original_qty * qty_multiplier
 
+        # Get units_per_display for proper unit conversion
+        # (e.g., BABE_U20010 is X5 format, so units_per_display=5)
+        units_per_display = mapping.get('units_per_display', 1) or 1
+        component_units = component_qty * units_per_display
+
         # Calculate unit price for this component (revenue / quantity)
         component_unit_price = round(component_revenue / component_qty, 2) if component_qty > 0 else 0
 
@@ -304,7 +311,7 @@ def expand_pack_to_components(row_dict: dict, pack_mappings: list, cursor) -> li
             'category': mapping['category'] or row_dict.get('category'),
             'family': mapping['category'] or row_dict.get('family'),
             'quantity': component_qty,
-            'unidades': component_qty,  # For expanded components, qty = units
+            'unidades': component_units,  # FIX: Apply units_per_display multiplier
             'unit_price': component_unit_price,  # Calculated price per unit
             'item_subtotal': component_revenue,
             'peso_display_total': peso_display_total,
@@ -315,7 +322,7 @@ def expand_pack_to_components(row_dict: dict, pack_mappings: list, cursor) -> li
             'match_type': 'pack_expansion',
             'confidence': 100,
             'in_catalog': True,
-            'conversion_factor': 1
+            'conversion_factor': units_per_display  # FIX: Use actual conversion factor
         }
 
         expanded_rows.append(component_row)
@@ -1724,6 +1731,106 @@ async def export_audit_data(
                 # Create workbook
                 wb = Workbook()
                 ws = wb.active
+
+                # Add metadata sheet with export info and filters
+                meta_ws = wb.create_sheet(title="Metadata", index=0)
+
+                # Title styling
+                title_font = Font(bold=True, size=14, color="1F4E79")
+                label_font = Font(bold=True, color="444444")
+                value_font = Font(color="000000")
+
+                # Title
+                meta_ws.cell(row=1, column=1, value="Reporte de Auditoría - Grana Platform").font = title_font
+                meta_ws.merge_cells('A1:C1')
+
+                # Export timestamp
+                meta_ws.cell(row=3, column=1, value="Fecha de Exportación:").font = label_font
+                meta_ws.cell(row=3, column=2, value=datetime.now().strftime('%Y-%m-%d %H:%M:%S')).font = value_font
+
+                # Build filters info
+                row_num = 5
+                meta_ws.cell(row=row_num, column=1, value="Filtros Aplicados:").font = Font(bold=True, size=12, color="1F4E79")
+                row_num += 1
+
+                # Date range
+                if from_date or to_date:
+                    meta_ws.cell(row=row_num, column=1, value="Rango de Fechas:").font = label_font
+                    date_range_str = f"{from_date or 'Sin límite'} a {to_date or 'Sin límite'}"
+                    meta_ws.cell(row=row_num, column=2, value=date_range_str).font = value_font
+                    row_num += 1
+
+                # Category/Familia
+                if category:
+                    meta_ws.cell(row=row_num, column=1, value="Familia:").font = label_font
+                    meta_ws.cell(row=row_num, column=2, value=', '.join(category)).font = value_font
+                    row_num += 1
+
+                # Channel
+                if channel:
+                    meta_ws.cell(row=row_num, column=1, value="Canal:").font = label_font
+                    meta_ws.cell(row=row_num, column=2, value=', '.join(channel)).font = value_font
+                    row_num += 1
+
+                # Customer
+                if customer:
+                    meta_ws.cell(row=row_num, column=1, value="Cliente:").font = label_font
+                    meta_ws.cell(row=row_num, column=2, value=', '.join(customer)).font = value_font
+                    row_num += 1
+
+                # SKU search
+                if sku:
+                    meta_ws.cell(row=row_num, column=1, value="Búsqueda SKU:").font = label_font
+                    meta_ws.cell(row=row_num, column=2, value=sku).font = value_font
+                    row_num += 1
+
+                # SKU Primario
+                if sku_primario:
+                    meta_ws.cell(row=row_num, column=1, value="SKU Primario:").font = label_font
+                    meta_ws.cell(row=row_num, column=2, value=', '.join(sku_primario)).font = value_font
+                    row_num += 1
+
+                # Source
+                if source:
+                    meta_ws.cell(row=row_num, column=1, value="Fuente:").font = label_font
+                    meta_ws.cell(row=row_num, column=2, value=', '.join(source)).font = value_font
+                    row_num += 1
+
+                # Group by
+                if group_by:
+                    meta_ws.cell(row=row_num, column=1, value="Agrupado por:").font = label_font
+                    group_labels = {
+                        'sku_primario': 'SKU Primario',
+                        'customer_name': 'Cliente',
+                        'channel_name': 'Canal',
+                        'order_month': 'Mes',
+                        'family': 'Familia',
+                        'format': 'Formato',
+                        'sku': 'SKU Original'
+                    }
+                    meta_ws.cell(row=row_num, column=2, value=group_labels.get(group_by, group_by)).font = value_font
+                    row_num += 1
+
+                # Special filters
+                if has_nulls:
+                    meta_ws.cell(row=row_num, column=1, value="Filtro Especial:").font = label_font
+                    meta_ws.cell(row=row_num, column=2, value="Solo registros con valores NULL").font = value_font
+                    row_num += 1
+
+                if not_in_catalog:
+                    meta_ws.cell(row=row_num, column=1, value="Filtro Especial:").font = label_font
+                    meta_ws.cell(row=row_num, column=2, value="Solo SKUs no encontrados en catálogo").font = value_font
+                    row_num += 1
+
+                # No filters applied message
+                if not any([from_date, to_date, category, channel, customer, sku, sku_primario, source, group_by, has_nulls, not_in_catalog]):
+                    meta_ws.cell(row=row_num, column=1, value="(Sin filtros aplicados)").font = Font(italic=True, color="666666")
+                    row_num += 1
+
+                # Column widths for metadata sheet
+                meta_ws.column_dimensions['A'].width = 25
+                meta_ws.column_dimensions['B'].width = 50
+                meta_ws.column_dimensions['C'].width = 20
 
                 # Styles
                 header_font = Font(bold=True, color="FFFFFF")
