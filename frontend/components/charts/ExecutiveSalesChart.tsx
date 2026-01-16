@@ -101,27 +101,28 @@ const CustomTooltip = ({ active, payload, label, previousYear, currentYear, next
 
       {/* Values Section */}
       <div className="space-y-2 mb-3">
-        {revenuePrevYear !== undefined && revenuePrevYear !== null && (
-          <div className="flex justify-between items-center">
-            <span className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-indigo-500"></span>
-              <span className="text-gray-600">{previousYear} Real:</span>
-            </span>
-            <span className="font-semibold text-indigo-600">
-              ${revenuePrevYear.toLocaleString('es-CL')}
-            </span>
-          </div>
-        )}
-
-        {/* MTD comparison for previous year - show when it's an MTD month */}
+        {/* MTD comparison for previous year - show FIRST when it's an MTD month (main comparison value) */}
         {isMtd && revenuePrevYearMtd !== undefined && revenuePrevYearMtd !== null && (
           <div className="flex justify-between items-center">
             <span className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full bg-indigo-300"></span>
-              <span className="text-indigo-400 text-xs">{previousYear} (días 1-{mtdDay}):</span>
+              <span className="text-gray-600">{previousYear} (días 1-{mtdDay}):</span>
             </span>
-            <span className="font-medium text-indigo-400 text-sm">
+            <span className="font-semibold text-indigo-400">
               ${revenuePrevYearMtd.toLocaleString('es-CL')}
+            </span>
+          </div>
+        )}
+
+        {/* Previous year full month - show smaller when MTD, normal otherwise */}
+        {revenuePrevYear !== undefined && revenuePrevYear !== null && (
+          <div className="flex justify-between items-center">
+            <span className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-indigo-500"></span>
+              <span className={isMtd ? 'text-gray-500 text-xs' : 'text-gray-600'}>{previousYear} {isMtd ? 'mes' : 'Real'}:</span>
+            </span>
+            <span className={isMtd ? 'font-medium text-indigo-600 text-sm' : 'font-semibold text-indigo-600'}>
+              ${revenuePrevYear.toLocaleString('es-CL')}
             </span>
           </div>
         )}
@@ -130,7 +131,7 @@ const CustomTooltip = ({ active, payload, label, previousYear, currentYear, next
           <div className="flex justify-between items-center">
             <span className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full bg-teal-600"></span>
-              <span className="text-gray-600">{isMtd ? `${currentYear} (1-${mtdDay}):` : `${currentYear} Real:`}</span>
+              <span className="text-gray-600">{isMtd ? `${currentYear} (días 1-${mtdDay}):` : `${currentYear} Real:`}</span>
             </span>
             <span className="font-semibold text-teal-700">
               ${revenueCurrYearActual.toLocaleString('es-CL')}
@@ -181,7 +182,7 @@ const CustomTooltip = ({ active, payload, label, previousYear, currentYear, next
       {revenuePrevYear && revenueCurrYearActual && (
         <div className="pt-3 border-t border-gray-200">
           <div className="flex justify-between items-center">
-            <span className="text-gray-600 font-medium text-sm">{previousYear} vs {currentYear}{isMtd ? ` (1-${mtdDay})` : ''}:</span>
+            <span className="text-gray-600 font-medium text-sm">{previousYear} vs {currentYear}:</span>
             <div className="text-right">
               <span className={`font-bold ${gapYearsAmount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 {gapYearsAmount >= 0 ? '+' : ''}{gapYearsPercent.toFixed(1)}%

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { toTitleCase } from '@/lib/utils';
 import Navigation from '@/components/Navigation';
 
@@ -436,9 +436,8 @@ export default function ProductionPlanningPage() {
               </thead>
               <tbody className="bg-white divide-y divide-gray-100">
                 {data.data.map((product) => (
-                  <>
+                  <React.Fragment key={product.sku}>
                   <tr
-                    key={product.sku}
                     className="hover:bg-gray-50 transition-colors cursor-pointer"
                     onClick={() => handleRowClick(product.sku)}
                   >
@@ -725,7 +724,7 @@ export default function ProductionPlanningPage() {
                       </td>
                     </tr>
                   )}
-                  </>
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>

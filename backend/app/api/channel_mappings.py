@@ -438,6 +438,7 @@ async def get_client_channel_analysis(
                     ARRAY_AGG(DISTINCT ch.name) FILTER (WHERE ch.name IS NOT NULL) as channels,
                     ARRAY_AGG(DISTINCT ch.external_id) FILTER (WHERE ch.external_id IS NOT NULL) as channel_ids,
                     COUNT(o.id) as order_count,
+                    COUNT(CASE WHEN o.channel_id IS NULL THEN 1 END) as orders_without_channel,
                     SUM(o.total) as total_revenue,
                     c.assigned_channel_id as override_channel_id,
                     c.assigned_channel_name as override_channel,
@@ -453,7 +454,7 @@ async def get_client_channel_analysis(
             )
             SELECT
                 *,
-                CASE WHEN assigned_channel_id IS NOT NULL THEN TRUE ELSE FALSE END as has_override
+                CASE WHEN override_channel_id IS NOT NULL THEN TRUE ELSE FALSE END as has_override
             FROM client_channels
         """
 
@@ -465,7 +466,8 @@ async def get_client_channel_analysis(
         if anomaly_type == 'multiple':
             where_clauses.append("channel_count > 1")
         elif anomaly_type == 'none':
-            where_clauses.append("channel_count = 0 OR channels IS NULL")
+            # Show customers with ANY order that has no channel assigned
+            where_clauses.append("orders_without_channel > 0")
 
         if search:
             where_clauses.append("(customer_name ILIKE %s OR customer_rut ILIKE %s)")
@@ -481,7 +483,8 @@ async def get_client_channel_analysis(
         total = cursor.fetchone()['count']
 
         # Get paginated results
-        base_query += " ORDER BY channel_count DESC, total_revenue DESC LIMIT %s OFFSET %s"
+        # Sort unmapped customers (orders_without_channel > 0) first, then by channel_count and revenue
+        base_query += " ORDER BY orders_without_channel DESC, channel_count DESC, total_revenue DESC LIMIT %s OFFSET %s"
         params.extend([limit, offset])
 
         cursor.execute(base_query, params)
@@ -492,17 +495,18 @@ async def get_client_channel_analysis(
             SELECT
                 COUNT(DISTINCT c.id) as total_clients,
                 COUNT(DISTINCT CASE WHEN sub.channel_count > 1 THEN c.id END) as multi_channel_clients,
-                COUNT(DISTINCT CASE WHEN sub.channel_count = 0 OR sub.channel_count IS NULL THEN c.id END) as no_channel_clients,
+                COUNT(DISTINCT CASE WHEN sub.orders_without_channel > 0 THEN c.id END) as no_channel_clients,
                 COUNT(DISTINCT CASE WHEN c.assigned_channel_id IS NOT NULL THEN c.id END) as clients_with_override
             FROM customers c
             JOIN (
                 SELECT
-                    customer_id,
-                    COUNT(DISTINCT o.channel_id) as channel_count
+                    o.customer_id,
+                    COUNT(DISTINCT o.channel_id) as channel_count,
+                    COUNT(CASE WHEN o.channel_id IS NULL THEN 1 END) as orders_without_channel
                 FROM orders o
                 JOIN customers c ON c.id = o.customer_id
                 WHERE c.source = 'relbase'
-                GROUP BY customer_id
+                GROUP BY o.customer_id
             ) sub ON sub.customer_id = c.id
             WHERE c.source = 'relbase'
         """)
@@ -545,7 +549,8 @@ async def get_analysis_stats():
             WITH client_channels AS (
                 SELECT
                     c.id,
-                    COUNT(DISTINCT o.channel_id) as channel_count
+                    COUNT(DISTINCT o.channel_id) as channel_count,
+                    COUNT(CASE WHEN o.channel_id IS NULL THEN 1 END) as orders_without_channel
                 FROM customers c
                 JOIN orders o ON o.customer_id = c.id
                 WHERE c.source = 'relbase'
@@ -553,9 +558,9 @@ async def get_analysis_stats():
             )
             SELECT
                 COUNT(*) as total_clients,
-                COUNT(CASE WHEN channel_count = 1 THEN 1 END) as single_channel_clients,
+                COUNT(CASE WHEN channel_count = 1 AND orders_without_channel = 0 THEN 1 END) as single_channel_clients,
                 COUNT(CASE WHEN channel_count > 1 THEN 1 END) as multi_channel_clients,
-                COUNT(CASE WHEN channel_count = 0 THEN 1 END) as no_channel_clients
+                COUNT(CASE WHEN orders_without_channel > 0 THEN 1 END) as no_channel_clients
             FROM client_channels
         """)
         client_stats = cursor.fetchone()

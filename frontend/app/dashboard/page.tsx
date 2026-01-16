@@ -446,11 +446,10 @@ function DashboardContent() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
         {/* Welcome Header - Clean floating style */}
-        <div className="mb-10">
-          <h1 className="text-3xl font-bold text-gray-900 mb-3">
+        <div className="mb-6 pt-2">
+          <h1 className="text-2xl font-bold text-gray-900 mb-1">
             👋 {getGreeting(session?.user?.name)}
           </h1>
-          {/* Explicit temporality message */}
           <p className="text-sm text-gray-500">
             Datos <strong className="text-gray-700">YTD</strong> desde el 1 de enero hasta el {new Date().getDate()} de {new Date().toLocaleDateString('es-CL', { month: 'long' })}
           </p>

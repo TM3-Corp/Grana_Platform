@@ -22,6 +22,7 @@ interface ClientAnalysis {
   channels: string[] | null;
   channel_ids: string[] | null;
   order_count: number;
+  orders_without_channel: number;
   total_revenue: number;
   // Override rule info (if exists)
   rule_id: number | null;
@@ -424,11 +425,17 @@ export default function ChannelMappingsPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {clients.map(client => {
-                    const hasAnomaly = client.channel_count > 1 || client.channel_count === 0;
+                    const hasMultipleChannels = client.channel_count > 1;
+                    const hasOrdersWithoutChannel = client.orders_without_channel > 0;
                     const hasRule = client.rule_id !== null;
 
+                    // Unmapped (orders without channel) = red, Multiple channels = orange
+                    const rowBgClass = hasOrdersWithoutChannel && !hasRule
+                      ? 'bg-red-100'
+                      : (hasMultipleChannels && !hasRule ? 'bg-orange-50' : '');
+
                     return (
-                      <tr key={client.customer_id} className={`hover:bg-gray-50 ${hasAnomaly && !hasRule ? 'bg-orange-50' : ''}`}>
+                      <tr key={client.customer_id} className={`hover:bg-gray-50 ${rowBgClass}`}>
                         <td className="px-4 py-3">
                           <div className="font-medium text-gray-900">
                             {client.customer_name}
@@ -461,6 +468,11 @@ export default function ChannelMappingsPage() {
                           {client.channel_count > 1 && (
                             <div className="text-xs text-orange-600 mt-1 font-medium">
                               ⚠ {client.channel_count} canales distintos
+                            </div>
+                          )}
+                          {client.orders_without_channel > 0 && (
+                            <div className="text-xs text-red-600 mt-1 font-medium">
+                              ⚠ {client.orders_without_channel} orden{client.orders_without_channel > 1 ? 'es' : ''} sin canal
                             </div>
                           )}
                         </td>

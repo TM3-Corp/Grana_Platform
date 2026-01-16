@@ -585,10 +585,21 @@ async def get_audit_data(
 
                 if channel:
                     # For channel, use OR with ILIKE for partial matching
-                    channel_conditions = ' OR '.join(['ch.name ILIKE %s'] * len(channel))
-                    where_clauses.append(f"({channel_conditions})")
+                    # Special handling for "Sin Canal Asignado" - filter for NULL channel_id
+                    channel_conditions = []
+                    has_sin_canal = False
                     for ch in channel:
-                        params.append(f"%{ch}%")
+                        if ch.lower() == 'sin canal asignado':
+                            has_sin_canal = True
+                        else:
+                            channel_conditions.append('ch.name ILIKE %s')
+                            params.append(f"%{ch}%")
+
+                    if has_sin_canal:
+                        channel_conditions.append('o.channel_id IS NULL')
+
+                    if channel_conditions:
+                        where_clauses.append(f"({' OR '.join(channel_conditions)})")
 
                 if customer:
                     # For customer, use OR with ILIKE for partial matching
@@ -1212,7 +1223,16 @@ async def get_audit_data(
                         row_dict['in_catalog'] = False
                         row_dict['conversion_factor'] = 1
 
-                    enriched_rows.append(row_dict)
+                    # ✅ PACK EXPANSION: Check if this is a variety pack (multiple component mappings)
+                    # If so, expand into individual component rows with proportional revenue
+                    pack_mappings = get_pack_component_mappings(sku, cursor)
+                    if pack_mappings:
+                        # Expand PACK into component rows (e.g., PACKNAVIDAD2 → 8 individual products)
+                        component_rows = expand_pack_to_components(row_dict, pack_mappings, cursor)
+                        enriched_rows.extend(component_rows)
+                    else:
+                        # Normal product - add as-is
+                        enriched_rows.append(row_dict)
 
                 # Calculate totals from enriched data
                 # total_unidades: Use same-source calculation (orders/order_items) for consistency
