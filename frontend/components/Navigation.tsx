@@ -5,6 +5,27 @@ import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useState, useEffect, useRef } from 'react';
 import { signOut, useSession } from 'next-auth/react';
+import {
+  LayoutDashboard,
+  TrendingUp,
+  BarChart3,
+  Table2,
+  Package,
+  Boxes,
+  Warehouse,
+  Factory,
+  Tags,
+  BookOpen,
+  Link2,
+  ArrowLeftRight,
+  ChevronDown,
+  User,
+  Users,
+  LogOut,
+  Menu,
+  X,
+  type LucideIcon
+} from 'lucide-react';
 
 // Helper function to get initials from name or email
 function getInitials(nameOrEmail: string | null | undefined): string {
@@ -37,35 +58,44 @@ export default function Navigation() {
 
   const userRole = (session?.user as { role?: string })?.role;
 
-  const navigation = [
-    { name: 'Dashboard', href: '/dashboard', icon: '📊' },
+  // Navigation structure with Lucide icons
+  interface NavItem {
+    name: string;
+    href?: string;
+    icon: LucideIcon;
+    isDropdown?: boolean;
+    subItems?: { name: string; href: string; icon: LucideIcon }[];
+  }
+
+  const navigation: NavItem[] = [
+    { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
     {
       name: 'Ventas',
-      icon: '📈',
+      icon: TrendingUp,
       isDropdown: true,
       subItems: [
-        { name: 'Visualizaciones', href: '/dashboard/sales-analytics', icon: '🎯' },
-        { name: 'Tablas', href: '/dashboard/orders', icon: '📋' },
+        { name: 'Visualizaciones', href: '/dashboard/sales-analytics', icon: BarChart3 },
+        { name: 'Tablas', href: '/dashboard/orders', icon: Table2 },
       ]
     },
     {
       name: 'Inventario',
-      icon: '📦',
+      icon: Package,
       isDropdown: true,
       subItems: [
-        { name: 'General', href: '/dashboard/warehouse-inventory', icon: '📦' },
-        { name: 'Por Bodega', href: '/dashboard/warehouse-inventory/by-warehouse', icon: '🏢' },
-        { name: 'Planificación', href: '/dashboard/production-planning', icon: '🏭' },
+        { name: 'General', href: '/dashboard/warehouse-inventory', icon: Boxes },
+        { name: 'Por Bodega', href: '/dashboard/warehouse-inventory/by-warehouse', icon: Warehouse },
+        { name: 'Planificación', href: '/dashboard/production-planning', icon: Factory },
       ]
     },
     {
       name: 'Productos',
-      icon: '🏷️',
+      icon: Tags,
       isDropdown: true,
       subItems: [
-        { name: 'Catálogo', href: '/dashboard/product-catalog', icon: '📋' },
-        { name: 'Mapeo SKUs', href: '/dashboard/sku-mappings', icon: '🔗' },
-        { name: 'Mapeo Canales', href: '/dashboard/channel-mappings', icon: '🔄' },
+        { name: 'Catálogo', href: '/dashboard/product-catalog', icon: BookOpen },
+        { name: 'Mapeo SKUs', href: '/dashboard/sku-mappings', icon: Link2 },
+        { name: 'Mapeo Canales', href: '/dashboard/channel-mappings', icon: ArrowLeftRight },
       ]
     },
   ];
@@ -101,8 +131,10 @@ export default function Navigation() {
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-1">
-            {navigation.map((item: any) => {
-              if (item.isDropdown) {
+            {navigation.map((item) => {
+              const IconComponent = item.icon;
+
+              if (item.isDropdown && item.subItems) {
                 // Dropdown menu for Ventas and Inventario
                 const isDropActive = isDropdownActive(item.subItems);
                 return (
@@ -123,39 +155,38 @@ export default function Navigation() {
                         }
                       `}
                     >
-                      <span>{item.icon}</span>
+                      <IconComponent className="w-4 h-4" strokeWidth={1.75} />
                       <span>{item.name}</span>
-                      <svg
+                      <ChevronDown
                         className={`w-4 h-4 transition-transform ${openDropdown === item.name ? 'rotate-180' : ''}`}
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
+                        strokeWidth={1.75}
+                      />
                     </button>
 
                     {/* Dropdown menu */}
                     {openDropdown === item.name && (
                       <div className="absolute left-0 top-full w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
-                        {item.subItems.map((subItem: any) => (
-                          <Link
-                            key={subItem.href}
-                            href={subItem.href}
-                            className={`
-                              block px-4 py-2 text-sm transition-colors
-                              flex items-center gap-2
-                              ${
-                                isActive(subItem.href)
-                                  ? 'bg-green-50 text-green-700'
-                                  : 'text-gray-700 hover:bg-gray-50'
-                              }
-                            `}
-                          >
-                            <span>{subItem.icon}</span>
-                            <span>{subItem.name}</span>
-                          </Link>
-                        ))}
+                        {item.subItems.map((subItem) => {
+                          const SubIconComponent = subItem.icon;
+                          return (
+                            <Link
+                              key={subItem.href}
+                              href={subItem.href}
+                              className={`
+                                block px-4 py-2 text-sm transition-colors
+                                flex items-center gap-2
+                                ${
+                                  isActive(subItem.href)
+                                    ? 'bg-green-50 text-green-700'
+                                    : 'text-gray-700 hover:bg-gray-50'
+                                }
+                              `}
+                            >
+                              <SubIconComponent className="w-4 h-4" strokeWidth={1.75} />
+                              <span>{subItem.name}</span>
+                            </Link>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -166,18 +197,18 @@ export default function Navigation() {
               return (
                 <Link
                   key={item.href}
-                  href={item.href}
+                  href={item.href!}
                   className={`
                     px-4 py-2 rounded-lg text-sm font-medium transition-all
                     flex items-center gap-2
                     ${
-                      isActive(item.href)
+                      isActive(item.href!)
                         ? 'bg-green-50 text-green-700'
                         : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
                     }
                   `}
                 >
-                  <span>{item.icon}</span>
+                  <IconComponent className="w-4 h-4" strokeWidth={1.75} />
                   <span>{item.name}</span>
                 </Link>
               );
@@ -200,14 +231,10 @@ export default function Navigation() {
                   <span className="text-sm text-gray-700 hidden lg:block max-w-32 truncate">
                     {session.user?.name || session.user?.email}
                   </span>
-                  <svg
+                  <ChevronDown
                     className={`w-4 h-4 text-gray-500 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`}
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
+                    strokeWidth={1.75}
+                  />
                 </button>
 
                 {/* Dropdown Menu */}
@@ -228,9 +255,7 @@ export default function Navigation() {
                         onClick={() => setUserMenuOpen(false)}
                         className="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                       >
-                        <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                        </svg>
+                        <User className="w-4 h-4 text-gray-400" strokeWidth={1.75} />
                         Perfil
                       </Link>
 
@@ -241,9 +266,7 @@ export default function Navigation() {
                           onClick={() => setUserMenuOpen(false)}
                           className="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                         >
-                          <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                          </svg>
+                          <Users className="w-4 h-4 text-gray-400" strokeWidth={1.75} />
                           Gestión de Usuarios
                         </Link>
                       )}
@@ -262,9 +285,7 @@ export default function Navigation() {
                         }}
                         className="flex items-center gap-3 px-4 py-2 text-sm text-red-600 hover:bg-red-50 w-full transition-colors"
                       >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                        </svg>
+                        <LogOut className="w-4 h-4" strokeWidth={1.75} />
                         Cerrar Sesión
                       </button>
                     </div>
@@ -282,13 +303,9 @@ export default function Navigation() {
             >
               <span className="sr-only">Abrir menú</span>
               {mobileMenuOpen ? (
-                <svg className="block h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                <X className="h-6 w-6" strokeWidth={1.5} />
               ) : (
-                <svg className="block h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
-                </svg>
+                <Menu className="h-6 w-6" strokeWidth={1.5} />
               )}
             </button>
           </div>
@@ -299,34 +316,39 @@ export default function Navigation() {
       {mobileMenuOpen && (
         <div className="md:hidden border-t border-gray-200">
           <div className="px-2 pt-2 pb-3 space-y-1">
-            {navigation.map((item: any) => {
-              if (item.isDropdown) {
+            {navigation.map((item) => {
+              const IconComponent = item.icon;
+
+              if (item.isDropdown && item.subItems) {
                 // Dropdown items for mobile - show as expandable list
                 return (
                   <div key={item.name}>
                     <div className="px-3 py-2 text-sm font-semibold text-gray-500 flex items-center gap-2">
-                      <span>{item.icon}</span>
+                      <IconComponent className="w-4 h-4" strokeWidth={1.75} />
                       <span>{item.name}</span>
                     </div>
-                    {item.subItems.map((subItem: any) => (
-                      <Link
-                        key={subItem.href}
-                        href={subItem.href}
-                        onClick={() => setMobileMenuOpen(false)}
-                        className={`
-                          block px-6 py-2 rounded-md text-base font-medium
-                          flex items-center gap-2
-                          ${
-                            isActive(subItem.href)
-                              ? 'bg-green-50 text-green-700'
-                              : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
-                          }
-                        `}
-                      >
-                        <span>{subItem.icon}</span>
-                        <span>{subItem.name}</span>
-                      </Link>
-                    ))}
+                    {item.subItems.map((subItem) => {
+                      const SubIconComponent = subItem.icon;
+                      return (
+                        <Link
+                          key={subItem.href}
+                          href={subItem.href}
+                          onClick={() => setMobileMenuOpen(false)}
+                          className={`
+                            block px-6 py-2 rounded-md text-base font-medium
+                            flex items-center gap-2
+                            ${
+                              isActive(subItem.href)
+                                ? 'bg-green-50 text-green-700'
+                                : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                            }
+                          `}
+                        >
+                          <SubIconComponent className="w-4 h-4" strokeWidth={1.75} />
+                          <span>{subItem.name}</span>
+                        </Link>
+                      );
+                    })}
                   </div>
                 );
               }
@@ -335,19 +357,19 @@ export default function Navigation() {
               return (
                 <Link
                   key={item.href}
-                  href={item.href}
+                  href={item.href!}
                   onClick={() => setMobileMenuOpen(false)}
                   className={`
                     block px-3 py-2 rounded-md text-base font-medium
                     flex items-center gap-2
                     ${
-                      isActive(item.href)
+                      isActive(item.href!)
                         ? 'bg-green-50 text-green-700'
                         : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
                     }
                   `}
                 >
-                  <span>{item.icon}</span>
+                  <IconComponent className="w-4 h-4" strokeWidth={1.75} />
                   <span>{item.name}</span>
                 </Link>
               );
@@ -376,9 +398,7 @@ export default function Navigation() {
                     }
                   `}
                 >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
+                  <User className="w-4 h-4" strokeWidth={1.75} />
                   <span>Perfil</span>
                 </Link>
                 {userRole === 'admin' && (
@@ -395,9 +415,7 @@ export default function Navigation() {
                       }
                     `}
                   >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                    </svg>
+                    <Users className="w-4 h-4" strokeWidth={1.75} />
                     <span>Gestión de Usuarios</span>
                   </Link>
                 )}
@@ -409,9 +427,7 @@ export default function Navigation() {
                   }}
                   className="block w-full text-left px-6 py-2 rounded-md text-base font-medium text-red-600 hover:bg-red-50 flex items-center gap-2"
                 >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                  </svg>
+                  <LogOut className="w-4 h-4" strokeWidth={1.75} />
                   <span>Cerrar Sesión</span>
                 </button>
               </>
