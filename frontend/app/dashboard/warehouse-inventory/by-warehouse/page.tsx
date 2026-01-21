@@ -154,37 +154,18 @@ export default function WarehouseSpecificInventoryPage() {
       if (searchQuery) params.append('search', searchQuery);
       if (showOnlyWithStock) params.append('only_with_stock', 'true');
 
-      // Special case: "amplifica" shows all 4 Amplifica locations in columns
-      if (selectedWarehouse === 'amplifica') {
-        // Add warehouse_group parameter to filter by Amplifica stock only
-        params.append('warehouse_group', 'amplifica');
+      const response = await fetch(
+        `${apiUrl}/api/v1/warehouse-inventory/warehouse/${selectedWarehouse}?${params.toString()}`
+      );
 
-        const response = await fetch(
-          `${apiUrl}/api/v1/warehouse-inventory/general?${params.toString()}`
-        );
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        setProducts(data.data);
-        setWarehouseInfo({ code: 'amplifica', name: 'Amplifica (Todas las sucursales)', update_method: 'manual_upload' });
-        setSummary(data.summary);
-      } else {
-        const response = await fetch(
-          `${apiUrl}/api/v1/warehouse-inventory/warehouse/${selectedWarehouse}?${params.toString()}`
-        );
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const data: WarehouseInventoryResponse = await response.json();
-        setProducts(data.data);
-        setWarehouseInfo(data.warehouse);
-        setSummary(data.summary);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
+
+      const data: WarehouseInventoryResponse = await response.json();
+      setProducts(data.data);
+      setWarehouseInfo(data.warehouse);
+      setSummary(data.summary);
     } catch (err: any) {
       console.error('Error fetching warehouse inventory:', err);
       setError(err.message || 'Error al cargar el inventario de la bodega');
@@ -281,8 +262,7 @@ export default function WarehouseSpecificInventoryPage() {
             {/* Upload Button (only for manual warehouses) */}
             {selectedWarehouse &&
               warehouseInfo &&
-              warehouseInfo.update_method === 'manual_upload' &&
-              selectedWarehouse !== 'amplifica' && (
+              warehouseInfo.update_method === 'manual_upload' && (
                 <InventoryUploadButton
                   warehouseCode={selectedWarehouse}
                   warehouseName={warehouseInfo.name}
@@ -335,16 +315,6 @@ export default function WarehouseSpecificInventoryPage() {
 
         {/* All warehouses in a single row */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {/* Amplifica group card (consolidated view) */}
-          <WarehouseCard
-            code="amplifica"
-            name="Amplifica"
-            location="4 sucursales"
-            updateMethod="manual_upload"
-            isActive={selectedWarehouse === 'amplifica'}
-            onClick={() => setSelectedWarehouse('amplifica')}
-          />
-
           {/* Individual Amplifica warehouses (for manual upload) */}
           {amplificaWarehouses.map((warehouse) => {
             const warehouseStats = summary && selectedWarehouse === warehouse.code
@@ -607,13 +577,6 @@ export default function WarehouseSpecificInventoryPage() {
           <h3 className="text-xl font-semibold text-gray-900 mb-2">Selecciona una bodega</h3>
           <p className="text-gray-600">Elige una bodega arriba para ver su inventario</p>
         </div>
-      ) : selectedWarehouse === 'amplifica' ? (
-        // Multi-warehouse view: use standard table
-        <EnhancedWarehouseInventoryTable
-          products={products}
-          mode="amplifica"
-          loading={loading}
-        />
       ) : (
         // Single warehouse view: use expandable table with lot details
         <ExpandableProductTable

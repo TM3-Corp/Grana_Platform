@@ -214,9 +214,11 @@ export default function ChannelMappingsPage() {
     setSaveError(null);
 
     try {
-      const isEdit = selectedClient.rule_id !== null;
+      // Check if customer already has an assignment (use override_channel_id, not rule_id)
+      const isEdit = selectedClient.override_channel_id !== null && selectedClient.override_channel_id !== undefined;
+      // Use customer/{external_id} endpoint for updates, POST / for new assignments
       const url = isEdit
-        ? `${API_URL}/api/v1/channel-mappings/${selectedClient.rule_id}`
+        ? `${API_URL}/api/v1/channel-mappings/customer/${selectedClient.customer_external_id}`
         : `${API_URL}/api/v1/channel-mappings/`;
       const method = isEdit ? 'PUT' : 'POST';
 
@@ -227,9 +229,7 @@ export default function ChannelMappingsPage() {
           customer_external_id: selectedClient.customer_external_id,
           channel_external_id: formData.channel_external_id,
           channel_name: formData.channel_name,
-          rule_reason: formData.rule_reason,
-          priority: formData.priority,
-          created_by: 'web_ui'
+          assigned_by: 'web_ui'
         })
       });
 

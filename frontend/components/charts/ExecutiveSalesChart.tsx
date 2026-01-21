@@ -431,7 +431,7 @@ export default function ExecutiveSalesChart({
             tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`}
             tick={{ fontSize: 12 }}
             stroke="#6B7280"
-            domain={['auto', 'auto']}
+            domain={[0, 'auto']}
           />
           <Tooltip content={<CustomTooltip previousYear={previous_year} currentYear={current_year} nextYear={next_year} showProjections={visibleSeries.projectedCurrentYear} />} />
 
