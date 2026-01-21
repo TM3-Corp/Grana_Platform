@@ -49,10 +49,18 @@ interface FiltersSidebarProps {
 
   // Clear filters
   onClearFilters: () => void
+
+  // Collapse state callback
+  onCollapseChange?: (collapsed: boolean) => void
 }
 
 export default function FiltersSidebar(props: FiltersSidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
+
+  const handleCollapseToggle = (collapsed: boolean) => {
+    setIsCollapsed(collapsed)
+    props.onCollapseChange?.(collapsed)
+  }
 
   const categories = props.availableCategories || ['BARRAS', 'CRACKERS', 'GRANOLAS', 'KEEPERS']
   const channels = props.availableChannels || []
@@ -124,7 +132,7 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
     return (
       <div className="fixed left-0 top-20 z-40">
         <button
-          onClick={() => setIsCollapsed(false)}
+          onClick={() => handleCollapseToggle(false)}
           className="bg-white shadow-lg rounded-r-lg p-3 hover:bg-gray-50 transition-colors"
           title="Mostrar filtros"
         >
@@ -143,7 +151,7 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
             🎛️ Filtros
           </h2>
           <button
-            onClick={() => setIsCollapsed(true)}
+            onClick={() => handleCollapseToggle(true)}
             className="text-gray-400 hover:text-gray-600 transition-colors"
             title="Ocultar filtros"
           >

@@ -224,8 +224,9 @@ export default function MultiSelect({
                   key={option}
                   type="button"
                   onClick={() => toggleOption(option)}
+                  title={option}
                   className={cn(
-                    'w-full px-3 py-2 text-left text-sm flex items-center gap-2 transition-colors',
+                    'w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 transition-colors',
                     selected.includes(option)
                       ? 'bg-green-50 text-green-900'
                       : 'hover:bg-gray-50 text-gray-700'
@@ -234,14 +235,14 @@ export default function MultiSelect({
                   {/* Checkbox indicator */}
                   <span
                     className={cn(
-                      'w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-all',
+                      'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-all',
                       selected.includes(option)
                         ? 'bg-green-500 border-green-500'
                         : 'border-gray-300'
                     )}
                   >
                     {selected.includes(option) && (
-                      <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                       </svg>
                     )}

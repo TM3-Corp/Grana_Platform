@@ -100,6 +100,7 @@ export default function WarehouseSpecificInventoryPage() {
   const [summary, setSummary] = useState<WarehouseSummary | null>(null);
   const [expirationSummary, setExpirationSummary] = useState<WarehouseExpirationSummary>({});
   const [loading, setLoading] = useState(false); // Don't load by default
+  const [warehousesLoading, setWarehousesLoading] = useState(true); // Loading warehouses list
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -110,6 +111,7 @@ export default function WarehouseSpecificInventoryPage() {
   // Fetch warehouses list and expiration summary
   const fetchWarehouses = async () => {
     try {
+      setWarehousesLoading(true);
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
       // Fetch warehouses and expiration summary in parallel
@@ -134,6 +136,8 @@ export default function WarehouseSpecificInventoryPage() {
     } catch (err: any) {
       console.error('Error fetching warehouses:', err);
       setError(err.message || 'Error al cargar las bodegas');
+    } finally {
+      setWarehousesLoading(false);
     }
   };
 
@@ -315,8 +319,31 @@ export default function WarehouseSpecificInventoryPage() {
 
         {/* All warehouses in a single row */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {/* Loading state */}
+          {warehousesLoading && (
+            <div className="col-span-full flex items-center justify-center py-8">
+              <div className="flex items-center gap-3 text-gray-500">
+                <svg className="animate-spin h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>Cargando bodegas...</span>
+              </div>
+            </div>
+          )}
+
+          {/* Empty state when no warehouses */}
+          {!warehousesLoading && warehouses.length === 0 && (
+            <div className="col-span-full flex flex-col items-center justify-center py-8 text-gray-500">
+              <svg className="w-12 h-12 mb-2 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+              </svg>
+              <span>No hay bodegas disponibles</span>
+            </div>
+          )}
+
           {/* Individual Amplifica warehouses (for manual upload) */}
-          {amplificaWarehouses.map((warehouse) => {
+          {!warehousesLoading && amplificaWarehouses.map((warehouse) => {
             const warehouseStats = summary && selectedWarehouse === warehouse.code
               ? { stockCount: summary.total_stock, productCount: summary.total_products }
               : undefined;
@@ -345,7 +372,7 @@ export default function WarehouseSpecificInventoryPage() {
           })}
 
           {/* Other warehouses */}
-          {otherWarehouses.map((warehouse) => {
+          {!warehousesLoading && otherWarehouses.map((warehouse) => {
             const warehouseStats = summary && selectedWarehouse === warehouse.code
               ? { stockCount: summary.total_stock, productCount: summary.total_products }
               : undefined;

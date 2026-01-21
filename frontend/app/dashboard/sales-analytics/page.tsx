@@ -65,6 +65,7 @@ export default function SalesAnalyticsPage() {
   const [data, setData] = useState<SalesAnalyticsData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   // Filter states
   const [dateFilterType, setDateFilterType] = useState<'all' | 'year' | 'month' | 'custom'>('all')
@@ -464,10 +465,11 @@ export default function SalesAnalyticsPage() {
         availableFormats={availableFormats}
         availableSkuPrimarios={availableSkuPrimarios}
         onClearFilters={handleClearFilters}
+        onCollapseChange={setSidebarCollapsed}
       />
 
-      {/* Main Content (offset for sidebar) */}
-      <div className="ml-80 p-8">
+      {/* Main Content (offset for sidebar, expands when collapsed) */}
+      <div className={`transition-all duration-300 p-8 ${sidebarCollapsed ? 'ml-0' : 'ml-80'}`}>
         {/* Header */}
         <div className="mb-10">
           <h1 className="text-4xl font-bold text-gray-900 mb-2">
