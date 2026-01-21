@@ -89,13 +89,16 @@ export default function MultiSelect({
       clearTimeout(tooltipTimeoutRef.current)
     }
 
+    // Capture rect immediately (React events are pooled and nullified asynchronously)
+    const rect = e.currentTarget.getBoundingClientRect()
+    const position = {
+      top: rect.top + rect.height / 2,
+      left: rect.right + 8
+    }
+
     // Delay showing tooltip slightly
     tooltipTimeoutRef.current = setTimeout(() => {
-      const rect = e.currentTarget.getBoundingClientRect()
-      setTooltipPosition({
-        top: rect.top + rect.height / 2,
-        left: rect.right + 8
-      })
+      setTooltipPosition(position)
       setHoveredOption(option)
     }, 300)
   }
