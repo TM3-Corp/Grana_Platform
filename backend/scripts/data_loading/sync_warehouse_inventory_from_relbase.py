@@ -271,18 +271,47 @@ def sync_warehouses(cursor, warehouses_from_api: List[Dict], dry_run: bool = Fal
     return stats
 
 
-def get_products_with_external_id(cursor) -> List[Dict]:
-    """Get all products that have external_id from Relbase"""
-    cursor.execute("""
-        SELECT id, external_id, sku, name
-        FROM products
-        WHERE external_id IS NOT NULL
-        AND source = 'relbase'
-        AND is_active = true
-        ORDER BY id
-    """)
+def get_products_from_relbase_api_with_db_mapping(cursor) -> List[Dict]:
+    """
+    Fetch ACTIVE products from RelBase API and map to local DB IDs.
 
-    return cursor.fetchall()
+    IMPORTANT: This fetches products directly from RelBase API, NOT from local DB.
+    The /api/v1/productos endpoint returns ONLY active products, avoiding 401/403
+    errors when syncing lot data for legacy/inactive products (e.g., ANU- prefix).
+
+    Returns:
+        List of products with both RelBase data and local DB id
+    """
+    # Fetch active products from RelBase API
+    relbase_products = fetch_products()
+
+    if not relbase_products:
+        print("⚠️  No products returned from RelBase API")
+        return []
+
+    # Build mapping of external_id -> local DB id
+    cursor.execute("""
+        SELECT id, external_id
+        FROM products
+        WHERE external_id IS NOT NULL AND source = 'relbase'
+    """)
+    db_map = {str(row['external_id']): row['id'] for row in cursor.fetchall()}
+
+    # Merge: add local DB id to each product
+    products_with_db_id = []
+    for p in relbase_products:
+        external_id = str(p.get('id', ''))
+        db_id = db_map.get(external_id)
+        if db_id:
+            products_with_db_id.append({
+                'id': db_id,  # Local DB id
+                'external_id': external_id,
+                'sku': p.get('sku', ''),
+                'name': p.get('name', '')
+            })
+
+    print(f"✅ {len(products_with_db_id)} products matched to local DB (out of {len(relbase_products)} from API)")
+    return products_with_db_id
 
 
 def get_warehouses_from_db(cursor) -> List[Dict]:
@@ -617,9 +646,13 @@ def main():
         warehouses_db = get_warehouses_from_db(cursor)
         print(f"\n✅ {len(warehouses_db)} warehouses ready in database")
 
-        # Get products with external_id
-        products_db = get_products_with_external_id(cursor)
-        print(f"✅ {len(products_db)} products with external_id ready")
+        # Record sync start time for stale detection
+        sync_start_time = datetime.now()
+        print(f"⏱️  Sync start time: {sync_start_time}")
+
+        # Get products from RelBase API (NOT local DB) and map to DB IDs
+        products_db = get_products_from_relbase_api_with_db_mapping(cursor)
+        print(f"✅ {len(products_db)} active products from RelBase API ready")
 
         # PHASE 2: Sync Stock with Lots (with retry logic)
         stock_stats = sync_warehouse_stock(
@@ -631,7 +664,36 @@ def main():
             verbose=args.verbose
         )
 
-        # Final commit handled inside sync_warehouse_stock
+        # PHASE 3: Delete stale stock entries
+        print("\n" + "=" * 80)
+        print("🗑️  PHASE 3: Delete Stale Stock Entries")
+        print("=" * 80)
+
+        if not args.dry_run:
+            # Get RelBase warehouse IDs
+            warehouse_ids = [w['id'] for w in warehouses_db]
+
+            if warehouse_ids:
+                cursor.execute("""
+                    DELETE FROM warehouse_stock
+                    WHERE warehouse_id = ANY(%s)
+                      AND last_updated < %s
+                      AND updated_by IN ('sync_api', 'relbase_api')
+                    RETURNING id, lot_number
+                """, (warehouse_ids, sync_start_time))
+
+                deleted = cursor.fetchall()
+                conn.commit()
+
+                if deleted:
+                    print(f"✅ Deleted {len(deleted)} stale stock entries")
+                else:
+                    print("✅ No stale entries found")
+        else:
+            print("⚠️  DRY RUN - would delete stale entries here")
+
+        # Final commit
+        conn.commit()
         print("\n✅ All changes committed to database")
 
         cursor.close()

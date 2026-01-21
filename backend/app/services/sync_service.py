@@ -1174,8 +1174,17 @@ class SyncService:
             # The /api/v1/productos endpoint returns ONLY active products,
             # avoiding 401/403 errors for legacy/inactive products (e.g., ANU- prefix).
             # See: _fetch_relbase_active_products() docstring for details.
+            #
+            # SYNC STRATEGY: Full sync with stale deletion
+            # 1. Record sync start time
+            # 2. Upsert all current stock from RelBase (updates last_updated)
+            # 3. Delete any RelBase stock not updated during this sync (stale)
+            # This ensures our DB matches RelBase exactly.
             # ================================================================
             logger.info("Phase 2: Fetching active products from RelBase API...")
+
+            # Record sync start time for stale detection
+            sync_start_time = datetime.now()
 
             # Fetch active products directly from RelBase (the correct approach)
             relbase_products = self._fetch_relbase_active_products()
@@ -1278,6 +1287,42 @@ class SyncService:
                     conn.commit()
 
                 logger.info(f"Updated {relbase_products_updated} stock records from RelBase")
+
+                # ============================================================
+                # Phase 2b: Delete stale RelBase stock entries
+                # ============================================================
+                # Any warehouse_stock entry for RelBase products that wasn't
+                # updated during this sync is stale and should be deleted.
+                # This handles: lots sold out, products deactivated, lot numbers
+                # that changed format, etc.
+                # ============================================================
+                logger.info("Phase 2b: Cleaning up stale RelBase stock entries...")
+
+                # Get all RelBase warehouse IDs
+                relbase_warehouse_ids = [w[0] for w in db_warehouses]
+
+                if relbase_warehouse_ids:
+                    # Delete stock entries that:
+                    # 1. Are in RelBase warehouses
+                    # 2. Were last updated BEFORE this sync started
+                    # 3. Were updated by sync_api (not manually entered)
+                    cursor.execute("""
+                        DELETE FROM warehouse_stock
+                        WHERE warehouse_id = ANY(%s)
+                          AND last_updated < %s
+                          AND updated_by = 'sync_api'
+                        RETURNING id, lot_number
+                    """, (relbase_warehouse_ids, sync_start_time))
+
+                    deleted_entries = cursor.fetchall()
+                    stale_count = len(deleted_entries)
+
+                    if stale_count > 0:
+                        logger.info(f"Deleted {stale_count} stale stock entries from RelBase warehouses")
+                    else:
+                        logger.info("No stale stock entries found")
+
+                    conn.commit()
 
             # ================================================================
             # Phase 3: Sync Stock from MercadoLibre
