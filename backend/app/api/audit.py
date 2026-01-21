@@ -1674,7 +1674,6 @@ async def export_audit_data(
 
                 # Create workbook
                 wb = Workbook()
-                ws = wb.active
 
                 # Styles
                 header_font = Font(bold=True, color="FFFFFF")
@@ -1688,6 +1687,107 @@ async def export_audit_data(
                 )
                 number_format_currency = '#,##0'
                 number_format_decimal = '#,##0.00'
+
+                # ===== CREATE SUMMARY SHEET (RESUMEN) =====
+                ws_summary = wb.active
+                ws_summary.title = "Resumen"
+
+                # Summary header style (green theme)
+                summary_header_font = Font(bold=True, size=14, color="FFFFFF")
+                summary_header_fill = PatternFill(start_color="2E7D32", end_color="2E7D32", fill_type="solid")
+                summary_label_font = Font(bold=True, size=11)
+                summary_value_font = Font(size=11)
+
+                # Title
+                ws_summary.merge_cells('A1:C1')
+                title_cell = ws_summary['A1']
+                title_cell.value = "Reporte de Auditoria - Grana Platform"
+                title_cell.font = summary_header_font
+                title_cell.fill = summary_header_fill
+                title_cell.alignment = Alignment(horizontal="center", vertical="center")
+
+                # Export metadata
+                export_time = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
+                summary_rows = [
+                    ("", "", ""),  # Row 2 - spacer
+                    ("Informacion del Reporte", "", ""),  # Row 3 - section
+                    ("Fecha de exportacion:", export_time, ""),
+                    ("Tipo de reporte:", "Agrupado" if group_by else "Detalle", ""),
+                ]
+
+                if group_by:
+                    group_labels = {
+                        'sku_primario': 'SKU Primario',
+                        'customer_name': 'Cliente',
+                        'channel_name': 'Canal',
+                        'order_month': 'Mes',
+                        'family': 'Familia',
+                        'format': 'Formato',
+                        'sku': 'SKU Original'
+                    }
+                    summary_rows.append(("Agrupado por:", group_labels.get(group_by, group_by), ""))
+
+                summary_rows.append(("", "", ""))  # Spacer
+                summary_rows.append(("Filtros Aplicados", "", ""))  # Section header
+
+                # Date range
+                if from_date or to_date:
+                    date_range = f"{from_date or 'Inicio'} a {to_date or 'Fin'}"
+                    summary_rows.append(("Rango de fechas:", date_range, ""))
+                else:
+                    summary_rows.append(("Rango de fechas:", "Sin filtro (todos los datos)", ""))
+
+                # Category filter
+                if category:
+                    summary_rows.append(("Categorias:", ", ".join(category), ""))
+
+                # Channel filter
+                if channel:
+                    summary_rows.append(("Canales:", ", ".join(channel), ""))
+
+                # Customer filter
+                if customer:
+                    summary_rows.append(("Clientes:", ", ".join(customer), ""))
+
+                # SKU Primario filter
+                if sku_primario:
+                    summary_rows.append(("SKU Primario:", ", ".join(sku_primario), ""))
+
+                # Search term
+                if sku:
+                    summary_rows.append(("Busqueda:", sku, ""))
+
+                # Special filters
+                if has_nulls:
+                    summary_rows.append(("Filtro especial:", "Solo registros con valores NULL", ""))
+
+                if not_in_catalog:
+                    summary_rows.append(("Filtro especial:", "Solo SKUs sin catalogo", ""))
+
+                # Check if no filters applied
+                if not any([category, channel, customer, sku_primario, sku, has_nulls, not_in_catalog, from_date, to_date]):
+                    summary_rows.append(("(Sin filtros adicionales)", "", ""))
+
+                # Write summary rows
+                for row_idx, (label, value, _) in enumerate(summary_rows, 2):
+                    label_cell = ws_summary.cell(row=row_idx, column=1, value=label)
+                    value_cell = ws_summary.cell(row=row_idx, column=2, value=value)
+
+                    # Style section headers
+                    if label in ["Informacion del Reporte", "Filtros Aplicados"]:
+                        label_cell.font = Font(bold=True, size=12, color="1F4E79")
+                        ws_summary.merge_cells(f'A{row_idx}:C{row_idx}')
+                    elif label.endswith(":"):
+                        label_cell.font = summary_label_font
+                        value_cell.font = summary_value_font
+
+                # Column widths for summary
+                ws_summary.column_dimensions['A'].width = 25
+                ws_summary.column_dimensions['B'].width = 50
+                ws_summary.column_dimensions['C'].width = 15
+
+                # Create data sheet
+                ws = wb.create_sheet()
 
                 # ===== AGGREGATED MODE EXPORT =====
                 if group_by == 'sku_primario':
@@ -1953,6 +2053,22 @@ async def export_audit_data(
 
                 # Freeze header row
                 ws.freeze_panes = 'A2'
+
+                # ===== ADD RECORD COUNT TO SUMMARY =====
+                # Calculate total rows (subtract 1 for header)
+                total_records = ws.max_row - 1 if ws.max_row > 1 else 0
+
+                # Find the next available row in summary
+                summary_next_row = ws_summary.max_row + 2
+
+                # Add spacer and statistics section
+                ws_summary.cell(row=summary_next_row, column=1, value="Estadisticas").font = Font(bold=True, size=12, color="1F4E79")
+                ws_summary.merge_cells(f'A{summary_next_row}:C{summary_next_row}')
+
+                summary_next_row += 1
+                ws_summary.cell(row=summary_next_row, column=1, value="Total de registros:").font = summary_label_font
+                ws_summary.cell(row=summary_next_row, column=2, value=total_records).font = summary_value_font
+                ws_summary.cell(row=summary_next_row, column=2).number_format = '#,##0'
 
                 # Save to BytesIO
                 output = BytesIO()

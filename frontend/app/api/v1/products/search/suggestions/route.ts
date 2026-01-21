@@ -16,7 +16,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 // In-memory storage for popular terms (in production, use Redis or DB)
 let popularSearches: Map<string, number> = new Map()
-let productTermsCache: Set<string> = new Set()
+const productTermsCache: Set<string> = new Set()
 
 // Common Chilean food product terms and variations
 const commonTerms = new Set([

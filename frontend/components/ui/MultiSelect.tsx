@@ -30,8 +30,11 @@ export default function MultiSelect({
 }: MultiSelectProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [hoveredOption, setHoveredOption] = useState<string | null>(null)
+  const [tooltipPosition, setTooltipPosition] = useState<{ top: number; left: number } | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const tooltipTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -79,6 +82,40 @@ export default function MultiSelect({
       setSearchQuery('')
     }
   }
+
+  const handleOptionMouseEnter = (option: string, e: React.MouseEvent<HTMLButtonElement>) => {
+    // Clear any existing timeout
+    if (tooltipTimeoutRef.current) {
+      clearTimeout(tooltipTimeoutRef.current)
+    }
+
+    // Delay showing tooltip slightly
+    tooltipTimeoutRef.current = setTimeout(() => {
+      const rect = e.currentTarget.getBoundingClientRect()
+      setTooltipPosition({
+        top: rect.top + rect.height / 2,
+        left: rect.right + 8
+      })
+      setHoveredOption(option)
+    }, 300)
+  }
+
+  const handleOptionMouseLeave = () => {
+    if (tooltipTimeoutRef.current) {
+      clearTimeout(tooltipTimeoutRef.current)
+    }
+    setHoveredOption(null)
+    setTooltipPosition(null)
+  }
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (tooltipTimeoutRef.current) {
+        clearTimeout(tooltipTimeoutRef.current)
+      }
+    }
+  }, [])
 
   return (
     <div ref={containerRef} className={cn('relative', className)}>
@@ -224,7 +261,8 @@ export default function MultiSelect({
                   key={option}
                   type="button"
                   onClick={() => toggleOption(option)}
-                  title={option}
+                  onMouseEnter={(e) => handleOptionMouseEnter(option, e)}
+                  onMouseLeave={handleOptionMouseLeave}
                   className={cn(
                     'w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 transition-colors',
                     selected.includes(option)
@@ -252,6 +290,29 @@ export default function MultiSelect({
               ))
             )}
           </div>
+        </div>
+      )}
+
+      {/* Styled tooltip for full option name */}
+      {hoveredOption && tooltipPosition && (
+        <div
+          className="fixed z-[100] px-3 py-2 text-xs font-medium text-white bg-gray-900 rounded-lg shadow-lg max-w-xs break-words animate-in fade-in duration-150"
+          style={{
+            top: tooltipPosition.top,
+            left: tooltipPosition.left,
+            transform: 'translateY(-50%)'
+          }}
+        >
+          {hoveredOption}
+          {/* Arrow pointing left */}
+          <div
+            className="absolute w-2 h-2 bg-gray-900 rotate-45"
+            style={{
+              top: '50%',
+              left: '-4px',
+              transform: 'translateY(-50%)'
+            }}
+          />
         </div>
       )}
     </div>
