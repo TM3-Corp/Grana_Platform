@@ -3,6 +3,22 @@
 import { useState, useEffect } from 'react'
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, ComposedChart, Line } from 'recharts'
 
+// English to Spanish month name mapping
+const MONTH_NAMES_ES: Record<string, string> = {
+  'Jan': 'Ene',
+  'Feb': 'Feb',
+  'Mar': 'Mar',
+  'Apr': 'Abr',
+  'May': 'May',
+  'Jun': 'Jun',
+  'Jul': 'Jul',
+  'Aug': 'Ago',
+  'Sep': 'Sep',
+  'Oct': 'Oct',
+  'Nov': 'Nov',
+  'Dec': 'Dic',
+}
+
 // Type for series visibility
 type SeriesKey = 'previousYear' | 'currentYear' | 'projectedCurrentYear' | 'projectedNextYear'
 
@@ -273,7 +289,7 @@ export default function ExecutiveSalesChart({
   // Combine all data for the chart with dynamic year labels
   // For previous year: always show FULL month value in line, store MTD-adjusted for tooltip context
   const chartData = sales_previous_year.map(m => ({
-    month: m.month_name,
+    month: MONTH_NAMES_ES[m.month_name] || m.month_name,
     monthNum: m.month,
     // Use full month value for main line (fallback to total_revenue for non-MTD months)
     revenue_previous_year: m.is_mtd && m.total_revenue_full_month ? m.total_revenue_full_month : m.total_revenue,
@@ -321,8 +337,11 @@ export default function ExecutiveSalesChart({
       }
 
       // Calculate gap vs previous year
-      // Backend already returns MTD-adjusted previous year value for current month
-      const revPrev = chartData[index].revenue_previous_year
+      // For MTD months, use MTD-adjusted previous year value for fair comparison
+      const isMtdMonth = chartData[index].is_mtd
+      const revPrev = isMtdMonth && chartData[index].revenue_previous_year_mtd
+        ? chartData[index].revenue_previous_year_mtd
+        : chartData[index].revenue_previous_year
       if (revPrev) {
         chartData[index].gap_years_percent = ((m.total_revenue - revPrev) / revPrev) * 100
         chartData[index].gap_years_amount = m.total_revenue - revPrev

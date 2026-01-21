@@ -2,8 +2,8 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash",
-        "hooks": [".claude/hooks/block-remote-commands.sh"]
+        "matcher": {"tools": ["Bash"]},
+        "hooks": [{"type": "command", "command": ".claude/hooks/block-remote-commands.sh"}]
       }
     ]
   }
