@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react'
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, ComposedChart, Line } from 'recharts'
-import { TrendingUp, Calendar } from 'lucide-react'
+import { TrendingUp, Calendar, Target, Trophy } from 'lucide-react'
 
 interface DailyData {
   day_of_year: number
@@ -21,6 +21,9 @@ interface YTDSummary {
   ytd_current_year: number
   ytd_difference: number
   ytd_difference_percent: number
+  monthly_goal: number
+  distance_to_goal: number
+  goal_exceeded: boolean
 }
 
 interface YTDProgressChartProps {
@@ -28,6 +31,7 @@ interface YTDProgressChartProps {
   summary: YTDSummary
   previousYear: number
   currentYear: number
+  currentMonth: number
   currentDayOfYear: number
   currentDate: string
   loading?: boolean
@@ -110,10 +114,15 @@ export default function YTDProgressChart({
   summary,
   previousYear,
   currentYear,
+  currentMonth,
   currentDayOfYear,
   currentDate,
   loading
 }: YTDProgressChartProps) {
+  // Get month name in Spanish
+  const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+  const currentMonthName = monthNames[currentMonth - 1] || ''
   // Sample data for better performance (every 7 days for weekly view)
   const chartData = useMemo(() => {
     if (!dailyData || dailyData.length === 0) return []
@@ -195,7 +204,7 @@ export default function YTDProgressChart({
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-indigo-50 rounded-xl p-4 border border-indigo-100">
           <div className="text-xs text-indigo-600 font-medium mb-1">{previousYear} YTD</div>
           <div className="text-lg font-bold text-indigo-700">{formatCurrencyFull(summary.ytd_previous_year)}</div>
@@ -205,9 +214,32 @@ export default function YTDProgressChart({
           <div className="text-lg font-bold text-teal-700">{formatCurrencyFull(summary.ytd_current_year)}</div>
         </div>
         <div className={`rounded-xl p-4 border ${isPositive ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'}`}>
-          <div className={`text-xs font-medium mb-1 ${isPositive ? 'text-green-600' : 'text-red-600'}`}>Diferencia</div>
+          <div className={`text-xs font-medium mb-1 ${isPositive ? 'text-green-600' : 'text-red-600'}`}>Diferencia YTD</div>
           <div className={`text-lg font-bold ${isPositive ? 'text-green-700' : 'text-red-700'}`}>
             {isPositive ? '+' : ''}{formatCurrencyFull(summary.ytd_difference)}
+          </div>
+        </div>
+        {/* Distancia a Meta card */}
+        <div className={`rounded-xl p-4 border ${
+          summary.goal_exceeded
+            ? 'bg-gradient-to-br from-amber-50 to-yellow-100 border-amber-200'
+            : 'bg-gray-50 border-gray-200'
+        }`}>
+          <div className="flex items-center gap-1.5 mb-1">
+            {summary.goal_exceeded ? (
+              <Trophy className="w-3.5 h-3.5 text-amber-500" strokeWidth={2} />
+            ) : (
+              <Target className="w-3.5 h-3.5 text-gray-500" strokeWidth={2} />
+            )}
+            <span className={`text-xs font-medium ${summary.goal_exceeded ? 'text-amber-600' : 'text-gray-600'}`}>
+              {summary.goal_exceeded ? 'Meta Superada' : 'Distancia a Meta'}
+            </span>
+          </div>
+          <div className={`text-lg font-bold ${summary.goal_exceeded ? 'text-amber-700' : 'text-gray-700'}`}>
+            {summary.goal_exceeded ? '+' : ''}{formatCurrencyFull(summary.distance_to_goal)}
+          </div>
+          <div className={`text-[10px] mt-0.5 ${summary.goal_exceeded ? 'text-amber-500' : 'text-gray-400'}`}>
+            Meta: {currentMonthName} {previousYear}
           </div>
         </div>
       </div>

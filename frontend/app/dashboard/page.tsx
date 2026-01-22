@@ -94,6 +94,7 @@ interface YTDDailyData {
 interface YTDProgressData {
   previous_year: number
   current_year: number
+  current_month: number
   current_day_of_year: number
   current_date: string
   summary: {
@@ -101,6 +102,9 @@ interface YTDProgressData {
     ytd_current_year: number
     ytd_difference: number
     ytd_difference_percent: number
+    monthly_goal: number
+    distance_to_goal: number
+    goal_exceeded: boolean
   }
   daily_data: YTDDailyData[]
 }
@@ -617,6 +621,7 @@ function DashboardContent() {
               summary={ytdData.summary}
               previousYear={ytdData.previous_year}
               currentYear={ytdData.current_year}
+              currentMonth={ytdData.current_month}
               currentDayOfYear={ytdData.current_day_of_year}
               currentDate={ytdData.current_date}
             />

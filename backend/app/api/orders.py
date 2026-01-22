@@ -867,6 +867,21 @@ async def get_ytd_progress(
         cursor.execute(query_curr_year, [current_year] + params)
         data_curr_year = cursor.fetchall()
 
+        # Query for MONTHLY GOAL: Full month revenue from previous year (same month)
+        # e.g., if we're in January 2026, get all of January 2025's revenue
+        current_month = current_date.month
+        query_monthly_goal = f"""
+            SELECT COALESCE(SUM(revenue), 0) as monthly_total
+            FROM sales_facts_mv
+            WHERE EXTRACT(YEAR FROM order_date) = %s
+            AND EXTRACT(MONTH FROM order_date) = %s
+            AND source = 'relbase'
+            {family_filter}
+        """
+        cursor.execute(query_monthly_goal, [previous_year, current_month] + params)
+        monthly_goal_result = cursor.fetchone()
+        monthly_goal = float(monthly_goal_result['monthly_total']) if monthly_goal_result else 0
+
         # Create lookup by day_of_year for easy comparison
         prev_year_by_day = {row['day_of_year']: row for row in data_prev_year}
         curr_year_by_day = {row['day_of_year']: row for row in data_curr_year}
@@ -913,17 +928,27 @@ async def get_ytd_progress(
         total_diff = final_curr - final_prev
         total_diff_percent = ((final_curr - final_prev) / final_prev * 100) if final_prev > 0 else 0
 
+        # Calculate distance to goal
+        # Goal = Previous year's full month revenue (e.g., all of January 2025)
+        # Distance = Goal - Current YTD (positive means still need to reach, negative means exceeded)
+        distance_to_goal = monthly_goal - final_curr
+        goal_exceeded = final_curr >= monthly_goal
+
         return {
             "status": "success",
             "previous_year": previous_year,
             "current_year": current_year,
+            "current_month": current_month,
             "current_day_of_year": day_of_year,
             "current_date": current_date.strftime('%Y-%m-%d'),
             "summary": {
                 "ytd_previous_year": final_prev,
                 "ytd_current_year": final_curr,
                 "ytd_difference": total_diff,
-                "ytd_difference_percent": round(total_diff_percent, 1)
+                "ytd_difference_percent": round(total_diff_percent, 1),
+                "monthly_goal": monthly_goal,
+                "distance_to_goal": abs(distance_to_goal),
+                "goal_exceeded": goal_exceeded
             },
             "daily_data": daily_data
         }
