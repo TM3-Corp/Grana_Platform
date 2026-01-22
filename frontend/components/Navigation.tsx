@@ -67,6 +67,14 @@ export default function Navigation() {
     subItems?: { name: string; href: string; icon: LucideIcon }[];
   }
 
+  // Color themes for each section
+  const sectionColors: Record<string, { active: string; hover: string; icon: string }> = {
+    'Dashboard': { active: 'from-emerald-500 to-green-600', hover: 'hover:bg-emerald-50', icon: 'text-emerald-600' },
+    'Ventas': { active: 'from-blue-500 to-indigo-600', hover: 'hover:bg-blue-50', icon: 'text-blue-600' },
+    'Inventario': { active: 'from-amber-500 to-orange-600', hover: 'hover:bg-amber-50', icon: 'text-amber-600' },
+    'Productos': { active: 'from-purple-500 to-violet-600', hover: 'hover:bg-purple-50', icon: 'text-purple-600' },
+  };
+
   const navigation: NavItem[] = [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
     {
@@ -137,6 +145,7 @@ export default function Navigation() {
               if (item.isDropdown && item.subItems) {
                 // Dropdown menu for Ventas and Inventario
                 const isDropActive = isDropdownActive(item.subItems);
+                const colors = sectionColors[item.name];
                 return (
                   <div
                     key={item.name}
@@ -146,43 +155,44 @@ export default function Navigation() {
                   >
                     <button
                       className={`
-                        px-4 py-2 rounded-lg text-sm font-medium transition-all
+                        px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200
                         flex items-center gap-2
                         ${
                           isDropActive
-                            ? 'bg-green-50 text-green-700'
-                            : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                            ? `bg-gradient-to-r ${colors.active} text-white shadow-sm`
+                            : `text-gray-700 ${colors.hover} hover:text-gray-900`
                         }
                       `}
                     >
-                      <IconComponent className="w-4 h-4" strokeWidth={1.75} />
+                      <IconComponent className={`w-4 h-4 ${!isDropActive ? colors.icon : ''}`} strokeWidth={1.75} />
                       <span>{item.name}</span>
                       <ChevronDown
-                        className={`w-4 h-4 transition-transform ${openDropdown === item.name ? 'rotate-180' : ''}`}
+                        className={`w-4 h-4 transition-transform duration-200 ${openDropdown === item.name ? 'rotate-180' : ''}`}
                         strokeWidth={1.75}
                       />
                     </button>
 
                     {/* Dropdown menu */}
                     {openDropdown === item.name && (
-                      <div className="absolute left-0 top-full w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                      <div className="absolute left-0 top-full w-48 bg-white rounded-xl shadow-lg border border-gray-200 py-2 z-50 mt-1">
                         {item.subItems.map((subItem) => {
                           const SubIconComponent = subItem.icon;
+                          const isItemActive = isActive(subItem.href);
                           return (
                             <Link
                               key={subItem.href}
                               href={subItem.href}
                               className={`
-                                block px-4 py-2 text-sm transition-colors
-                                flex items-center gap-2
+                                block px-4 py-2.5 text-sm transition-all duration-200
+                                flex items-center gap-3 mx-2 rounded-lg
                                 ${
-                                  isActive(subItem.href)
-                                    ? 'bg-green-50 text-green-700'
-                                    : 'text-gray-700 hover:bg-gray-50'
+                                  isItemActive
+                                    ? `bg-gradient-to-r ${colors.active} text-white shadow-sm`
+                                    : `text-gray-700 ${colors.hover}`
                                 }
                               `}
                             >
-                              <SubIconComponent className="w-4 h-4" strokeWidth={1.75} />
+                              <SubIconComponent className={`w-4 h-4 ${!isItemActive ? colors.icon : ''}`} strokeWidth={1.75} />
                               <span>{subItem.name}</span>
                             </Link>
                           );
@@ -194,21 +204,23 @@ export default function Navigation() {
               }
 
               // Regular navigation item
+              const colors = sectionColors[item.name];
+              const isItemActive = isActive(item.href!);
               return (
                 <Link
                   key={item.href}
                   href={item.href!}
                   className={`
-                    px-4 py-2 rounded-lg text-sm font-medium transition-all
+                    px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200
                     flex items-center gap-2
                     ${
-                      isActive(item.href!)
-                        ? 'bg-green-50 text-green-700'
-                        : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                      isItemActive
+                        ? `bg-gradient-to-r ${colors.active} text-white shadow-sm`
+                        : `text-gray-700 ${colors.hover} hover:text-gray-900`
                     }
                   `}
                 >
-                  <IconComponent className="w-4 h-4" strokeWidth={1.75} />
+                  <IconComponent className={`w-4 h-4 ${!isItemActive ? colors.icon : ''}`} strokeWidth={1.75} />
                   <span>{item.name}</span>
                 </Link>
               );
@@ -222,26 +234,26 @@ export default function Navigation() {
               >
                 <button
                   onClick={() => setUserMenuOpen(!userMenuOpen)}
-                  className="flex items-center gap-2 hover:bg-gray-50 rounded-lg px-2 py-1 transition-all"
+                  className="flex items-center gap-2 hover:bg-gray-50 rounded-lg px-2 py-1.5 transition-all duration-200"
                 >
                   {/* Avatar with initials */}
-                  <div className="w-8 h-8 rounded-full bg-green-600 flex items-center justify-center text-white text-sm font-medium">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center text-white text-sm font-medium shadow-sm">
                     {getInitials(session.user?.name || session.user?.email)}
                   </div>
                   <span className="text-sm text-gray-700 hidden lg:block max-w-32 truncate">
                     {session.user?.name || session.user?.email}
                   </span>
                   <ChevronDown
-                    className={`w-4 h-4 text-gray-500 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`}
+                    className={`w-4 h-4 text-gray-500 transition-transform duration-200 ${userMenuOpen ? 'rotate-180' : ''}`}
                     strokeWidth={1.75}
                   />
                 </button>
 
                 {/* Dropdown Menu */}
                 {userMenuOpen && (
-                  <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                  <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-lg border border-gray-200 py-2 z-50">
                     {/* User Info Header */}
-                    <div className="px-4 py-3 border-b border-gray-100">
+                    <div className="px-4 py-3 border-b border-gray-100 mx-2 rounded-lg bg-gradient-to-r from-gray-50 to-slate-50">
                       <p className="text-sm font-medium text-gray-900 truncate">
                         {session.user?.name || 'Usuario'}
                       </p>
@@ -249,13 +261,13 @@ export default function Navigation() {
                     </div>
 
                     {/* Menu Items */}
-                    <div className="py-1">
+                    <div className="py-2 px-2">
                       <Link
                         href="/dashboard/profile"
                         onClick={() => setUserMenuOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                        className="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 rounded-lg transition-all duration-200"
                       >
-                        <User className="w-4 h-4 text-gray-400" strokeWidth={1.75} />
+                        <User className="w-4 h-4 text-emerald-500" strokeWidth={1.75} />
                         Perfil
                       </Link>
 
@@ -264,26 +276,26 @@ export default function Navigation() {
                         <Link
                           href="/dashboard/users"
                           onClick={() => setUserMenuOpen(false)}
-                          className="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                          className="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-all duration-200"
                         >
-                          <Users className="w-4 h-4 text-gray-400" strokeWidth={1.75} />
+                          <Users className="w-4 h-4 text-blue-500" strokeWidth={1.75} />
                           Gestión de Usuarios
                         </Link>
                       )}
                     </div>
 
                     {/* Divider */}
-                    <div className="border-t border-gray-100 my-1"></div>
+                    <div className="border-t border-gray-100 my-1 mx-2"></div>
 
                     {/* Logout */}
-                    <div className="py-1">
+                    <div className="py-1 px-2">
                       <button
                         onClick={() => {
                           setUserMenuOpen(false);
                           const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
                           signOut({ callbackUrl: `${baseUrl}/login` });
                         }}
-                        className="flex items-center gap-3 px-4 py-2 text-sm text-red-600 hover:bg-red-50 w-full transition-colors"
+                        className="flex items-center gap-3 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 w-full rounded-lg transition-all duration-200"
                       >
                         <LogOut className="w-4 h-4" strokeWidth={1.75} />
                         Cerrar Sesión
@@ -321,30 +333,32 @@ export default function Navigation() {
 
               if (item.isDropdown && item.subItems) {
                 // Dropdown items for mobile - show as expandable list
+                const colors = sectionColors[item.name];
                 return (
                   <div key={item.name}>
                     <div className="px-3 py-2 text-sm font-semibold text-gray-500 flex items-center gap-2">
-                      <IconComponent className="w-4 h-4" strokeWidth={1.75} />
+                      <IconComponent className={`w-4 h-4 ${colors.icon}`} strokeWidth={1.75} />
                       <span>{item.name}</span>
                     </div>
                     {item.subItems.map((subItem) => {
                       const SubIconComponent = subItem.icon;
+                      const isItemActive = isActive(subItem.href);
                       return (
                         <Link
                           key={subItem.href}
                           href={subItem.href}
                           onClick={() => setMobileMenuOpen(false)}
                           className={`
-                            block px-6 py-2 rounded-md text-base font-medium
-                            flex items-center gap-2
+                            block px-6 py-2.5 rounded-lg text-base font-medium mx-2 mb-1
+                            flex items-center gap-2 transition-all duration-200
                             ${
-                              isActive(subItem.href)
-                                ? 'bg-green-50 text-green-700'
-                                : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                              isItemActive
+                                ? `bg-gradient-to-r ${colors.active} text-white shadow-sm`
+                                : `text-gray-700 ${colors.hover}`
                             }
                           `}
                         >
-                          <SubIconComponent className="w-4 h-4" strokeWidth={1.75} />
+                          <SubIconComponent className={`w-4 h-4 ${!isItemActive ? colors.icon : ''}`} strokeWidth={1.75} />
                           <span>{subItem.name}</span>
                         </Link>
                       );
@@ -354,22 +368,24 @@ export default function Navigation() {
               }
 
               // Regular navigation item
+              const colors = sectionColors[item.name];
+              const isItemActive = isActive(item.href!);
               return (
                 <Link
                   key={item.href}
                   href={item.href!}
                   onClick={() => setMobileMenuOpen(false)}
                   className={`
-                    block px-3 py-2 rounded-md text-base font-medium
-                    flex items-center gap-2
+                    block px-3 py-2.5 rounded-lg text-base font-medium mx-2 mb-1
+                    flex items-center gap-2 transition-all duration-200
                     ${
-                      isActive(item.href!)
-                        ? 'bg-green-50 text-green-700'
-                        : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                      isItemActive
+                        ? `bg-gradient-to-r ${colors.active} text-white shadow-sm`
+                        : `text-gray-700 ${colors.hover}`
                     }
                   `}
                 >
-                  <IconComponent className="w-4 h-4" strokeWidth={1.75} />
+                  <IconComponent className={`w-4 h-4 ${!isItemActive ? colors.icon : ''}`} strokeWidth={1.75} />
                   <span>{item.name}</span>
                 </Link>
               );
@@ -378,9 +394,9 @@ export default function Navigation() {
             {/* Mobile User Section */}
             {session && (
               <>
-                <div className="border-t border-gray-200 my-2"></div>
+                <div className="border-t border-gray-200 my-3 mx-2"></div>
                 <div className="px-3 py-2 text-sm font-semibold text-gray-500 flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-full bg-green-600 flex items-center justify-center text-white text-xs font-medium">
+                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center text-white text-xs font-medium shadow-sm">
                     {getInitials(session.user?.name || session.user?.email)}
                   </div>
                   <span className="truncate">{session.user?.name || session.user?.email}</span>
@@ -389,16 +405,16 @@ export default function Navigation() {
                   href="/dashboard/profile"
                   onClick={() => setMobileMenuOpen(false)}
                   className={`
-                    block px-6 py-2 rounded-md text-base font-medium
-                    flex items-center gap-2
+                    block px-6 py-2.5 rounded-lg text-base font-medium mx-2 mb-1
+                    flex items-center gap-2 transition-all duration-200
                     ${
                       isActive('/dashboard/profile')
-                        ? 'bg-green-50 text-green-700'
-                        : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                        ? 'bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-sm'
+                        : 'text-gray-700 hover:bg-emerald-50'
                     }
                   `}
                 >
-                  <User className="w-4 h-4" strokeWidth={1.75} />
+                  <User className={`w-4 h-4 ${!isActive('/dashboard/profile') ? 'text-emerald-500' : ''}`} strokeWidth={1.75} />
                   <span>Perfil</span>
                 </Link>
                 {userRole === 'admin' && (
@@ -406,16 +422,16 @@ export default function Navigation() {
                     href="/dashboard/users"
                     onClick={() => setMobileMenuOpen(false)}
                     className={`
-                      block px-6 py-2 rounded-md text-base font-medium
-                      flex items-center gap-2
+                      block px-6 py-2.5 rounded-lg text-base font-medium mx-2 mb-1
+                      flex items-center gap-2 transition-all duration-200
                       ${
                         isActive('/dashboard/users')
-                          ? 'bg-green-50 text-green-700'
-                          : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                          ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-sm'
+                          : 'text-gray-700 hover:bg-blue-50'
                       }
                     `}
                   >
-                    <Users className="w-4 h-4" strokeWidth={1.75} />
+                    <Users className={`w-4 h-4 ${!isActive('/dashboard/users') ? 'text-blue-500' : ''}`} strokeWidth={1.75} />
                     <span>Gestión de Usuarios</span>
                   </Link>
                 )}
@@ -425,7 +441,7 @@ export default function Navigation() {
                     const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
                     signOut({ callbackUrl: `${baseUrl}/login` });
                   }}
-                  className="block w-full text-left px-6 py-2 rounded-md text-base font-medium text-red-600 hover:bg-red-50 flex items-center gap-2"
+                  className="block w-full text-left px-6 py-2.5 rounded-lg text-base font-medium text-red-600 hover:bg-red-50 flex items-center gap-2 mx-2 transition-all duration-200"
                 >
                   <LogOut className="w-4 h-4" strokeWidth={1.75} />
                   <span>Cerrar Sesión</span>
