@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, ComposedChart, Line } from 'recharts'
+import { Clock } from 'lucide-react'
 
 // English to Spanish month name mapping
 const MONTH_NAMES_ES: Record<string, string> = {
@@ -18,6 +19,16 @@ const MONTH_NAMES_ES: Record<string, string> = {
   'Nov': 'Nov',
   'Dec': 'Dic',
 }
+
+// Quarter names
+const QUARTER_NAMES: Record<number, string> = {
+  1: 'Q1',
+  2: 'Q2',
+  3: 'Q3',
+  4: 'Q4',
+}
+
+type TimePeriod = 'monthly' | 'quarterly'
 
 // Type for series visibility
 type SeriesKey = 'previousYear' | 'currentYear' | 'projectedCurrentYear' | 'projectedNextYear'
@@ -233,6 +244,7 @@ const CustomTooltip = ({ active, payload, label, previousYear, currentYear, next
 
 // Local storage key for series visibility
 const SERIES_STORAGE_KEY = 'executiveChart_seriesVisibility'
+const TIME_PERIOD_STORAGE_KEY = 'executiveChart_timePeriod'
 
 export default function ExecutiveSalesChart({
   sales_previous_year,
@@ -244,6 +256,27 @@ export default function ExecutiveSalesChart({
   next_year,
   mtdComparisonInfo,
 }: ExecutiveSalesChartProps) {
+  // Time period state
+  const [timePeriod, setTimePeriod] = useState<TimePeriod>(() => {
+    if (typeof window === 'undefined') return 'monthly'
+    try {
+      const stored = localStorage.getItem(TIME_PERIOD_STORAGE_KEY)
+      if (stored === 'quarterly') return 'quarterly'
+    } catch {
+      // Ignore localStorage errors
+    }
+    return 'monthly'
+  })
+
+  // Persist time period to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(TIME_PERIOD_STORAGE_KEY, timePeriod)
+    } catch {
+      // Ignore localStorage errors
+    }
+  }, [timePeriod])
+
   // Series configuration with dynamic labels - improved colors
   const seriesConfigs: SeriesConfig[] = [
     { key: 'currentYear', label: `${current_year} Real`, color: '#0D9488', defaultEnabled: true },
@@ -288,87 +321,145 @@ export default function ExecutiveSalesChart({
 
   // Combine all data for the chart with dynamic year labels
   // For previous year: always show FULL month value in line, store MTD-adjusted for tooltip context
-  const chartData = sales_previous_year.map(m => ({
-    month: MONTH_NAMES_ES[m.month_name] || m.month_name,
-    monthNum: m.month,
-    // Use full month value for main line (fallback to total_revenue for non-MTD months)
-    revenue_previous_year: m.is_mtd && m.total_revenue_full_month ? m.total_revenue_full_month : m.total_revenue,
-    // Store MTD-adjusted value for tooltip comparison (only meaningful for MTD months)
-    revenue_previous_year_mtd: m.is_mtd ? m.total_revenue : null,
-    revenue_current_year_actual: null as number | null,
-    revenue_current_year_estimated: null as number | null,  // Estimated full month for MTD months (striped green)
-    revenue_current_year_projected: null as number | null,
-    revenue_next_year_projected: null as number | null,
-    confidence_lower_next: null as number | null,
-    confidence_upper_next: null as number | null,
-    gap_years_percent: null as number | null,
-    gap_years_amount: null as number | null,
-    gap_next_percent: null as number | null,
-    gap_next_amount: null as number | null,
-    is_future: false,
-    is_mtd: m.is_mtd ?? false,  // Get MTD flag from previous year data
-    mtd_day: m.mtd_day ?? null
-  }))
+  const monthlyChartData = useMemo(() => {
+    const data = sales_previous_year.map(m => ({
+      month: MONTH_NAMES_ES[m.month_name] || m.month_name,
+      monthNum: m.month,
+      // Use full month value for main line (fallback to total_revenue for non-MTD months)
+      revenue_previous_year: m.is_mtd && m.total_revenue_full_month ? m.total_revenue_full_month : m.total_revenue,
+      // Store MTD-adjusted value for tooltip comparison (only meaningful for MTD months)
+      revenue_previous_year_mtd: m.is_mtd ? m.total_revenue : null,
+      revenue_current_year_actual: null as number | null,
+      revenue_current_year_estimated: null as number | null,
+      revenue_current_year_projected: null as number | null,
+      revenue_next_year_projected: null as number | null,
+      confidence_lower_next: null as number | null,
+      confidence_upper_next: null as number | null,
+      gap_years_percent: null as number | null,
+      gap_years_amount: null as number | null,
+      gap_next_percent: null as number | null,
+      gap_next_amount: null as number | null,
+      is_future: false,
+      is_mtd: m.is_mtd ?? false,
+      mtd_day: m.mtd_day ?? null
+    }))
 
-  // Add current year projected data (kept for reference but not displayed prominently)
-  sales_current_year_projected.forEach(m => {
-    const index = m.month - 1
-    if (chartData[index]) {
-      chartData[index].revenue_current_year_projected = m.total_revenue
-    }
-  })
+    // Add current year projected data
+    sales_current_year_projected.forEach(m => {
+      const index = m.month - 1
+      if (data[index]) {
+        data[index].revenue_current_year_projected = m.total_revenue
+      }
+    })
 
-  // Add current year actual data
-  // Note: Backend returns MTD-adjusted values as primary for current month (DRY principle)
-  sales_current_year.forEach(m => {
-    const index = m.month - 1
-    if (chartData[index]) {
-      chartData[index].revenue_current_year_actual = m.total_revenue
-      chartData[index].is_mtd = m.is_mtd ?? false
-      chartData[index].mtd_day = m.mtd_day ?? null
+    // Add current year actual data
+    sales_current_year.forEach(m => {
+      const index = m.month - 1
+      if (data[index]) {
+        data[index].revenue_current_year_actual = m.total_revenue
+        data[index].is_mtd = m.is_mtd ?? false
+        data[index].mtd_day = m.mtd_day ?? null
 
-      // For incomplete months, add estimated full month (striped green line)
-      if (m.is_mtd && m.estimated_full_month) {
-        chartData[index].revenue_current_year_estimated = m.estimated_full_month
-        // Extend to previous month using that month's ACTUAL value so line connects properly
-        if (index > 0 && chartData[index - 1].revenue_current_year_actual) {
-          chartData[index - 1].revenue_current_year_estimated = chartData[index - 1].revenue_current_year_actual
+        // For incomplete months, add estimated full month
+        if (m.is_mtd && m.estimated_full_month) {
+          data[index].revenue_current_year_estimated = m.estimated_full_month
+          if (index > 0 && data[index - 1].revenue_current_year_actual) {
+            data[index - 1].revenue_current_year_estimated = data[index - 1].revenue_current_year_actual
+          }
+        }
+
+        // Calculate gap vs previous year
+        const isMtdMonth = data[index].is_mtd
+        const revPrev = isMtdMonth && data[index].revenue_previous_year_mtd
+          ? data[index].revenue_previous_year_mtd
+          : data[index].revenue_previous_year
+        if (revPrev) {
+          data[index].gap_years_percent = ((m.total_revenue - revPrev) / revPrev) * 100
+          data[index].gap_years_amount = m.total_revenue - revPrev
         }
       }
+    })
 
-      // Calculate gap vs previous year
-      // For MTD months, use MTD-adjusted previous year value for fair comparison
-      const isMtdMonth = chartData[index].is_mtd
-      const revPrev = isMtdMonth && chartData[index].revenue_previous_year_mtd
-        ? chartData[index].revenue_previous_year_mtd
-        : chartData[index].revenue_previous_year
-      if (revPrev) {
-        chartData[index].gap_years_percent = ((m.total_revenue - revPrev) / revPrev) * 100
-        chartData[index].gap_years_amount = m.total_revenue - revPrev
+    // Add next year projected data
+    sales_next_year_projected.forEach(m => {
+      const index = m.month - 1
+      if (data[index]) {
+        data[index].revenue_next_year_projected = m.total_revenue
+        data[index].confidence_lower_next = m.confidence_lower ?? null
+        data[index].confidence_upper_next = m.confidence_upper ?? null
+
+        const revCurr = data[index].revenue_current_year_actual
+        if (revCurr) {
+          data[index].gap_next_percent = ((m.total_revenue - revCurr) / revCurr) * 100
+          data[index].gap_next_amount = m.total_revenue - revCurr
+        }
       }
-    }
-  })
+    })
 
+    return data
+  }, [sales_previous_year, sales_current_year, sales_current_year_projected, sales_next_year_projected])
 
-  // Add next year projected data and calculate gaps vs current year
-  sales_next_year_projected.forEach(m => {
-    const index = m.month - 1
-    if (chartData[index]) {
-      chartData[index].revenue_next_year_projected = m.total_revenue
-      chartData[index].confidence_lower_next = m.confidence_lower ?? null
-      chartData[index].confidence_upper_next = m.confidence_upper ?? null
+  // Quarterly aggregation
+  const quarterlyChartData = useMemo(() => {
+    const quarters = [
+      { months: [1, 2, 3], label: 'Q1' },
+      { months: [4, 5, 6], label: 'Q2' },
+      { months: [7, 8, 9], label: 'Q3' },
+      { months: [10, 11, 12], label: 'Q4' },
+    ]
 
-      // Calculate gap vs current year actual
-      const revCurr = chartData[index].revenue_current_year_actual
-      if (revCurr) {
-        chartData[index].gap_next_percent = ((m.total_revenue - revCurr) / revCurr) * 100
-        chartData[index].gap_next_amount = m.total_revenue - revCurr
+    return quarters.map(q => {
+      const monthsData = monthlyChartData.filter(m => q.months.includes(m.monthNum))
+
+      const sumOrNull = (arr: (number | null)[]) => {
+        const valid = arr.filter((v): v is number => v !== null && v > 0)
+        return valid.length > 0 ? valid.reduce((a, b) => a + b, 0) : null
       }
-    }
-  })
 
-  // Get current month name for dynamic labels
-  const currentMonthName = chartData.find(d => d.is_mtd)?.month || 'Mes actual'
+      const revenue_previous_year = sumOrNull(monthsData.map(m => m.revenue_previous_year))
+      const revenue_current_year_actual = sumOrNull(monthsData.map(m => m.revenue_current_year_actual))
+      const revenue_current_year_projected = sumOrNull(monthsData.map(m => m.revenue_current_year_projected))
+      const revenue_next_year_projected = sumOrNull(monthsData.map(m => m.revenue_next_year_projected))
+
+      // Gap calculations
+      let gap_years_percent: number | null = null
+      let gap_years_amount: number | null = null
+      if (revenue_previous_year && revenue_current_year_actual) {
+        gap_years_amount = revenue_current_year_actual - revenue_previous_year
+        gap_years_percent = (gap_years_amount / revenue_previous_year) * 100
+      }
+
+      let gap_next_percent: number | null = null
+      let gap_next_amount: number | null = null
+      if (revenue_current_year_actual && revenue_next_year_projected) {
+        gap_next_amount = revenue_next_year_projected - revenue_current_year_actual
+        gap_next_percent = (gap_next_amount / revenue_current_year_actual) * 100
+      }
+
+      return {
+        month: q.label,
+        monthNum: q.months[0],
+        revenue_previous_year,
+        revenue_previous_year_mtd: null,
+        revenue_current_year_actual,
+        revenue_current_year_estimated: null,
+        revenue_current_year_projected,
+        revenue_next_year_projected,
+        confidence_lower_next: null,
+        confidence_upper_next: null,
+        gap_years_percent,
+        gap_years_amount,
+        gap_next_percent,
+        gap_next_amount,
+        is_future: false,
+        is_mtd: monthsData.some(m => m.is_mtd),
+        mtd_day: monthsData.find(m => m.is_mtd)?.mtd_day ?? null
+      }
+    })
+  }, [monthlyChartData])
+
+  // Select chart data based on time period
+  const chartData = timePeriod === 'quarterly' ? quarterlyChartData : monthlyChartData
 
   return (
     <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
@@ -387,10 +478,43 @@ export default function ExecutiveSalesChart({
         )}
       </div>
 
-      {/* Year Selector - Elegant toggle buttons */}
-      <div className="mb-6">
+      {/* Controls Row - Period selector and Series toggles */}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        {/* Time Period Selector */}
+        <div className="flex items-center gap-2">
+          <Clock className="w-4 h-4 text-gray-400" strokeWidth={1.75} />
+          <span className="text-xs text-gray-500 font-medium">Período:</span>
+          <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+            <button
+              onClick={() => setTimePeriod('monthly')}
+              className={`
+                px-3 py-1 rounded-md text-xs font-medium transition-all duration-200
+                ${timePeriod === 'monthly'
+                  ? 'bg-white shadow-sm text-teal-700'
+                  : 'text-gray-500 hover:text-gray-700'
+                }
+              `}
+            >
+              Mensual
+            </button>
+            <button
+              onClick={() => setTimePeriod('quarterly')}
+              className={`
+                px-3 py-1 rounded-md text-xs font-medium transition-all duration-200
+                ${timePeriod === 'quarterly'
+                  ? 'bg-white shadow-sm text-teal-700'
+                  : 'text-gray-500 hover:text-gray-700'
+                }
+              `}
+            >
+              Trimestral
+            </button>
+          </div>
+        </div>
+
+        {/* Series Selector */}
         <div className="flex items-center gap-3">
-          <span className="text-xs text-gray-500 font-medium">Mostrar series:</span>
+          <span className="text-xs text-gray-500 font-medium">Series:</span>
           {seriesConfigs.map((config) => (
             <button
               key={config.key}
@@ -528,11 +652,11 @@ export default function ExecutiveSalesChart({
               strokeWidth={2}
               strokeDasharray="5 5"
               name={`${current_year} Estimado`}
-              dot={(props: any) => {
+              dot={((props: any) => {
                 // Only show dot at MTD month
                 if (!props.payload?.is_mtd) return null
                 return <circle key={`dot-curr-est-${props.index}`} cx={props.cx} cy={props.cy} r={5} fill="#14B8A6" stroke="#0D9488" strokeWidth={2} />
-              }}
+              }) as any}
               connectNulls={false}
               legendType="none"
               label={(props: any) => {
