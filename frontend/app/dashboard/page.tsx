@@ -623,50 +623,6 @@ function DashboardContent() {
           ) : null}
         </div>
 
-        {/* Projection Summary Card */}
-        {executiveData.sales_next_year_projected && executiveData.sales_next_year_projected.length > 0 && (
-          <div className="bg-white rounded-xl border border-gray-200 p-6 mb-10">
-            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2 mb-4">
-              <span>📈</span> Resumen de Proyecciones
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* 2026 Estimated - Teal */}
-              <div className="bg-teal-50 border border-teal-200 rounded-lg p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-3 h-3 rounded-full bg-teal-500"></div>
-                  <span className="text-sm font-medium text-teal-700">Estimado {executiveData.projection_metadata.current_year}</span>
-                </div>
-                <span className="text-2xl font-bold text-teal-600">${Math.round(projectedCurrentYearTotal).toLocaleString('es-CL')}</span>
-                <span className="text-xs text-teal-600/70 block mt-1">YTD real + {executiveData.projection_metadata.months_projected} meses proyectados</span>
-              </div>
-
-              {/* 2027 Projection - Violet */}
-              <div className="bg-violet-50 border border-violet-200 rounded-lg p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-3 h-3 rounded-full bg-violet-500"></div>
-                  <span className="text-sm font-medium text-violet-700">Proyección {executiveData.projection_metadata.next_year}</span>
-                </div>
-                <span className="text-2xl font-bold text-violet-600">${Math.round(executiveData.kpis.total_revenue_next_year_projected).toLocaleString('es-CL')}</span>
-                <span className="text-xs text-violet-600/70 block mt-1">+{executiveData.projection_metadata.avg_growth_rate_next_year.toFixed(1)}% crecimiento estimado</span>
-              </div>
-
-              {/* Variability - General metric */}
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span className="text-sm font-medium text-gray-600">Variabilidad histórica</span>
-                </div>
-                <span className="text-2xl font-bold text-gray-700">±{executiveData.projection_metadata.std_dev_next_year.toFixed(1)}%</span>
-                <span className="text-xs text-gray-500 block mt-1">
-                  Desviación estándar del crecimiento interanual ({executiveData.projection_metadata.previous_year}-{executiveData.projection_metadata.current_year})
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Distribution Section - Collapsible */}
         <CollapsibleSection
           title="Distribuciones YTD"
