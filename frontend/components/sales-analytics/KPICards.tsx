@@ -20,14 +20,18 @@ interface CardConfig {
   icon: LucideIcon
   iconBg: string
   iconColor: string
+  borderColor: string
+  hoverBorder: string
 }
 
 export default function KPICards({ data, loading }: KPICardsProps) {
+  const loadingColors = ['border-l-green-300', 'border-l-blue-300', 'border-l-purple-300', 'border-l-amber-300']
+
   if (loading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {[1, 2, 3, 4].map(i => (
-          <div key={i} className="bg-white rounded-xl border border-gray-200 p-5 animate-pulse">
+        {[0, 1, 2, 3].map(i => (
+          <div key={i} className={`bg-white rounded-xl border border-gray-200 border-l-4 ${loadingColors[i]} p-5 animate-pulse`}>
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-lg bg-gray-200" />
               <div className="flex-1">
@@ -62,29 +66,37 @@ export default function KPICards({ data, loading }: KPICardsProps) {
       title: 'Ingresos Totales',
       value: formatCurrency(data.total_revenue),
       icon: DollarSign,
-      iconBg: 'bg-green-50',
+      iconBg: 'bg-gradient-to-br from-green-50 to-emerald-100',
       iconColor: 'text-green-600',
+      borderColor: 'border-l-green-500',
+      hoverBorder: 'hover:border-l-green-600',
     },
     {
       title: 'Unidades Vendidas',
       value: formatNumber(data.total_units),
       icon: Package,
-      iconBg: 'bg-blue-50',
+      iconBg: 'bg-gradient-to-br from-blue-50 to-sky-100',
       iconColor: 'text-blue-600',
+      borderColor: 'border-l-blue-500',
+      hoverBorder: 'hover:border-l-blue-600',
     },
     {
       title: 'Órdenes Totales',
       value: formatNumber(data.total_orders),
       icon: ShoppingCart,
-      iconBg: 'bg-purple-50',
+      iconBg: 'bg-gradient-to-br from-purple-50 to-violet-100',
       iconColor: 'text-purple-600',
+      borderColor: 'border-l-purple-500',
+      hoverBorder: 'hover:border-l-purple-600',
     },
     {
       title: 'Ticket Promedio',
       value: formatCurrency(data.avg_ticket),
       icon: Receipt,
-      iconBg: 'bg-amber-50',
+      iconBg: 'bg-gradient-to-br from-amber-50 to-orange-100',
       iconColor: 'text-amber-600',
+      borderColor: 'border-l-amber-500',
+      hoverBorder: 'hover:border-l-amber-600',
     }
   ]
 
@@ -106,7 +118,7 @@ export default function KPICards({ data, loading }: KPICardsProps) {
         return (
           <div
             key={index}
-            className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md hover:border-gray-300 transition-all duration-200"
+            className={`bg-white rounded-xl border border-gray-200 border-l-4 ${card.borderColor} ${card.hoverBorder} p-5 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200`}
           >
             <div className="flex items-start gap-4">
               {/* Icon */}

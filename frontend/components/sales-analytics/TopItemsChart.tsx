@@ -89,14 +89,16 @@ export default function TopItemsChart({ data, groupBy, topLimit, loading }: TopI
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8 hover:shadow-md transition-shadow duration-200">
+    <div className="bg-white rounded-xl border border-gray-200 border-l-4 border-l-amber-500 p-6 mb-8 hover:shadow-lg hover:border-l-amber-600 transition-all duration-200">
       {/* Header */}
       <div className="mb-6">
         <h2 className="text-base font-semibold text-gray-900 mb-1 flex items-center gap-2">
-          <Trophy className="w-5 h-5 text-amber-500" strokeWidth={1.75} />
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center">
+            <Trophy className="w-4 h-4 text-amber-600" strokeWidth={2} />
+          </div>
           Top {topLimit} {groupBy ? `por ${getGroupLabel(groupBy)}` : 'Productos'}
         </h2>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-gray-500 ml-10">
           Ordenado por ingresos totales
         </p>
       </div>
@@ -161,13 +163,21 @@ export default function TopItemsChart({ data, groupBy, topLimit, loading }: TopI
             {data.map((item, index) => (
               <tr
                 key={index}
-                className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                className="border-b border-gray-100 hover:bg-amber-50 transition-colors group"
               >
-                <td className="py-2 px-3 text-gray-600">
-                  {index + 1}
+                <td className="py-2 px-3">
+                  <span className={`
+                    inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold
+                    ${index === 0 ? 'bg-gradient-to-br from-amber-400 to-orange-500 text-white' :
+                      index === 1 ? 'bg-gradient-to-br from-gray-300 to-gray-400 text-white' :
+                      index === 2 ? 'bg-gradient-to-br from-amber-600 to-amber-700 text-white' :
+                      'bg-gray-100 text-gray-600'}
+                  `}>
+                    {index + 1}
+                  </span>
                 </td>
                 <td
-                  className="py-2 px-3 text-gray-900 font-medium min-w-48"
+                  className="py-2 px-3 text-gray-900 font-medium min-w-48 group-hover:text-amber-700 transition-colors"
                   title={item.group_value || 'Sin clasificar'}
                 >
                   {item.group_value || 'Sin clasificar'}
@@ -176,7 +186,7 @@ export default function TopItemsChart({ data, groupBy, topLimit, loading }: TopI
                   {formatCurrency(item.revenue)}
                 </td>
                 <td className="py-2 px-3 text-right">
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gradient-to-r from-green-100 to-emerald-100 text-green-800">
                     {item.percentage.toFixed(1)}%
                   </span>
                 </td>

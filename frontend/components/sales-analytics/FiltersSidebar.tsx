@@ -156,14 +156,16 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
     <div className="fixed left-0 top-20 bottom-0 w-80 bg-white shadow-lg overflow-y-auto z-40 border-r border-gray-200">
       <div className="p-6">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-100">
           <h2 className="text-base font-semibold text-gray-900 flex items-center gap-2">
-            <SlidersHorizontal className="w-5 h-5 text-gray-700" strokeWidth={1.75} />
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center">
+              <SlidersHorizontal className="w-4 h-4 text-white" strokeWidth={2} />
+            </div>
             Filtros
           </h2>
           <button
             onClick={() => handleCollapseToggle(true)}
-            className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded hover:bg-gray-100"
+            className="text-gray-400 hover:text-green-600 transition-colors p-1.5 rounded-lg hover:bg-green-50"
             title="Ocultar filtros"
           >
             <ChevronLeft className="w-5 h-5" strokeWidth={1.75} />
@@ -171,9 +173,9 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
         </div>
 
         {/* Search */}
-        <div className="mb-6">
+        <div className="mb-6 group">
           <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-2">
-            <Search className="w-3.5 h-3.5" strokeWidth={2} />
+            <Search className="w-3.5 h-3.5 text-blue-500" strokeWidth={2} />
             Buscar
           </h3>
           <div className="relative">
@@ -203,7 +205,7 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
         {/* Date Filters */}
         <div className="mb-6">
           <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-2">
-            <Calendar className="w-3.5 h-3.5" strokeWidth={2} />
+            <Calendar className="w-3.5 h-3.5 text-purple-500" strokeWidth={2} />
             Período
           </h3>
 
@@ -259,10 +261,10 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
                     key={year}
                     onClick={() => toggleYear(year)}
                     className={`
-                      px-3 py-1 rounded-lg text-sm font-medium transition-colors
+                      px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200
                       ${props.selectedYears.includes(year)
-                        ? 'bg-green-500 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        ? 'bg-gradient-to-r from-purple-500 to-violet-500 text-white shadow-md hover:shadow-lg hover:scale-105'
+                        : 'bg-gray-100 text-gray-700 hover:bg-purple-50 hover:text-purple-700 border border-transparent hover:border-purple-200'
                       }
                     `}
                   >
@@ -283,10 +285,10 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
                   key={month.value}
                   onClick={() => toggleMonth(month.value)}
                   className={`
-                    px-2 py-1 rounded text-xs font-medium transition-colors
+                    px-2 py-1.5 rounded-lg text-xs font-medium transition-all duration-200
                     ${props.selectedMonths.includes(month.value)
-                      ? 'bg-green-500 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      ? 'bg-gradient-to-r from-purple-500 to-violet-500 text-white shadow-sm hover:shadow-md'
+                      : 'bg-gray-100 text-gray-700 hover:bg-purple-50 hover:text-purple-700 border border-transparent hover:border-purple-200'
                     }
                   `}
                 >
@@ -325,7 +327,7 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
         {/* Product Family (Category) */}
         <div className="mb-6">
           <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-2">
-            <Tag className="w-3.5 h-3.5" strokeWidth={2} />
+            <Tag className="w-3.5 h-3.5 text-emerald-500" strokeWidth={2} />
             Familia de Producto
           </h3>
           <div className="flex flex-wrap gap-2">
@@ -334,10 +336,10 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
                 key={category}
                 onClick={() => toggleCategory(category)}
                 className={`
-                  px-3 py-1.5 rounded-lg text-sm font-medium transition-all
+                  px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200
                   ${props.selectedCategories.includes(category)
-                    ? 'bg-green-500 text-white shadow-sm'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-md hover:shadow-lg hover:scale-105'
+                    : 'bg-gray-100 text-gray-700 hover:bg-green-50 hover:text-green-700 hover:border-green-200 border border-transparent'
                   }
                 `}
               >
@@ -351,7 +353,7 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
         {channels.length > 0 && (
           <div className="mb-6">
             <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-2">
-              <Store className="w-3.5 h-3.5" strokeWidth={2} />
+              <Store className="w-3.5 h-3.5 text-orange-500" strokeWidth={2} />
               Canal
             </h3>
             <MultiSelect
@@ -369,7 +371,7 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
         {customers.length > 0 && (
           <div className="mb-6">
             <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-2">
-              <Users className="w-3.5 h-3.5" strokeWidth={2} />
+              <Users className="w-3.5 h-3.5 text-blue-500" strokeWidth={2} />
               Cliente
             </h3>
             <MultiSelect
@@ -387,7 +389,7 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
         {formats.length > 0 && (
           <div className="mb-6">
             <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-2">
-              <Package className="w-3.5 h-3.5" strokeWidth={2} />
+              <Package className="w-3.5 h-3.5 text-amber-500" strokeWidth={2} />
               Formato (Producto)
             </h3>
             <MultiSelect
@@ -410,7 +412,7 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
         {skuPrimarios.length > 0 && (
           <div className="mb-6">
             <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-2">
-              <Hash className="w-3.5 h-3.5" strokeWidth={2} />
+              <Hash className="w-3.5 h-3.5 text-rose-500" strokeWidth={2} />
               SKU Primario
             </h3>
             <MultiSelect
@@ -432,13 +434,13 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
         {/* Grouping */}
         <div className="mb-6">
           <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-2">
-            <Layers className="w-3.5 h-3.5" strokeWidth={2} />
+            <Layers className="w-3.5 h-3.5 text-indigo-500" strokeWidth={2} />
             Agrupación
           </h3>
           <select
             value={props.groupBy}
             onChange={(e) => props.onGroupByChange(e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent hover:border-green-300 transition-colors"
           >
             {groupByOptions.map(option => (
               <option key={option.value} value={option.value}>
@@ -451,13 +453,13 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
         {/* Stack By (always visible) */}
         <div className="mb-6">
           <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-2">
-            <BarChart3 className="w-3.5 h-3.5" strokeWidth={2} />
+            <BarChart3 className="w-3.5 h-3.5 text-cyan-500" strokeWidth={2} />
             Apilar por
           </h3>
           <select
             value={props.stackBy || ''}
             onChange={(e) => props.onStackByChange(e.target.value || null)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent hover:border-green-300 transition-colors"
           >
             <option value="">Sin apilación</option>
             {props.groupBy !== 'category' && <option value="category">Familia</option>}
@@ -472,7 +474,7 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
         {/* Top X */}
         <div className="mb-6">
           <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-2">
-            <Settings2 className="w-3.5 h-3.5" strokeWidth={2} />
+            <Settings2 className="w-3.5 h-3.5 text-slate-500" strokeWidth={2} />
             Top X
           </h3>
           <div className="flex flex-wrap gap-2">
@@ -481,10 +483,10 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
                 key={limit}
                 onClick={() => props.onTopLimitChange(limit)}
                 className={`
-                  px-3 py-1 rounded-lg text-sm font-medium transition-colors
+                  px-3 py-1 rounded-lg text-sm font-medium transition-all duration-200
                   ${props.topLimit === limit
-                    ? 'bg-green-500 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-md'
+                    : 'bg-gray-100 text-gray-700 hover:bg-green-50 hover:text-green-700'
                   }
                 `}
               >

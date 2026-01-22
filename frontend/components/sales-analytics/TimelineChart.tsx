@@ -341,14 +341,14 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
           </h2>
 
           {/* Metric Toggle */}
-          <div className="flex gap-1">
+          <div className="flex gap-1.5">
             <button
               onClick={() => setSelectedMetric('revenue')}
               className={`
-                px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+                px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200
                 ${selectedMetric === 'revenue'
-                  ? 'bg-green-500 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-md hover:shadow-lg'
+                  : 'bg-gray-100 text-gray-700 hover:bg-green-50 hover:text-green-700'
                 }
               `}
             >
@@ -357,10 +357,10 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
             <button
               onClick={() => setSelectedMetric('units')}
               className={`
-                px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+                px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200
                 ${selectedMetric === 'units'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  ? 'bg-gradient-to-r from-blue-500 to-sky-500 text-white shadow-md hover:shadow-lg'
+                  : 'bg-gray-100 text-gray-700 hover:bg-blue-50 hover:text-blue-700'
                 }
               `}
             >
@@ -369,10 +369,10 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
             <button
               onClick={() => setSelectedMetric('items')}
               className={`
-                px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+                px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200
                 ${selectedMetric === 'items'
-                  ? 'bg-amber-500 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md hover:shadow-lg'
+                  : 'bg-gray-100 text-gray-700 hover:bg-amber-50 hover:text-amber-700'
                 }
               `}
             >
@@ -381,10 +381,10 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
             <button
               onClick={() => setSelectedMetric('orders')}
               className={`
-                px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+                px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200
                 ${selectedMetric === 'orders'
-                  ? 'bg-purple-500 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  ? 'bg-gradient-to-r from-purple-500 to-violet-500 text-white shadow-md hover:shadow-lg'
+                  : 'bg-gray-100 text-gray-700 hover:bg-purple-50 hover:text-purple-700'
                 }
               `}
             >
@@ -396,7 +396,7 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
         {/* Time Period Selector */}
         <div className="flex items-center gap-3">
           <span className="text-xs font-medium text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
-            <Clock className="w-3.5 h-3.5" strokeWidth={2} />
+            <Clock className="w-3.5 h-3.5 text-indigo-500" strokeWidth={2} />
             Período
           </span>
           <div className="flex gap-1">
@@ -405,10 +405,10 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
                 key={period}
                 onClick={() => onTimePeriodChange(period as any)}
                 className={`
-                  px-2.5 py-1 rounded-md text-xs font-medium transition-colors
+                  px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200
                   ${timePeriod === period
-                    ? 'bg-gray-800 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    ? 'bg-gradient-to-r from-gray-700 to-gray-900 text-white shadow-sm'
+                    : 'bg-gray-100 text-gray-600 hover:bg-indigo-50 hover:text-indigo-700'
                   }
                 `}
               >

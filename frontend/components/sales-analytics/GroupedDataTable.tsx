@@ -132,16 +132,18 @@ export default function GroupedDataTable({
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-md transition-shadow duration-200">
+    <div className="bg-white rounded-xl border border-gray-200 border-l-4 border-l-blue-500 p-6 hover:shadow-lg hover:border-l-blue-600 transition-all duration-200">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-base font-semibold text-gray-900 mb-1 flex items-center gap-2">
-            <Table2 className="w-5 h-5 text-blue-600" strokeWidth={1.75} />
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-100 to-sky-100 flex items-center justify-center">
+              <Table2 className="w-4 h-4 text-blue-600" strokeWidth={2} />
+            </div>
             Datos Agrupados
           </h2>
-          <p className="text-xs text-gray-500">
-            Agrupado por: <span className="font-medium text-gray-700">{groupBy ? getGroupLabel(groupBy) : 'Familia'}</span>
+          <p className="text-xs text-gray-500 ml-10">
+            Agrupado por: <span className="font-medium text-blue-700">{groupBy ? getGroupLabel(groupBy) : 'Familia'}</span>
           </p>
         </div>
 
@@ -149,8 +151,8 @@ export default function GroupedDataTable({
           <button
             onClick={onExportCSV}
             className="
-              px-3 py-1.5 bg-green-500 text-white rounded-lg
-              hover:bg-green-600 transition-colors
+              px-3 py-1.5 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-lg
+              hover:from-green-600 hover:to-emerald-600 hover:shadow-md transition-all duration-200
               flex items-center gap-1.5 text-sm font-medium
             "
           >
@@ -186,10 +188,10 @@ export default function GroupedDataTable({
             {data.map((row, index) => (
               <tr
                 key={index}
-                className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                className="border-b border-gray-100 hover:bg-blue-50 transition-colors group"
               >
                 <td
-                  className="py-3 px-4 text-gray-900 font-medium min-w-64"
+                  className="py-3 px-4 text-gray-900 font-medium min-w-64 group-hover:text-blue-700 transition-colors"
                   title={row.group_value || 'Sin clasificar'}
                 >
                   {row.group_value || 'Sin clasificar'}
