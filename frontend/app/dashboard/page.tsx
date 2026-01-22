@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
 import Navigation from '@/components/Navigation'
 import ExecutiveSalesChart from '@/components/charts/ExecutiveSalesChart'
+import YTDProgressChart from '@/components/charts/YTDProgressChart'
 import {
   DashboardFilterProvider,
   useDashboardFilters,
@@ -76,6 +77,32 @@ interface DistributionItem {
   units: number
   orders: number
   percentage: number
+}
+
+interface YTDDailyData {
+  day_of_year: number
+  date_previous_year: string | null
+  date_current_year: string | null
+  cumulative_previous_year: number
+  cumulative_current_year: number
+  daily_previous_year: number
+  daily_current_year: number
+  ytd_difference: number
+  ytd_difference_percent: number
+}
+
+interface YTDProgressData {
+  previous_year: number
+  current_year: number
+  current_day_of_year: number
+  current_date: string
+  summary: {
+    ytd_previous_year: number
+    ytd_current_year: number
+    ytd_difference: number
+    ytd_difference_percent: number
+  }
+  daily_data: YTDDailyData[]
 }
 
 // Color palettes
@@ -335,6 +362,10 @@ function DashboardContent() {
   }>({ channels: [], categories: [], customers: [] })
   const [distributionLoading, setDistributionLoading] = useState(true)
 
+  // YTD Progress data
+  const [ytdData, setYtdData] = useState<YTDProgressData | null>(null)
+  const [ytdLoading, setYtdLoading] = useState(true)
+
   // Fetch executive KPIs
   useEffect(() => {
     const fetchExecutiveData = async () => {
@@ -362,6 +393,32 @@ function DashboardContent() {
     }
 
     fetchExecutiveData()
+  }, [filters.family])
+
+  // Fetch YTD Progress data
+  useEffect(() => {
+    const fetchYTDData = async () => {
+      try {
+        setYtdLoading(true)
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+        const params = new URLSearchParams()
+        if (filters.family) {
+          params.append('product_family', filters.family)
+        }
+
+        const response = await fetch(`${apiUrl}/api/v1/orders/executive/ytd-progress?${params}`)
+        if (!response.ok) throw new Error(`Error fetching YTD data (${response.status})`)
+
+        const result = await response.json()
+        setYtdData(result)
+      } catch (err) {
+        console.error('Error fetching YTD progress:', err)
+      } finally {
+        setYtdLoading(false)
+      }
+    }
+
+    fetchYTDData()
   }, [filters.family])
 
   // Fetch distribution data (YTD)
@@ -546,6 +603,24 @@ function DashboardContent() {
               : null
             }
           />
+        </div>
+
+        {/* YTD Progress Chart */}
+        <div className="mb-10">
+          {ytdLoading ? (
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
+              <div className="h-80 bg-gray-100 animate-pulse rounded-lg" />
+            </div>
+          ) : ytdData && ytdData.daily_data && ytdData.daily_data.length > 0 ? (
+            <YTDProgressChart
+              dailyData={ytdData.daily_data}
+              summary={ytdData.summary}
+              previousYear={ytdData.previous_year}
+              currentYear={ytdData.current_year}
+              currentDayOfYear={ytdData.current_day_of_year}
+              currentDate={ytdData.current_date}
+            />
+          ) : null}
         </div>
 
         {/* Projection Summary Card */}

@@ -777,3 +777,165 @@ async def get_orders_by_source(source: str, limit: int = Query(50, ge=1, le=500)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching orders: {str(e)}")
+
+
+@router.get("/executive/ytd-progress")
+async def get_ytd_progress(
+    product_family: Optional[str] = Query(None, description="Filter by product family (BARRAS, CRACKERS, GRANOLAS, KEEPERS)")
+):
+    """
+    Get cumulative Year-To-Date (YTD) progress comparison between current and previous year.
+
+    Returns daily cumulative revenue for:
+    - Previous year (same period as current YTD)
+    - Current year (up to today)
+
+    This allows comparing "On day X of the year, last year I had $Y, this year I have $Z"
+    """
+    conn = None
+    cursor = None
+    try:
+        from app.core.database import get_db_connection_dict_with_retry
+
+        conn = get_db_connection_dict_with_retry()
+        cursor = conn.cursor()
+
+        # Get current date info
+        current_date = datetime.now()
+        current_year = current_date.year
+        previous_year = current_year - 1
+        day_of_year = current_date.timetuple().tm_yday
+
+        # Build WHERE clause for product family filter
+        family_filter = ""
+        params = []
+
+        if product_family and product_family.upper() != "TODAS":
+            family_filter = "AND category = %s"
+            params = [product_family.upper()]
+
+        # Query for PREVIOUS YEAR daily cumulative data (same day range as current YTD)
+        query_prev_year = f"""
+            WITH daily_sales AS (
+                SELECT
+                    order_date,
+                    EXTRACT(DOY FROM order_date)::int as day_of_year,
+                    COALESCE(SUM(revenue), 0) as daily_revenue
+                FROM sales_facts_mv
+                WHERE EXTRACT(YEAR FROM order_date) = %s
+                AND EXTRACT(DOY FROM order_date) <= %s
+                AND source = 'relbase'
+                {family_filter}
+                GROUP BY order_date
+                ORDER BY order_date
+            )
+            SELECT
+                day_of_year,
+                order_date,
+                daily_revenue,
+                SUM(daily_revenue) OVER (ORDER BY order_date) as cumulative_revenue
+            FROM daily_sales
+            ORDER BY day_of_year
+        """
+
+        cursor.execute(query_prev_year, [previous_year, day_of_year] + params)
+        data_prev_year = cursor.fetchall()
+
+        # Query for CURRENT YEAR daily cumulative data
+        query_curr_year = f"""
+            WITH daily_sales AS (
+                SELECT
+                    order_date,
+                    EXTRACT(DOY FROM order_date)::int as day_of_year,
+                    COALESCE(SUM(revenue), 0) as daily_revenue
+                FROM sales_facts_mv
+                WHERE EXTRACT(YEAR FROM order_date) = %s
+                AND source = 'relbase'
+                {family_filter}
+                GROUP BY order_date
+                ORDER BY order_date
+            )
+            SELECT
+                day_of_year,
+                order_date,
+                daily_revenue,
+                SUM(daily_revenue) OVER (ORDER BY order_date) as cumulative_revenue
+            FROM daily_sales
+            ORDER BY day_of_year
+        """
+
+        cursor.execute(query_curr_year, [current_year] + params)
+        data_curr_year = cursor.fetchall()
+
+        # Create lookup by day_of_year for easy comparison
+        prev_year_by_day = {row['day_of_year']: row for row in data_prev_year}
+        curr_year_by_day = {row['day_of_year']: row for row in data_curr_year}
+
+        # Build combined daily data
+        daily_data = []
+        max_day = max(
+            max([d['day_of_year'] for d in data_prev_year]) if data_prev_year else 0,
+            max([d['day_of_year'] for d in data_curr_year]) if data_curr_year else 0
+        )
+
+        # Track running totals for days without sales
+        prev_cumulative = 0
+        curr_cumulative = 0
+
+        for day in range(1, max_day + 1):
+            prev_data = prev_year_by_day.get(day)
+            curr_data = curr_year_by_day.get(day)
+
+            if prev_data:
+                prev_cumulative = float(prev_data['cumulative_revenue'])
+            if curr_data:
+                curr_cumulative = float(curr_data['cumulative_revenue'])
+
+            # Calculate YoY difference
+            ytd_diff = curr_cumulative - prev_cumulative if prev_cumulative > 0 else 0
+            ytd_diff_percent = ((curr_cumulative - prev_cumulative) / prev_cumulative * 100) if prev_cumulative > 0 else 0
+
+            daily_data.append({
+                'day_of_year': day,
+                'date_previous_year': prev_data['order_date'].isoformat() if prev_data else None,
+                'date_current_year': curr_data['order_date'].isoformat() if curr_data else None,
+                'cumulative_previous_year': prev_cumulative,
+                'cumulative_current_year': curr_cumulative,
+                'daily_previous_year': float(prev_data['daily_revenue']) if prev_data else 0,
+                'daily_current_year': float(curr_data['daily_revenue']) if curr_data else 0,
+                'ytd_difference': ytd_diff,
+                'ytd_difference_percent': round(ytd_diff_percent, 1)
+            })
+
+        # Calculate summary stats
+        final_prev = prev_cumulative
+        final_curr = curr_cumulative
+        total_diff = final_curr - final_prev
+        total_diff_percent = ((final_curr - final_prev) / final_prev * 100) if final_prev > 0 else 0
+
+        return {
+            "status": "success",
+            "previous_year": previous_year,
+            "current_year": current_year,
+            "current_day_of_year": day_of_year,
+            "current_date": current_date.strftime('%Y-%m-%d'),
+            "summary": {
+                "ytd_previous_year": final_prev,
+                "ytd_current_year": final_curr,
+                "ytd_difference": total_diff,
+                "ytd_difference_percent": round(total_diff_percent, 1)
+            },
+            "daily_data": daily_data
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error fetching YTD progress: {str(e)}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
