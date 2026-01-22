@@ -128,11 +128,17 @@ export default function YTDProgressChart({
     return sampled
   }, [dailyData])
 
-  const formatCurrency = (value: number): string => {
+  // Abbreviated format for chart axis
+  const formatCurrencyShort = (value: number): string => {
     if (value >= 1000000) {
       return `$${(value / 1000000).toFixed(1)}M`
     }
     return `$${Math.round(value / 1000)}K`
+  }
+
+  // Full number format for summary cards
+  const formatCurrencyFull = (value: number): string => {
+    return `$${Math.round(value).toLocaleString('es-CL')}`
   }
 
   if (loading) {
@@ -192,16 +198,16 @@ export default function YTDProgressChart({
       <div className="grid grid-cols-3 gap-4 mb-6">
         <div className="bg-indigo-50 rounded-xl p-4 border border-indigo-100">
           <div className="text-xs text-indigo-600 font-medium mb-1">{previousYear} YTD</div>
-          <div className="text-xl font-bold text-indigo-700">{formatCurrency(summary.ytd_previous_year)}</div>
+          <div className="text-lg font-bold text-indigo-700">{formatCurrencyFull(summary.ytd_previous_year)}</div>
         </div>
         <div className="bg-teal-50 rounded-xl p-4 border border-teal-100">
           <div className="text-xs text-teal-600 font-medium mb-1">{currentYear} YTD</div>
-          <div className="text-xl font-bold text-teal-700">{formatCurrency(summary.ytd_current_year)}</div>
+          <div className="text-lg font-bold text-teal-700">{formatCurrencyFull(summary.ytd_current_year)}</div>
         </div>
         <div className={`rounded-xl p-4 border ${isPositive ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'}`}>
           <div className={`text-xs font-medium mb-1 ${isPositive ? 'text-green-600' : 'text-red-600'}`}>Diferencia</div>
-          <div className={`text-xl font-bold ${isPositive ? 'text-green-700' : 'text-red-700'}`}>
-            {isPositive ? '+' : ''}{formatCurrency(summary.ytd_difference)}
+          <div className={`text-lg font-bold ${isPositive ? 'text-green-700' : 'text-red-700'}`}>
+            {isPositive ? '+' : ''}{formatCurrencyFull(summary.ytd_difference)}
           </div>
         </div>
       </div>
@@ -232,7 +238,7 @@ export default function YTDProgressChart({
             interval={Math.floor(chartData.length / 8)}
           />
           <YAxis
-            tickFormatter={formatCurrency}
+            tickFormatter={formatCurrencyShort}
             tick={{ fontSize: 11 }}
             stroke="#6B7280"
             domain={[0, 'auto']}
