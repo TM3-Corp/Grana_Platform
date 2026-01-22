@@ -174,7 +174,8 @@ export default function Navigation() {
 
                     {/* Dropdown menu */}
                     {openDropdown === item.name && (
-                      <div className="absolute left-0 top-full w-48 bg-white rounded-xl shadow-lg border border-gray-200 py-2 z-50 mt-1">
+                      <div className="absolute left-0 top-full w-48 pt-1 z-50">
+                        <div className="bg-white rounded-xl shadow-lg border border-gray-200 py-2">
                         {item.subItems.map((subItem) => {
                           const SubIconComponent = subItem.icon;
                           const isItemActive = isActive(subItem.href);
@@ -197,6 +198,7 @@ export default function Navigation() {
                             </Link>
                           );
                         })}
+                        </div>
                       </div>
                     )}
                   </div>
