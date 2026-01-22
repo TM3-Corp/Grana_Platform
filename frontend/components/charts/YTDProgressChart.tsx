@@ -219,29 +219,61 @@ export default function YTDProgressChart({
             {isPositive ? '+' : ''}{formatCurrencyFull(summary.ytd_difference)}
           </div>
         </div>
-        {/* Distancia a Meta card */}
-        <div className={`rounded-xl p-4 border ${
-          summary.goal_exceeded
-            ? 'bg-gradient-to-br from-amber-50 to-yellow-100 border-amber-200'
-            : 'bg-gray-50 border-gray-200'
-        }`}>
-          <div className="flex items-center gap-1.5 mb-1">
-            {summary.goal_exceeded ? (
-              <Trophy className="w-3.5 h-3.5 text-amber-500" strokeWidth={2} />
-            ) : (
-              <Target className="w-3.5 h-3.5 text-gray-500" strokeWidth={2} />
-            )}
-            <span className={`text-xs font-medium ${summary.goal_exceeded ? 'text-amber-600' : 'text-gray-600'}`}>
-              {summary.goal_exceeded ? 'Meta Superada' : 'Distancia a Meta'}
-            </span>
-          </div>
-          <div className={`text-lg font-bold ${summary.goal_exceeded ? 'text-amber-700' : 'text-gray-700'}`}>
-            {summary.goal_exceeded ? '+' : ''}{formatCurrencyFull(summary.distance_to_goal)}
-          </div>
-          <div className={`text-[10px] mt-0.5 ${summary.goal_exceeded ? 'text-amber-500' : 'text-gray-400'}`}>
-            Meta: {currentMonthName} {previousYear}
-          </div>
-        </div>
+        {/* Distancia a Meta card with progress fill */}
+        {(() => {
+          const goalProgress = summary.monthly_goal > 0
+            ? (summary.ytd_current_year / summary.monthly_goal) * 100
+            : 0
+          const fillPercent = Math.min(goalProgress, 100) // Cap visual fill at 100%
+          const displayPercent = Math.round(goalProgress)
+
+          return (
+            <div className={`relative rounded-xl p-4 border overflow-hidden ${
+              summary.goal_exceeded
+                ? 'border-amber-300'
+                : 'border-sky-200'
+            }`}>
+              {/* Progress fill background */}
+              <div
+                className={`absolute bottom-0 left-0 right-0 transition-all duration-700 ease-out ${
+                  summary.goal_exceeded
+                    ? 'bg-gradient-to-t from-amber-200 via-amber-100 to-yellow-50'
+                    : 'bg-gradient-to-t from-sky-200 via-sky-100 to-sky-50'
+                }`}
+                style={{ height: `${fillPercent}%` }}
+              />
+              {/* Content (above the fill) */}
+              <div className="relative z-10">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-1.5">
+                    {summary.goal_exceeded ? (
+                      <Trophy className="w-3.5 h-3.5 text-amber-600" strokeWidth={2} />
+                    ) : (
+                      <Target className="w-3.5 h-3.5 text-sky-600" strokeWidth={2} />
+                    )}
+                    <span className={`text-xs font-medium ${summary.goal_exceeded ? 'text-amber-700' : 'text-sky-700'}`}>
+                      {summary.goal_exceeded ? 'Meta Superada' : 'Progreso a Meta'}
+                    </span>
+                  </div>
+                  {/* Percentage badge */}
+                  <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
+                    summary.goal_exceeded
+                      ? 'bg-amber-500 text-white'
+                      : 'bg-sky-500 text-white'
+                  }`}>
+                    {displayPercent}%
+                  </span>
+                </div>
+                <div className={`text-lg font-bold ${summary.goal_exceeded ? 'text-amber-800' : 'text-sky-800'}`}>
+                  {summary.goal_exceeded ? '+' : '-'}{formatCurrencyFull(summary.distance_to_goal)}
+                </div>
+                <div className={`text-[10px] mt-0.5 ${summary.goal_exceeded ? 'text-amber-600' : 'text-sky-600'}`}>
+                  Meta: {formatCurrencyFull(summary.monthly_goal)} ({currentMonthName} {previousYear})
+                </div>
+              </div>
+            </div>
+          )
+        })()}
       </div>
 
       {/* Chart */}
