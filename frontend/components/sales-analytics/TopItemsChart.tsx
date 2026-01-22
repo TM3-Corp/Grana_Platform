@@ -1,6 +1,7 @@
 'use client'
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
+import { Trophy } from 'lucide-react'
 
 interface TopItem {
   group_value: string
@@ -32,19 +33,20 @@ export default function TopItemsChart({ data, groupBy, topLimit, loading }: TopI
 
   if (loading) {
     return (
-      <div className="bg-white rounded-2xl shadow-lg p-6 mb-10">
-        <div className="h-96 bg-gray-200 animate-pulse rounded-lg" />
+      <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8">
+        <div className="h-96 bg-gray-100 animate-pulse rounded-lg" />
       </div>
     )
   }
 
   if (!data || data.length === 0) {
     return (
-      <div className="bg-white rounded-2xl shadow-lg p-6 mb-10">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">
-          🏆 Top {topLimit} {groupBy ? `por ${getGroupLabel(groupBy)}` : ''}
+      <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8">
+        <h2 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <Trophy className="w-5 h-5 text-amber-500" strokeWidth={1.75} />
+          Top {topLimit} {groupBy ? `por ${getGroupLabel(groupBy)}` : ''}
         </h2>
-        <div className="flex items-center justify-center h-64 text-gray-500">
+        <div className="flex items-center justify-center h-64 text-gray-500 text-sm">
           No hay datos disponibles
         </div>
       </div>
@@ -87,13 +89,14 @@ export default function TopItemsChart({ data, groupBy, topLimit, loading }: TopI
   }
 
   return (
-    <div className="bg-white rounded-2xl shadow-lg hover:shadow-xl transition-shadow duration-300 p-6 mb-10">
+    <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8 hover:shadow-md transition-shadow duration-200">
       {/* Header */}
       <div className="mb-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-2">
-          🏆 Top {topLimit} {groupBy ? `por ${getGroupLabel(groupBy)}` : 'Productos'}
+        <h2 className="text-base font-semibold text-gray-900 mb-1 flex items-center gap-2">
+          <Trophy className="w-5 h-5 text-amber-500" strokeWidth={1.75} />
+          Top {topLimit} {groupBy ? `por ${getGroupLabel(groupBy)}` : 'Productos'}
         </h2>
-        <p className="text-sm text-gray-600">
+        <p className="text-xs text-gray-500">
           Ordenado por ingresos totales
         </p>
       </div>

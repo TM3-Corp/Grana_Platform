@@ -7,6 +7,7 @@ import TimelineChart from '@/components/sales-analytics/TimelineChart'
 import TopItemsChart from '@/components/sales-analytics/TopItemsChart'
 import GroupedDataTable from '@/components/sales-analytics/GroupedDataTable'
 import FiltersSidebar from '@/components/sales-analytics/FiltersSidebar'
+import { BarChart3, Calendar } from 'lucide-react'
 
 interface SalesAnalyticsData {
   summary: {
@@ -471,18 +472,23 @@ export default function SalesAnalyticsPage() {
       {/* Main Content (offset for sidebar, expands when collapsed) */}
       <div className={`transition-all duration-300 p-8 ${sidebarCollapsed ? 'ml-0' : 'ml-80'}`}>
         {/* Header */}
-        <div className="mb-10">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            📊 Análisis Dinámico de Ventas
-          </h1>
-          <p className="text-gray-600 text-lg">
-            Visualiza patrones de ventas con filtros y agrupaciones dinámicas
-          </p>
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 rounded-lg bg-green-50 flex items-center justify-center">
+              <BarChart3 className="w-5 h-5 text-green-600" strokeWidth={1.75} />
+            </div>
+            <div>
+              <h1 className="text-2xl font-semibold text-gray-900">
+                Análisis de Ventas
+              </h1>
+              <p className="text-sm text-gray-500">
+                Visualiza patrones de ventas con filtros dinámicos
+              </p>
+            </div>
+          </div>
           {/* Date Range Display */}
-          <div className="mt-4 flex items-center gap-2 text-sm text-gray-600 bg-blue-50 px-4 py-2 rounded-lg border border-blue-100 w-fit">
-            <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
+          <div className="mt-4 inline-flex items-center gap-2 text-sm text-gray-600 bg-white px-3 py-1.5 rounded-lg border border-gray-200">
+            <Calendar className="w-4 h-4 text-gray-400" strokeWidth={1.75} />
             <span className="font-medium">{getDateRangeDisplay()}</span>
           </div>
         </div>

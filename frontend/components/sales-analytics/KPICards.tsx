@@ -1,3 +1,6 @@
+import { DollarSign, Package, ShoppingCart, Receipt, TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import { type LucideIcon } from 'lucide-react'
+
 interface SummaryMetrics {
   total_revenue: number
   total_units: number
@@ -11,12 +14,28 @@ interface KPICardsProps {
   loading?: boolean
 }
 
+interface CardConfig {
+  title: string
+  value: string
+  icon: LucideIcon
+  iconBg: string
+  iconColor: string
+}
+
 export default function KPICards({ data, loading }: KPICardsProps) {
   if (loading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         {[1, 2, 3, 4].map(i => (
-          <div key={i} className="rounded-2xl bg-gray-200 animate-pulse h-32" />
+          <div key={i} className="bg-white rounded-xl border border-gray-200 p-5 animate-pulse">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-lg bg-gray-200" />
+              <div className="flex-1">
+                <div className="h-3 bg-gray-200 rounded w-24 mb-2" />
+                <div className="h-6 bg-gray-200 rounded w-32" />
+              </div>
+            </div>
+          </div>
         ))}
       </div>
     )
@@ -24,8 +43,8 @@ export default function KPICards({ data, loading }: KPICardsProps) {
 
   if (!data) {
     return (
-      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-10">
-        <p className="text-yellow-800">No hay datos disponibles para mostrar</p>
+      <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-8">
+        <p className="text-amber-700 text-sm">No hay datos disponibles para mostrar</p>
       </div>
     )
   }
@@ -38,81 +57,85 @@ export default function KPICards({ data, loading }: KPICardsProps) {
     return Math.round(value).toLocaleString('es-CL')
   }
 
-  const cards = [
+  const cards: CardConfig[] = [
     {
       title: 'Ingresos Totales',
       value: formatCurrency(data.total_revenue),
-      icon: '💰',
-      gradient: 'from-green-500 to-green-600',
-      hoverGradient: 'hover:from-green-600 hover:to-green-700'
+      icon: DollarSign,
+      iconBg: 'bg-green-50',
+      iconColor: 'text-green-600',
     },
     {
       title: 'Unidades Vendidas',
       value: formatNumber(data.total_units),
-      icon: '📊',
-      gradient: 'from-blue-500 to-blue-600',
-      hoverGradient: 'hover:from-blue-600 hover:to-blue-700'
+      icon: Package,
+      iconBg: 'bg-blue-50',
+      iconColor: 'text-blue-600',
     },
     {
       title: 'Órdenes Totales',
       value: formatNumber(data.total_orders),
-      icon: '📦',
-      gradient: 'from-purple-500 to-purple-600',
-      hoverGradient: 'hover:from-purple-600 hover:to-purple-700'
+      icon: ShoppingCart,
+      iconBg: 'bg-purple-50',
+      iconColor: 'text-purple-600',
     },
     {
       title: 'Ticket Promedio',
       value: formatCurrency(data.avg_ticket),
-      icon: '🎫',
-      gradient: 'from-orange-500 to-orange-600',
-      hoverGradient: 'hover:from-orange-600 hover:to-orange-700'
+      icon: Receipt,
+      iconBg: 'bg-amber-50',
+      iconColor: 'text-amber-600',
     }
   ]
 
   const growthRate = data.growth_rate || 0
   const growthTrend = growthRate > 0 ? 'up' : growthRate < 0 ? 'down' : 'neutral'
-  const growthIcon = growthTrend === 'up' ? '↑' : growthTrend === 'down' ? '↓' : '→'
-  const growthColor = growthTrend === 'up'
-    ? 'text-green-200'
-    : growthTrend === 'down'
-    ? 'text-red-200'
-    : 'text-gray-200'
+
+  const TrendIcon = growthTrend === 'up' ? TrendingUp : growthTrend === 'down' ? TrendingDown : Minus
+
+  const trendStyles = {
+    up: 'text-green-600 bg-green-50',
+    down: 'text-red-600 bg-red-50',
+    neutral: 'text-gray-500 bg-gray-50',
+  }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-      {cards.map((card, index) => (
-        <div
-          key={index}
-          className={`
-            bg-gradient-to-br ${card.gradient} ${card.hoverGradient}
-            rounded-2xl shadow-lg hover:shadow-xl
-            transform hover:scale-105
-            transition-all duration-300
-            p-6
-            text-white
-          `}
-        >
-          {/* Icon and Growth (only show growth on first card) */}
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-4xl">{card.icon}</span>
-            {index === 0 && growthRate !== 0 && (
-              <span className={`text-sm font-semibold ${growthColor}`}>
-                {growthIcon} {Math.abs(growthRate).toFixed(1)}%
-              </span>
-            )}
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      {cards.map((card, index) => {
+        const IconComponent = card.icon
+        return (
+          <div
+            key={index}
+            className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md hover:border-gray-300 transition-all duration-200"
+          >
+            <div className="flex items-start gap-4">
+              {/* Icon */}
+              <div className={`w-12 h-12 rounded-lg ${card.iconBg} flex items-center justify-center flex-shrink-0`}>
+                <IconComponent className={`w-6 h-6 ${card.iconColor}`} strokeWidth={1.75} />
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <h3 className="text-sm font-medium text-gray-500 truncate">
+                    {card.title}
+                  </h3>
+                  {/* Growth indicator (only on first card) */}
+                  {index === 0 && growthRate !== 0 && (
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${trendStyles[growthTrend]}`}>
+                      <TrendIcon className="w-3 h-3" strokeWidth={2} />
+                      {Math.abs(growthRate).toFixed(1)}%
+                    </span>
+                  )}
+                </div>
+                <p className="text-2xl font-semibold text-gray-900 truncate">
+                  {card.value}
+                </p>
+              </div>
+            </div>
           </div>
-
-          {/* Title */}
-          <h3 className="text-sm font-medium text-white/90 mb-2">
-            {card.title}
-          </h3>
-
-          {/* Value */}
-          <p className="text-3xl font-bold">
-            {card.value}
-          </p>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

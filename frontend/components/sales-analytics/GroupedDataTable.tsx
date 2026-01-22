@@ -1,5 +1,7 @@
 'use client'
 
+import { Table2, Download, ChevronLeft, ChevronRight } from 'lucide-react'
+
 interface GroupedDataRow {
   group_value: string
   revenue: number
@@ -54,19 +56,20 @@ export default function GroupedDataTable({
 
   if (loading) {
     return (
-      <div className="bg-white rounded-2xl shadow-lg p-6">
-        <div className="h-96 bg-gray-200 animate-pulse rounded-lg" />
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="h-96 bg-gray-100 animate-pulse rounded-lg" />
       </div>
     )
   }
 
   if (!data || data.length === 0) {
     return (
-      <div className="bg-white rounded-2xl shadow-lg p-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">
-          📊 Datos Agrupados
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <h2 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <Table2 className="w-5 h-5 text-gray-400" strokeWidth={1.75} />
+          Datos Agrupados
         </h2>
-        <div className="flex items-center justify-center h-64 text-gray-500">
+        <div className="flex items-center justify-center h-64 text-gray-500 text-sm">
           No hay datos disponibles
         </div>
       </div>
@@ -129,15 +132,16 @@ export default function GroupedDataTable({
   }
 
   return (
-    <div className="bg-white rounded-2xl shadow-lg hover:shadow-xl transition-shadow duration-300 p-6">
+    <div className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-md transition-shadow duration-200">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-1">
-            📊 Datos Agrupados
+          <h2 className="text-base font-semibold text-gray-900 mb-1 flex items-center gap-2">
+            <Table2 className="w-5 h-5 text-blue-600" strokeWidth={1.75} />
+            Datos Agrupados
           </h2>
-          <p className="text-sm text-gray-600">
-            Agrupado por: <span className="font-medium text-gray-900">{groupBy ? getGroupLabel(groupBy) : 'Familia'}</span>
+          <p className="text-xs text-gray-500">
+            Agrupado por: <span className="font-medium text-gray-700">{groupBy ? getGroupLabel(groupBy) : 'Familia'}</span>
           </p>
         </div>
 
@@ -145,12 +149,12 @@ export default function GroupedDataTable({
           <button
             onClick={onExportCSV}
             className="
-              px-4 py-2 bg-green-500 text-white rounded-lg
+              px-3 py-1.5 bg-green-500 text-white rounded-lg
               hover:bg-green-600 transition-colors
-              flex items-center gap-2 text-sm font-medium
+              flex items-center gap-1.5 text-sm font-medium
             "
           >
-            <span>📥</span>
+            <Download className="w-4 h-4" strokeWidth={1.75} />
             Exportar Excel
           </button>
         )}
@@ -219,20 +223,21 @@ export default function GroupedDataTable({
           </div>
 
           {/* Controls */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             {/* Previous button */}
             <button
               onClick={handlePreviousPage}
               disabled={pagination.current_page === 1}
               className={`
-                px-3 py-1 rounded-lg text-sm font-medium transition-colors
+                px-2 py-1 rounded-lg text-sm font-medium transition-colors flex items-center gap-1
                 ${pagination.current_page === 1
                   ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                  : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
                 }
               `}
             >
-              ← Anterior
+              <ChevronLeft className="w-4 h-4" strokeWidth={1.75} />
+              Anterior
             </button>
 
             {/* Page numbers */}
@@ -251,10 +256,10 @@ export default function GroupedDataTable({
                   key={page}
                   onClick={() => handlePageClick(page)}
                   className={`
-                    px-3 py-1 rounded-lg text-sm font-medium transition-colors
+                    w-8 h-8 rounded-lg text-sm font-medium transition-colors
                     ${page === pagination.current_page
                       ? 'bg-green-500 text-white'
-                      : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                      : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
                     }
                   `}
                 >
@@ -268,14 +273,15 @@ export default function GroupedDataTable({
               onClick={handleNextPage}
               disabled={pagination.current_page === pagination.total_pages}
               className={`
-                px-3 py-1 rounded-lg text-sm font-medium transition-colors
+                px-2 py-1 rounded-lg text-sm font-medium transition-colors flex items-center gap-1
                 ${pagination.current_page === pagination.total_pages
                   ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                  : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
                 }
               `}
             >
-              Siguiente →
+              Siguiente
+              <ChevronRight className="w-4 h-4" strokeWidth={1.75} />
             </button>
           </div>
         </div>

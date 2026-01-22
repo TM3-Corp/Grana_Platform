@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { TrendingUp, Clock, Info } from 'lucide-react'
 
 interface TimelineDataPoint {
   period: string
@@ -41,19 +42,20 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
 
   if (loading) {
     return (
-      <div className="bg-white rounded-2xl shadow-lg p-6 mb-10">
-        <div className="h-80 bg-gray-200 animate-pulse rounded-lg" />
+      <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8">
+        <div className="h-80 bg-gray-100 animate-pulse rounded-lg" />
       </div>
     )
   }
 
   if (!data || data.length === 0) {
     return (
-      <div className="bg-white rounded-2xl shadow-lg p-6 mb-10">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">
-          📈 Evolución de Ventas
+      <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8">
+        <h2 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <TrendingUp className="w-5 h-5 text-gray-400" strokeWidth={1.75} />
+          Evolución de Ventas
         </h2>
-        <div className="flex items-center justify-center h-64 text-gray-500">
+        <div className="flex items-center justify-center h-64 text-gray-500 text-sm">
           No hay datos disponibles para el período seleccionado
         </div>
       </div>
@@ -329,20 +331,21 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
       }))
 
   return (
-    <div className="bg-white rounded-2xl shadow-lg hover:shadow-xl transition-shadow duration-300 p-6 mb-10">
+    <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8 hover:shadow-md transition-shadow duration-200">
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-gray-900">
-            📈 Evolución de Ventas
+          <h2 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-green-600" strokeWidth={1.75} />
+            Evolución de Ventas
           </h2>
 
           {/* Metric Toggle */}
-          <div className="flex gap-2">
+          <div className="flex gap-1">
             <button
               onClick={() => setSelectedMetric('revenue')}
               className={`
-                px-4 py-2 rounded-lg text-sm font-medium transition-colors
+                px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 ${selectedMetric === 'revenue'
                   ? 'bg-green-500 text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -354,7 +357,7 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
             <button
               onClick={() => setSelectedMetric('units')}
               className={`
-                px-4 py-2 rounded-lg text-sm font-medium transition-colors
+                px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 ${selectedMetric === 'units'
                   ? 'bg-blue-500 text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -366,9 +369,9 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
             <button
               onClick={() => setSelectedMetric('items')}
               className={`
-                px-4 py-2 rounded-lg text-sm font-medium transition-colors
+                px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 ${selectedMetric === 'items'
-                  ? 'bg-orange-500 text-white'
+                  ? 'bg-amber-500 text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }
               `}
@@ -378,7 +381,7 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
             <button
               onClick={() => setSelectedMetric('orders')}
               className={`
-                px-4 py-2 rounded-lg text-sm font-medium transition-colors
+                px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 ${selectedMetric === 'orders'
                   ? 'bg-purple-500 text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -392,14 +395,17 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
 
         {/* Time Period Selector */}
         <div className="flex items-center gap-3">
-          <span className="text-sm font-medium text-gray-700">⏱️ Agrupación:</span>
+          <span className="text-xs font-medium text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
+            <Clock className="w-3.5 h-3.5" strokeWidth={2} />
+            Período
+          </span>
           <div className="flex gap-1">
             {['auto', 'day', 'week', 'month', 'quarter', 'year'].map((period) => (
               <button
                 key={period}
                 onClick={() => onTimePeriodChange(period as any)}
                 className={`
-                  px-3 py-1.5 rounded-lg text-xs font-medium transition-colors
+                  px-2.5 py-1 rounded-md text-xs font-medium transition-colors
                   ${timePeriod === period
                     ? 'bg-gray-800 text-white'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -544,8 +550,9 @@ export default function TimelineChart({ data, groupBy, stackBy, timePeriod, onTi
 
       {/* Note when showing top 20 only */}
       {hasGrouping && groupValues.length === 20 && (
-        <div className="mt-4 text-sm text-gray-600 text-center">
-          📊 Mostrando los 20 principales por {getMetricLabel(selectedMetric).toLowerCase()}
+        <div className="mt-4 flex items-center justify-center gap-1.5 text-xs text-gray-500">
+          <Info className="w-3.5 h-3.5" strokeWidth={2} />
+          Mostrando los 20 principales por {getMetricLabel(selectedMetric).toLowerCase()}
         </div>
       )}
     </div>

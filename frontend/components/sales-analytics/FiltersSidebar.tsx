@@ -2,6 +2,23 @@
 
 import { useState } from 'react'
 import MultiSelect from '@/components/ui/MultiSelect'
+import {
+  SlidersHorizontal,
+  Search,
+  Calendar,
+  Tag,
+  Store,
+  Users,
+  Package,
+  Hash,
+  Layers,
+  BarChart3,
+  Settings2,
+  X,
+  ChevronRight,
+  ChevronLeft,
+  RotateCcw
+} from 'lucide-react'
 
 interface FiltersSidebarProps {
   // Date filters
@@ -91,7 +108,7 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
     { value: '', label: 'Sin agrupación' },
     { value: 'category', label: 'Familia' },
     { value: 'channel', label: 'Canal' },
-    { value: 'format', label: '📦 Tipo Empaque' },
+    { value: 'format', label: 'Tipo Empaque' },
     { value: 'sku_primario', label: 'SKU Primario' },
   ]
 
@@ -121,22 +138,15 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
     }
   }
 
-  const categoryIcons: Record<string, string> = {
-    'BARRAS': '🍫',
-    'CRACKERS': '🍘',
-    'GRANOLAS': '🥣',
-    'KEEPERS': '🍬',
-  }
-
   if (isCollapsed) {
     return (
       <div className="fixed left-0 top-20 z-40">
         <button
           onClick={() => handleCollapseToggle(false)}
-          className="bg-white shadow-lg rounded-r-lg p-3 hover:bg-gray-50 transition-colors"
+          className="bg-white shadow-lg rounded-r-lg p-3 hover:bg-gray-50 transition-colors border border-l-0 border-gray-200"
           title="Mostrar filtros"
         >
-          <span className="text-xl">→</span>
+          <ChevronRight className="w-5 h-5 text-gray-600" strokeWidth={1.75} />
         </button>
       </div>
     )
@@ -147,22 +157,24 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
       <div className="p-6">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-semibold text-gray-900">
-            🎛️ Filtros
+          <h2 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+            <SlidersHorizontal className="w-5 h-5 text-gray-700" strokeWidth={1.75} />
+            Filtros
           </h2>
           <button
             onClick={() => handleCollapseToggle(true)}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
+            className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded hover:bg-gray-100"
             title="Ocultar filtros"
           >
-            <span className="text-xl">←</span>
+            <ChevronLeft className="w-5 h-5" strokeWidth={1.75} />
           </button>
         </div>
 
         {/* Search */}
         <div className="mb-6">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-            <span>🔍</span> Buscar
+          <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-2">
+            <Search className="w-3.5 h-3.5" strokeWidth={2} />
+            Buscar
           </h3>
           <div className="relative">
             <input
@@ -172,28 +184,27 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
               placeholder="Cliente, Producto, Canal, SKU..."
               className="w-full px-3 py-2 pl-9 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
             />
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-              🔍
-            </span>
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" strokeWidth={1.75} />
             {props.searchTerm && (
               <button
                 onClick={() => props.onSearchChange('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 rounded hover:bg-gray-100"
                 title="Limpiar búsqueda"
               >
-                ✕
+                <X className="w-4 h-4" strokeWidth={1.75} />
               </button>
             )}
           </div>
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-gray-500 mt-1.5">
             Busca por cliente, producto, canal, SKU o SKU primario
           </p>
         </div>
 
         {/* Date Filters */}
         <div className="mb-6">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-            <span>📅</span> Filtros Temporales
+          <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-2">
+            <Calendar className="w-3.5 h-3.5" strokeWidth={2} />
+            Período
           </h3>
 
           {/* Date filter type */}
@@ -313,8 +324,9 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
 
         {/* Product Family (Category) */}
         <div className="mb-6">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-            <span>🏷️</span> Familia de Producto
+          <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-2">
+            <Tag className="w-3.5 h-3.5" strokeWidth={2} />
+            Familia de Producto
           </h3>
           <div className="flex flex-wrap gap-2">
             {categories.map(category => (
@@ -322,14 +334,13 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
                 key={category}
                 onClick={() => toggleCategory(category)}
                 className={`
-                  px-3 py-2 rounded-lg text-sm font-medium transition-all
+                  px-3 py-1.5 rounded-lg text-sm font-medium transition-all
                   ${props.selectedCategories.includes(category)
-                    ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-md'
+                    ? 'bg-green-500 text-white shadow-sm'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }
                 `}
               >
-                <span className="mr-1">{categoryIcons[category] || '📦'}</span>
                 {category}
               </button>
             ))}
@@ -339,8 +350,11 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
         {/* Channels */}
         {channels.length > 0 && (
           <div className="mb-6">
+            <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-2">
+              <Store className="w-3.5 h-3.5" strokeWidth={2} />
+              Canal
+            </h3>
             <MultiSelect
-              label="📊 Canal"
               options={channels}
               selected={props.selectedChannels}
               onChange={props.onChannelsChange}
@@ -354,8 +368,11 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
         {/* Customers */}
         {customers.length > 0 && (
           <div className="mb-6">
+            <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-2">
+              <Users className="w-3.5 h-3.5" strokeWidth={2} />
+              Cliente
+            </h3>
             <MultiSelect
-              label="👥 Cliente"
               options={customers}
               selected={props.selectedCustomers}
               onChange={props.onCustomersChange}
@@ -369,8 +386,11 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
         {/* Formats - dynamically loaded based on selected Familia */}
         {formats.length > 0 && (
           <div className="mb-6">
+            <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-2">
+              <Package className="w-3.5 h-3.5" strokeWidth={2} />
+              Formato (Producto)
+            </h3>
             <MultiSelect
-              label="📦 Formato (Producto)"
               options={formats}
               selected={props.selectedFormats}
               onChange={props.onFormatsChange}
@@ -389,8 +409,11 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
         {/* SKU Primario - dynamically loaded based on selected Familia */}
         {skuPrimarios.length > 0 && (
           <div className="mb-6">
+            <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-2">
+              <Hash className="w-3.5 h-3.5" strokeWidth={2} />
+              SKU Primario
+            </h3>
             <MultiSelect
-              label="🏷️ SKU Primario"
               options={skuPrimarios}
               selected={props.selectedSkuPrimarios}
               onChange={props.onSkuPrimariosChange}
@@ -408,13 +431,14 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
 
         {/* Grouping */}
         <div className="mb-6">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-            <span>🎯</span> Agrupación
+          <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-2">
+            <Layers className="w-3.5 h-3.5" strokeWidth={2} />
+            Agrupación
           </h3>
           <select
             value={props.groupBy}
             onChange={(e) => props.onGroupByChange(e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
           >
             {groupByOptions.map(option => (
               <option key={option.value} value={option.value}>
@@ -426,13 +450,14 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
 
         {/* Stack By (always visible) */}
         <div className="mb-6">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-            <span>📊</span> Apilar por
+          <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-2">
+            <BarChart3 className="w-3.5 h-3.5" strokeWidth={2} />
+            Apilar por
           </h3>
           <select
             value={props.stackBy || ''}
             onChange={(e) => props.onStackByChange(e.target.value || null)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
           >
             <option value="">Sin apilación</option>
             {props.groupBy !== 'category' && <option value="category">Familia</option>}
@@ -446,8 +471,9 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
 
         {/* Top X */}
         <div className="mb-6">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-            <span>🔧</span> Top X
+          <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-2">
+            <Settings2 className="w-3.5 h-3.5" strokeWidth={2} />
+            Top X
           </h3>
           <div className="flex flex-wrap gap-2">
             {topLimitOptions.map(limit => (
@@ -471,8 +497,9 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
         {/* Clear Filters */}
         <button
           onClick={props.onClearFilters}
-          className="w-full px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm font-medium"
+          className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors text-sm font-medium flex items-center justify-center gap-2 border border-gray-200 hover:border-red-200"
         >
+          <RotateCcw className="w-4 h-4" strokeWidth={1.75} />
           Limpiar Filtros
         </button>
       </div>
