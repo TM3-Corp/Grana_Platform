@@ -888,10 +888,12 @@ async def get_ytd_progress(
 
         # Build combined daily data
         daily_data = []
-        max_day = max(
+        # Always include up to current day, even if there are no sales on that day
+        max_day_from_data = max(
             max([d['day_of_year'] for d in data_prev_year]) if data_prev_year else 0,
             max([d['day_of_year'] for d in data_curr_year]) if data_curr_year else 0
         )
+        max_day = max(max_day_from_data, day_of_year)  # Ensure we include today
 
         # Track running totals for days without sales
         prev_cumulative = 0
