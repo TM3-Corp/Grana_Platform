@@ -102,6 +102,7 @@ class InventorySyncResponse(BaseModel):
     relbase_warehouses_synced: int
     relbase_products_updated: int
     mercadolibre_products_updated: int
+    klog_products_updated: int = 0  # KLOG direct API sync
     errors: List[str]
     duration_seconds: float
 
