@@ -1450,7 +1450,7 @@ class SyncService:
                         product_map = {row[1]: row[0] for row in product_rows}  # sku -> product_id
                         skus_to_query = list(product_map.keys())
 
-                        logger.info(f"Querying KLOG for {len(skus_to_query)} SKUs...")
+                        logger.warning(f"Querying KLOG for {len(skus_to_query)} SKUs (first 5: {skus_to_query[:5]})")
 
                         # Record sync start time for KLOG stale deletion
                         klog_sync_start = datetime.now()
@@ -1464,7 +1464,11 @@ class SyncService:
                         if failed_skus:
                             logger.warning(f"KLOG: {len(failed_skus)} SKUs failed: {failed_skus[:5]}...")
 
-                        logger.info(f"KLOG returned {len(klog_items)} inventory records")
+                        logger.warning(f"KLOG returned {len(klog_items)} inventory records")
+
+                        # Debug: log first few items
+                        for item in klog_items[:3]:
+                            logger.warning(f"KLOG item: {item.get('sku')} -> totalInv={item.get('totalInv')}, entransito={item.get('entransito')}")
 
                         # Upsert KLOG stock
                         for item in klog_items:
@@ -1516,7 +1520,7 @@ class SyncService:
                             logger.info(f"Deleted {len(stale_klog)} stale KLOG entries")
                         conn.commit()
 
-                        logger.info(f"Updated {klog_products_updated} products from KLOG")
+                        logger.warning(f"Updated {klog_products_updated} products from KLOG")
 
             except Exception as e:
                 errors.append(f"KLOG sync error: {str(e)}")
