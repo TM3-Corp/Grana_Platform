@@ -46,8 +46,9 @@ class InventorySyncResult:
     relbase_warehouses_synced: int
     relbase_products_updated: int
     mercadolibre_products_updated: int
-    errors: List[str]
-    duration_seconds: float
+    klog_products_updated: int = 0  # KLOG direct API sync
+    errors: List[str] = None
+    duration_seconds: float = 0.0
 
 
 # ============================================================================
@@ -1120,6 +1121,7 @@ class SyncService:
         warehouses_synced = 0
         relbase_products_updated = 0
         ml_products_updated = 0
+        klog_products_updated = 0
 
         conn = get_db_connection_with_retry()
         cursor = conn.cursor()
@@ -1194,12 +1196,16 @@ class SyncService:
                 errors.append("Failed to fetch active products from RelBase API")
             else:
                 # Get warehouses from DB
+                # IMPORTANT: Exclude KLOG warehouse - it's synced directly via KLOG API (Phase 4)
+                # This is a POKA-YOKE to prevent duplicate/conflicting data from RelBase
                 cursor.execute("""
                     SELECT id, external_id, code
                     FROM warehouses
                     WHERE source = 'relbase' AND is_active = true
+                    AND code != 'klog'  -- KLOG synced via direct API in Phase 4
                 """)
                 db_warehouses = cursor.fetchall()
+                logger.info(f"RelBase warehouses (excluding KLOG): {[w[2] for w in db_warehouses]}")
 
                 # Build a map of external_id -> db_id for products
                 # We need to look up local product IDs for warehouse_stock foreign key
@@ -1390,6 +1396,134 @@ class SyncService:
                 errors.append(f"MercadoLibre sync error: {str(e)}")
                 logger.error(f"ML sync error: {e}")
 
+            # ================================================================
+            # Phase 4: Sync Stock from KLOG API (Direct)
+            # ================================================================
+            # POKA-YOKE: KLOG warehouse is excluded from RelBase sync (Phase 2)
+            # to prevent duplicate/conflicting data. This phase syncs directly
+            # from KLOG API which provides real-time inventory data.
+            #
+            # KLOG API Quirks (handled by KLOGConnector):
+            # - Max 6 SKUs per batch (more = silent failure)
+            # - Invalid SKUs kill entire batch
+            # - Empty listasku only returns totalDisponible > 0
+            # ================================================================
+            logger.info("Phase 4: Syncing stock from KLOG API (direct)...")
+
+            try:
+                from app.connectors.klog_connector import KLOGConnector
+
+                # Check if KLOG credentials are configured
+                klog_usuario = os.getenv('KLOG_USUARIO')
+                klog_password = os.getenv('KLOG_PASSWORD')
+
+                if not klog_usuario or not klog_password:
+                    logger.warning("KLOG credentials not configured - skipping KLOG sync")
+                    errors.append("KLOG_USUARIO/KLOG_PASSWORD not configured")
+                else:
+                    klog_connector = KLOGConnector(klog_usuario, klog_password)
+
+                    # Get KLOG warehouse from DB
+                    cursor.execute("""
+                        SELECT id FROM warehouses
+                        WHERE code = 'klog' AND is_active = true
+                    """)
+                    klog_warehouse_result = cursor.fetchone()
+
+                    if not klog_warehouse_result:
+                        logger.warning("KLOG warehouse not found in database - skipping KLOG sync")
+                        errors.append("KLOG warehouse not found in database")
+                    else:
+                        klog_warehouse_id = klog_warehouse_result[0]
+
+                        # Get valid Grana product SKUs to query
+                        # Pattern: 4 uppercase letters + underscore + alphanumeric
+                        # Excludes: _EM (embalaje), _WEB (web variants), ANU- (legacy)
+                        cursor.execute("""
+                            SELECT DISTINCT p.id, p.sku
+                            FROM products p
+                            WHERE p.source = 'relbase'
+                            AND p.sku ~ '^[A-Z]{4}_[A-Z][0-9]{5}$'
+                            ORDER BY p.sku
+                        """)
+                        product_rows = cursor.fetchall()
+                        product_map = {row[1]: row[0] for row in product_rows}  # sku -> product_id
+                        skus_to_query = list(product_map.keys())
+
+                        logger.info(f"Querying KLOG for {len(skus_to_query)} SKUs...")
+
+                        # Record sync start time for KLOG stale deletion
+                        klog_sync_start = datetime.now()
+
+                        # Fetch inventory from KLOG API (handles batching internally)
+                        klog_result = await klog_connector.get_inventory_for_skus(skus_to_query)
+
+                        klog_items = klog_result.get('listainvsku', [])
+                        failed_skus = klog_result.get('failed_skus', [])
+
+                        if failed_skus:
+                            logger.warning(f"KLOG: {len(failed_skus)} SKUs failed: {failed_skus[:5]}...")
+
+                        logger.info(f"KLOG returned {len(klog_items)} inventory records")
+
+                        # Upsert KLOG stock
+                        for item in klog_items:
+                            sku = item.get('sku')
+                            product_id = product_map.get(sku)
+
+                            if not product_id:
+                                continue  # SKU not in our products table
+
+                            # Get inventory values (KLOG returns strings)
+                            total_disponible = float(item.get('totalDisponible', 0))
+                            total_inv = float(item.get('totalInv', 0))
+                            en_transito = float(item.get('entransito', 0))
+                            wip = float(item.get('wip', 0))
+
+                            # Store total inventory (disponible + in_transit + wip)
+                            # Use totalInv which represents physical inventory
+                            quantity = total_inv
+
+                            # Only store if there's any inventory
+                            if quantity > 0 or en_transito > 0:
+                                cursor.execute("""
+                                    INSERT INTO warehouse_stock (
+                                        product_id, warehouse_id, quantity, lot_number,
+                                        last_updated, updated_by
+                                    )
+                                    VALUES (%s, %s, %s, 'KLOG_STOCK', NOW(), 'klog_api')
+                                    ON CONFLICT (product_id, warehouse_id, lot_number)
+                                    DO UPDATE SET
+                                        quantity = EXCLUDED.quantity,
+                                        last_updated = NOW(),
+                                        updated_by = 'klog_api'
+                                """, (product_id, klog_warehouse_id, quantity))
+
+                                klog_products_updated += 1
+
+                        conn.commit()
+
+                        # Delete stale KLOG entries (items no longer in KLOG)
+                        cursor.execute("""
+                            DELETE FROM warehouse_stock
+                            WHERE warehouse_id = %s
+                              AND last_updated < %s
+                              AND updated_by = 'klog_api'
+                            RETURNING id
+                        """, (klog_warehouse_id, klog_sync_start))
+                        stale_klog = cursor.fetchall()
+                        if stale_klog:
+                            logger.info(f"Deleted {len(stale_klog)} stale KLOG entries")
+                        conn.commit()
+
+                        logger.info(f"Updated {klog_products_updated} products from KLOG")
+
+            except Exception as e:
+                errors.append(f"KLOG sync error: {str(e)}")
+                logger.error(f"KLOG sync error: {e}")
+                import traceback
+                traceback.print_exc()
+
             # Log sync
             cursor.execute("""
                 INSERT INTO sync_logs
@@ -1398,12 +1532,13 @@ class SyncService:
                 VALUES ('multiple', 'inventory', %s, %s, %s, %s::jsonb, %s, NOW())
             """, (
                 'success' if not errors else 'partial',
-                warehouses_synced + relbase_products_updated + ml_products_updated,
+                warehouses_synced + relbase_products_updated + ml_products_updated + klog_products_updated,
                 len(errors),
                 json.dumps({
                     'warehouses_synced': warehouses_synced,
                     'relbase_products_updated': relbase_products_updated,
                     'ml_products_updated': ml_products_updated,
+                    'klog_products_updated': klog_products_updated,
                     'errors': errors[:10]
                 }),
                 datetime.now() - timedelta(seconds=time.time() - start_time)
@@ -1418,6 +1553,7 @@ class SyncService:
                 relbase_warehouses_synced=warehouses_synced,
                 relbase_products_updated=relbase_products_updated,
                 mercadolibre_products_updated=ml_products_updated,
+                klog_products_updated=klog_products_updated,
                 errors=errors[:10],
                 duration_seconds=round(duration, 2)
             )
@@ -1433,6 +1569,7 @@ class SyncService:
                 relbase_warehouses_synced=warehouses_synced,
                 relbase_products_updated=relbase_products_updated,
                 mercadolibre_products_updated=ml_products_updated,
+                klog_products_updated=klog_products_updated,
                 errors=errors,
                 duration_seconds=round(time.time() - start_time, 2)
             )
