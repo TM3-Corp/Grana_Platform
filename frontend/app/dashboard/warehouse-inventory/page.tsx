@@ -4,6 +4,20 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import Navigation from '@/components/Navigation';
 import DynamicWarehouseInventoryTable from '@/components/inventory/DynamicWarehouseInventoryTable';
+import {
+  Package,
+  BarChart3,
+  DollarSign,
+  AlertTriangle,
+  RefreshCw,
+  Search,
+  X,
+  Filter,
+  ChevronDown,
+  Loader2,
+  ShieldAlert,
+  Clock,
+} from 'lucide-react';
 
 interface InventoryProduct {
   sku: string;
@@ -18,8 +32,8 @@ interface InventoryProduct {
   last_updated: string | null;
   sku_value?: number;
   valor?: number;
-  min_stock?: number;  // User-editable minimum stock
-  recommended_min_stock?: number;  // System-calculated recommendation (based on 6-month sales avg)
+  min_stock?: number;
+  recommended_min_stock?: number;
 }
 
 interface ExpirationStats {
@@ -60,51 +74,40 @@ export default function WarehouseInventoryPage() {
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
-  const [showOnlyWithStock, setShowOnlyWithStock] = useState(true); // ✅ Default to true
+  const [showOnlyWithStock, setShowOnlyWithStock] = useState(true);
   const [showLowStockOnly, setShowLowStockOnly] = useState(false);
   const [minStockSuggestions, setMinStockSuggestions] = useState<Record<string, number>>({});
 
   // Get unique categories
   const categories = [...new Set(products.map((p) => p.category).filter(Boolean))].sort() as string[];
 
-  // Products now come from API with min_stock and recommended_min_stock
-  // Use minStockSuggestions as fallback for recommended_min_stock if not in DB
+  // Enrich products with min stock data
   const enrichedProducts = products.map(product => ({
     ...product,
     min_stock: product.min_stock || 0,
     recommended_min_stock: product.recommended_min_stock || minStockSuggestions[product.sku] || 0
   }));
 
-  // Apply client-side filters for low stock
+  // Apply client-side filters
   const filteredProducts = enrichedProducts.filter(product => {
     if (showLowStockOnly) {
-      // Show products where current stock is below their minimum stock
-      // Use user-set min_stock, or fall back to recommended_min_stock
       const effectiveMinStock = product.min_stock > 0 ? product.min_stock : product.recommended_min_stock;
       return product.stock_total > 0 && effectiveMinStock > 0 && product.stock_total < effectiveMinStock;
     }
     return true;
   });
 
-  // Fetch minimum stock suggestions from backend
+  // Fetch minimum stock suggestions
   const fetchMinStockSuggestions = async () => {
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
       const response = await fetch(`${apiUrl}/api/v1/products/minimum-stock-suggestions`);
-
-      if (!response.ok) {
-        console.error('Failed to fetch min stock suggestions');
-        return;
-      }
-
+      if (!response.ok) return;
       const data = await response.json();
-
-      // Convert API response to { SKU: suggested_min_stock } mapping
       const suggestions: Record<string, number> = {};
       Object.keys(data.data).forEach(sku => {
         suggestions[sku] = data.data[sku].suggested_min_stock;
       });
-
       setMinStockSuggestions(suggestions);
     } catch (err) {
       console.error('Error fetching min stock suggestions:', err);
@@ -116,7 +119,6 @@ export default function WarehouseInventoryPage() {
     try {
       if (showRefreshAnimation) setIsRefreshing(true);
       else setLoading(true);
-
       setError(null);
 
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -126,7 +128,6 @@ export default function WarehouseInventoryPage() {
       if (showOnlyWithStock) params.append('only_with_stock', 'true');
 
       const response = await fetch(`${apiUrl}/api/v1/warehouse-inventory/general?${params.toString()}`);
-
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
@@ -143,42 +144,36 @@ export default function WarehouseInventoryPage() {
     }
   };
 
-  // Fetch minimum stock suggestions once on mount
   useEffect(() => {
     if (status === 'authenticated') {
       fetchMinStockSuggestions();
     }
   }, [status]);
 
-  // Load data on mount and when filters change
   useEffect(() => {
     if (status === 'authenticated') {
       fetchInventory();
     }
   }, [status, searchQuery, selectedCategory, showOnlyWithStock]);
 
-  // Manual refresh
-  const handleRefresh = () => {
-    fetchInventory(true);
-  };
+  const handleRefresh = () => fetchInventory(true);
 
-  // Clear all filters
   const handleClearFilters = () => {
     setSearchQuery('');
     setSelectedCategory('');
-    setShowOnlyWithStock(true); // Reset to default (true)
+    setShowOnlyWithStock(true);
     setShowLowStockOnly(false);
   };
 
   const hasActiveFilters = searchQuery || selectedCategory || !showOnlyWithStock || showLowStockOnly;
 
-  // Handle auth loading
+  // Auth loading state
   if (status === 'loading') {
     return (
-      <div className="flex justify-center items-center min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
+      <div className="flex justify-center items-center min-h-screen bg-[var(--background)]">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-4 border-blue-600 border-t-transparent mx-auto mb-4"></div>
-          <p className="text-gray-600">Cargando...</p>
+          <Loader2 className="w-12 h-12 animate-spin text-[var(--primary)] mx-auto mb-4" />
+          <p className="text-[var(--foreground-muted)] font-medium">Cargando...</p>
         </div>
       </div>
     );
@@ -187,12 +182,12 @@ export default function WarehouseInventoryPage() {
   if (status === 'unauthenticated') {
     return (
       <div className="p-8">
-        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-6 rounded-lg shadow-sm">
-          <div className="flex items-center">
-            <div className="text-4xl mr-4">⚠️</div>
+        <div className="bg-[var(--warning-light)] border-l-4 border-[var(--warning)] p-6 rounded-lg">
+          <div className="flex items-center gap-4">
+            <ShieldAlert className="w-8 h-8 text-[var(--warning)]" />
             <div>
-              <p className="text-lg font-semibold text-yellow-800">Acceso Restringido</p>
-              <p className="text-yellow-700 mt-1">Por favor inicia sesión para ver el inventario.</p>
+              <p className="text-lg font-semibold text-[var(--foreground)]">Acceso Restringido</p>
+              <p className="text-[var(--foreground-muted)] mt-1">Por favor inicia sesión para ver el inventario.</p>
             </div>
           </div>
         </div>
@@ -200,326 +195,262 @@ export default function WarehouseInventoryPage() {
     );
   }
 
+  // Calculate alert count
+  const alertCount = summary?.expiration
+    ? summary.expiration.expired_lots + summary.expiration.expiring_soon_lots
+    : 0;
+
   return (
     <>
       <Navigation />
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 p-8">
-      {/* Header with gradient */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-4xl font-bold mb-2 flex items-center gap-3">
-              <span className="text-4xl">📦</span>
-              <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+      <div className="min-h-screen bg-[var(--background)] p-6 lg:p-8">
+        {/* Header */}
+        <header className="mb-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-3xl lg:text-4xl font-bold text-[var(--foreground)] tracking-tight">
                 Inventario General
-              </span>
-            </h1>
-            <p className="text-gray-600 text-lg">Vista consolidada de stock en todas las bodegas</p>
-          </div>
+              </h1>
+              <p className="text-[var(--foreground-muted)] mt-1">
+                Vista consolidada de stock en todas las bodegas
+              </p>
+            </div>
 
-          {/* Refresh Button */}
-          <button
-            onClick={handleRefresh}
-            disabled={isRefreshing}
-            className="flex items-center gap-2 px-6 py-3 bg-white border-2 border-blue-500 text-blue-600 rounded-xl hover:bg-blue-50 transition-all duration-300 shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed font-medium"
-          >
-            <svg
-              className={`w-5 h-5 ${isRefreshing ? 'animate-spin' : ''}`}
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
-            <span>{isRefreshing ? 'Actualizando...' : 'Actualizar'}</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Simplified Summary - 4 Key Metrics */}
-      {summary && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          {/* Metric 1: Products with context */}
-          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-gray-500">Productos</span>
-              <span className="text-lg">📦</span>
-            </div>
-            <div className="text-2xl font-bold text-gray-900">{summary.products_with_stock.toLocaleString()}</div>
-            <div className="text-xs text-gray-500 mt-1">
-              {summary.products_without_stock > 0 && (
-                <span className="text-amber-600">{summary.products_without_stock} sin stock</span>
-              )}
-              {summary.products_without_stock === 0 && 'Todos con stock'}
-            </div>
-          </div>
-
-          {/* Metric 2: Total Units */}
-          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-gray-500">Stock Total</span>
-              <span className="text-lg">📊</span>
-            </div>
-            <div className="text-2xl font-bold text-gray-900">{summary.total_stock.toLocaleString()}</div>
-            <div className="text-xs text-gray-500 mt-1">
-              {summary.active_warehouses} {summary.active_warehouses === 1 ? 'bodega' : 'bodegas'}
-            </div>
-          </div>
-
-          {/* Metric 3: Total Value */}
-          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-gray-500">Valor Inventario</span>
-              <span className="text-lg">💰</span>
-            </div>
-            <div className="text-2xl font-bold text-emerald-600">
-              {summary.total_valor !== undefined && Number(summary.total_valor) > 0
-                ? `$${(Number(summary.total_valor) / 1000000).toFixed(1)}M`
-                : '-'}
-            </div>
-            <div className="text-xs text-gray-500 mt-1">
-              {summary.total_valor !== undefined && Number(summary.total_valor) > 0
-                ? `$${Math.round(Number(summary.total_valor)).toLocaleString('es-CL')} CLP`
-                : 'Sin valorizar'}
-            </div>
-          </div>
-
-          {/* Metric 4: Alerts */}
-          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-gray-500">Alertas</span>
-              <span className="text-lg">⚠️</span>
-            </div>
-            {summary.expiration ? (
-              <>
-                <div className={`text-2xl font-bold ${
-                  (summary.expiration.expired_lots + summary.expiration.expiring_soon_lots) > 0
-                    ? 'text-amber-600'
-                    : 'text-green-600'
-                }`}>
-                  {summary.expiration.expired_lots + summary.expiration.expiring_soon_lots}
-                </div>
-                <div className="text-xs text-gray-500 mt-1 space-y-0.5">
-                  {summary.expiration.expired_lots > 0 && (
-                    <div className="text-red-600">{summary.expiration.expired_lots} vencidos</div>
-                  )}
-                  {summary.expiration.expiring_soon_lots > 0 && (
-                    <div className="text-amber-600">{summary.expiration.expiring_soon_lots} por vencer</div>
-                  )}
-                  {summary.expiration.expired_lots === 0 && summary.expiration.expiring_soon_lots === 0 && (
-                    <div className="text-green-600">Sin alertas</div>
-                  )}
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="text-2xl font-bold text-green-600">0</div>
-                <div className="text-xs text-green-600 mt-1">Sin alertas</div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Enhanced Filters */}
-      <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6 mb-8 backdrop-blur-sm bg-opacity-95">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-md">
-              <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </div>
-            <span>Filtros</span>
-          </h2>
-          {hasActiveFilters && (
             <button
-              onClick={handleClearFilters}
-              className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1 transition-colors"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="flex items-center gap-2 px-4 py-2.5 bg-[var(--surface)] border border-[var(--border)] text-[var(--foreground)] rounded-lg hover:border-[var(--primary)] hover:text-[var(--primary)] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-sm"
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-              Limpiar todo
+              <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">{isRefreshing ? 'Actualizando...' : 'Actualizar'}</span>
             </button>
-          )}
-        </div>
+          </div>
+        </header>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Search */}
-          <div className="lg:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Buscar Producto
-            </label>
-            <div className="relative">
+        {/* Metrics Grid - Asymmetric layout with primary metric larger */}
+        {summary && (
+          <div className="grid grid-cols-2 lg:grid-cols-12 gap-4 mb-6">
+            {/* Primary Metric - Products with Stock (larger) */}
+            <div className="col-span-2 lg:col-span-3 metric-card bg-gradient-to-br from-[var(--surface)] to-[var(--background-subtle)]">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="metric-card-label">Productos con Stock</p>
+                  <p className="metric-card-value text-3xl mt-1">
+                    {summary.products_with_stock.toLocaleString()}
+                  </p>
+                  {summary.products_without_stock > 0 && (
+                    <p className="text-xs text-[var(--warning)] mt-2 font-medium">
+                      {summary.products_without_stock} sin stock
+                    </p>
+                  )}
+                </div>
+                <div className="w-12 h-12 rounded-xl bg-[var(--primary-light)] flex items-center justify-center">
+                  <Package className="w-6 h-6 text-[var(--primary)]" />
+                </div>
+              </div>
+            </div>
+
+            {/* Stock Total */}
+            <div className="lg:col-span-3 metric-card">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="metric-card-label">Stock Total</p>
+                  <p className="metric-card-value mt-1">
+                    {summary.total_stock.toLocaleString()}
+                  </p>
+                  <p className="text-xs text-[var(--foreground-muted)] mt-2">
+                    {summary.active_warehouses} {summary.active_warehouses === 1 ? 'bodega' : 'bodegas'}
+                  </p>
+                </div>
+                <div className="w-10 h-10 rounded-lg bg-[var(--secondary-light)] flex items-center justify-center">
+                  <BarChart3 className="w-5 h-5 text-[var(--secondary)]" />
+                </div>
+              </div>
+            </div>
+
+            {/* Inventory Value */}
+            <div className="lg:col-span-3 metric-card">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="metric-card-label">Valor Inventario</p>
+                  <p className="metric-card-value mt-1 text-[var(--success)]">
+                    {summary.total_valor && Number(summary.total_valor) > 0
+                      ? `$${(Number(summary.total_valor) / 1000000).toFixed(1)}M`
+                      : '—'}
+                  </p>
+                  <p className="text-xs text-[var(--foreground-muted)] mt-2">
+                    {summary.total_valor && Number(summary.total_valor) > 0
+                      ? `$${Math.round(Number(summary.total_valor)).toLocaleString('es-CL')} CLP`
+                      : 'Sin valorizar'}
+                  </p>
+                </div>
+                <div className="w-10 h-10 rounded-lg bg-[var(--success-light)] flex items-center justify-center">
+                  <DollarSign className="w-5 h-5 text-[var(--success)]" />
+                </div>
+              </div>
+            </div>
+
+            {/* Alerts */}
+            <div className="lg:col-span-3 metric-card">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="metric-card-label">Alertas</p>
+                  <p className={`metric-card-value mt-1 ${alertCount > 0 ? 'text-[var(--danger)]' : 'text-[var(--success)]'}`}>
+                    {alertCount}
+                  </p>
+                  <div className="text-xs mt-2 space-y-0.5">
+                    {summary.expiration && summary.expiration.expired_lots > 0 && (
+                      <p className="text-[var(--danger)] font-medium">{summary.expiration.expired_lots} vencidos</p>
+                    )}
+                    {summary.expiration && summary.expiration.expiring_soon_lots > 0 && (
+                      <p className="text-[var(--warning)] font-medium">{summary.expiration.expiring_soon_lots} por vencer</p>
+                    )}
+                    {alertCount === 0 && (
+                      <p className="text-[var(--success)] font-medium">Sin alertas</p>
+                    )}
+                  </div>
+                </div>
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                  alertCount > 0 ? 'bg-[var(--danger-light)]' : 'bg-[var(--success-light)]'
+                }`}>
+                  {alertCount > 0 ? (
+                    <AlertTriangle className="w-5 h-5 text-[var(--danger)]" />
+                  ) : (
+                    <Clock className="w-5 h-5 text-[var(--success)]" />
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Compact Filter Bar */}
+        <div className="bg-[var(--surface)] rounded-xl border border-[var(--border)] p-4 mb-6 shadow-sm">
+          <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+            {/* Search Input */}
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--foreground-muted)]" />
               <input
                 type="text"
-                placeholder="SKU o nombre del producto..."
+                placeholder="Buscar por SKU o nombre..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full px-4 py-3 pl-10 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                className="w-full pl-10 pr-10 py-2.5 text-sm border border-[var(--border)] rounded-lg bg-[var(--surface)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-light)] transition-all outline-none"
               />
-              <svg
-                className="absolute left-3 top-3.5 w-5 h-5 text-gray-400"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                />
-              </svg>
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--foreground-muted)] hover:text-[var(--foreground)]"
                 >
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  <X className="w-4 h-4" />
                 </button>
               )}
             </div>
+
+            {/* Category Select */}
+            <div className="relative min-w-[180px]">
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="w-full px-3 py-2.5 text-sm border border-[var(--border)] rounded-lg bg-[var(--surface)] appearance-none cursor-pointer focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-light)] transition-all outline-none pr-10"
+              >
+                <option value="">Todas las familias</option>
+                {categories.map((category) => (
+                  <option key={category} value={category}>{category}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--foreground-muted)] pointer-events-none" />
+            </div>
+
+            {/* Toggle Filters */}
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 cursor-pointer px-3 py-2 rounded-lg hover:bg-[var(--background-subtle)] transition-colors">
+                <input
+                  type="checkbox"
+                  checked={showOnlyWithStock}
+                  onChange={(e) => setShowOnlyWithStock(e.target.checked)}
+                  className="w-4 h-4 rounded border-[var(--border)] text-[var(--primary)] focus:ring-[var(--primary)] cursor-pointer"
+                />
+                <span className="text-sm font-medium text-[var(--foreground)]">Con stock</span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer px-3 py-2 rounded-lg bg-[var(--warning-light)] hover:bg-amber-100 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={showLowStockOnly}
+                  onChange={(e) => setShowLowStockOnly(e.target.checked)}
+                  className="w-4 h-4 rounded border-amber-300 text-[var(--warning)] focus:ring-[var(--warning)] cursor-pointer"
+                />
+                <span className="text-sm font-medium text-amber-900">Stock bajo</span>
+              </label>
+            </div>
+
+            {/* Clear Filters */}
+            {hasActiveFilters && (
+              <button
+                onClick={handleClearFilters}
+                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-[var(--primary)] hover:bg-[var(--primary-light)] rounded-lg transition-colors"
+              >
+                <X className="w-4 h-4" />
+                Limpiar
+              </button>
+            )}
           </div>
 
-          {/* Category Filter */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Familia
-            </label>
-            <select
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none bg-white"
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
-                backgroundPosition: 'right 0.5rem center',
-                backgroundRepeat: 'no-repeat',
-                backgroundSize: '1.5em 1.5em',
-              }}
-            >
-              <option value="">Todas las familias</option>
-              {categories.map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Stock Toggle */}
-          <div className="flex items-end">
-            <label className="flex items-center gap-3 cursor-pointer bg-gray-50 px-4 py-3 rounded-xl hover:bg-gray-100 transition-colors w-full">
-              <input
-                type="checkbox"
-                checked={showOnlyWithStock}
-                onChange={(e) => setShowOnlyWithStock(e.target.checked)}
-                className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 transition-all"
-              />
-              <span className="text-sm font-medium text-gray-700">
-                Solo con stock
-              </span>
-            </label>
-          </div>
-        </div>
-
-        {/* Second Row - Low Stock Filter */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
-          {/* Low Stock Toggle */}
-          <div className="flex items-center">
-            <label className="flex items-center gap-3 cursor-pointer bg-amber-50 px-4 py-3 rounded-xl hover:bg-amber-100 transition-colors w-full border-2 border-amber-200">
-              <input
-                type="checkbox"
-                checked={showLowStockOnly}
-                onChange={(e) => setShowLowStockOnly(e.target.checked)}
-                className="w-5 h-5 text-amber-600 border-amber-300 rounded focus:ring-amber-500 transition-all"
-              />
-              <span className="text-sm font-medium text-amber-900 flex items-center gap-2">
-                <span>⚠️</span>
-                <span>Stock bajo (por producto)</span>
-              </span>
-            </label>
-          </div>
-        </div>
-
-        {/* Active Filters Display */}
-        {hasActiveFilters && (
-          <div className="mt-4 pt-4 border-t border-gray-200">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm text-gray-600">Filtros activos:</span>
+          {/* Active Filters Pills */}
+          {hasActiveFilters && (
+            <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-[var(--border)]">
+              <Filter className="w-4 h-4 text-[var(--foreground-muted)]" />
               {searchQuery && (
-                <span className="inline-flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
-                  Búsqueda: "{searchQuery}"
-                  <button onClick={() => setSearchQuery('')} className="hover:bg-blue-200 rounded-full p-0.5">
-                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[var(--primary-light)] text-[var(--primary)] rounded-full text-xs font-medium">
+                  "{searchQuery}"
+                  <button onClick={() => setSearchQuery('')} className="hover:bg-[var(--primary)] hover:text-white rounded-full p-0.5 transition-colors">
+                    <X className="w-3 h-3" />
                   </button>
                 </span>
               )}
               {selectedCategory && (
-                <span className="inline-flex items-center gap-1 px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-medium">
-                  Familia: {selectedCategory}
-                  <button onClick={() => setSelectedCategory('')} className="hover:bg-purple-200 rounded-full p-0.5">
-                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[var(--secondary-light)] text-[var(--secondary)] rounded-full text-xs font-medium">
+                  {selectedCategory}
+                  <button onClick={() => setSelectedCategory('')} className="hover:bg-[var(--secondary)] hover:text-white rounded-full p-0.5 transition-colors">
+                    <X className="w-3 h-3" />
                   </button>
                 </span>
               )}
               {showOnlyWithStock && (
-                <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
-                  Solo con stock
-                  <button onClick={() => setShowOnlyWithStock(false)} className="hover:bg-green-200 rounded-full p-0.5">
-                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[var(--success-light)] text-[var(--success)] rounded-full text-xs font-medium">
+                  Con stock
                 </span>
               )}
               {showLowStockOnly && (
-                <span className="inline-flex items-center gap-1 px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-sm font-medium">
-                  ⚠️ Stock bajo
-                  <button onClick={() => setShowLowStockOnly(false)} className="hover:bg-amber-200 rounded-full p-0.5">
-                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[var(--warning-light)] text-amber-800 rounded-full text-xs font-medium">
+                  Stock bajo
                 </span>
               )}
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
 
-      {/* Error Display */}
-      {error && (
-        <div className="bg-red-50 border-l-4 border-red-500 p-6 mb-8 rounded-lg shadow-sm">
-          <div className="flex items-center">
-            <div className="text-4xl mr-4">❌</div>
-            <div>
-              <p className="text-lg font-semibold text-red-800">Error al cargar datos</p>
-              <p className="text-red-700 mt-1">{error}</p>
+        {/* Error Display */}
+        {error && (
+          <div className="bg-[var(--danger-light)] border-l-4 border-[var(--danger)] p-4 mb-6 rounded-lg">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="w-5 h-5 text-[var(--danger)]" />
+              <div>
+                <p className="font-semibold text-[var(--danger)]">Error al cargar datos</p>
+                <p className="text-sm text-red-700 mt-0.5">{error}</p>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Dynamic Inventory Table (Relbase Warehouses) */}
-      <DynamicWarehouseInventoryTable
-        products={filteredProducts}
-        loading={loading}
-        onDataChanged={() => fetchInventory(true)}
-      />
-    </div>
+        {/* Inventory Table */}
+        <DynamicWarehouseInventoryTable
+          products={filteredProducts}
+          loading={loading}
+          onDataChanged={() => fetchInventory(true)}
+        />
+      </div>
     </>
   );
 }
