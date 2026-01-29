@@ -4,11 +4,21 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import Image from 'next/image';
 import Navigation from '@/components/Navigation';
-import EnhancedWarehouseInventoryTable from '@/components/inventory/EnhancedWarehouseInventoryTable';
 import ExpandableProductTable from '@/components/inventory/ExpandableProductTable';
 import EnhancedSummaryCard from '@/components/inventory/EnhancedSummaryCard';
 import WarehouseCard from '@/components/inventory/WarehouseCard';
 import InventoryUploadButton from '@/components/inventory/InventoryUploadButton';
+import {
+  Building2,
+  RefreshCw,
+  Search,
+  X,
+  Filter,
+  Loader2,
+  ShieldAlert,
+  Package,
+  AlertTriangle,
+} from 'lucide-react';
 
 interface Warehouse {
   id: number;
@@ -45,10 +55,10 @@ interface WarehouseProduct {
   category: string | null;
   stock: number;
   lots: LotInfo[];
-  percentage_of_warehouse?: number;  // Opcional - solo para vista warehouse-specific
-  percentage_of_product?: number;     // Opcional - solo para vista warehouse-specific
-  sku_value?: number;  // Unit cost from product_catalog
-  valor?: number;      // Total value (stock × sku_value)
+  percentage_of_warehouse?: number;
+  percentage_of_product?: number;
+  sku_value?: number;
+  valor?: number;
 }
 
 interface WarehouseSummary {
@@ -94,13 +104,11 @@ export default function WarehouseSpecificInventoryPage() {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>('');
   const [products, setProducts] = useState<WarehouseProduct[]>([]);
-  const [warehouseInfo, setWarehouseInfo] = useState<{ code: string; name: string; update_method: string } | null>(
-    null
-  );
+  const [warehouseInfo, setWarehouseInfo] = useState<{ code: string; name: string; update_method: string } | null>(null);
   const [summary, setSummary] = useState<WarehouseSummary | null>(null);
   const [expirationSummary, setExpirationSummary] = useState<WarehouseExpirationSummary>({});
-  const [loading, setLoading] = useState(false); // Don't load by default
-  const [warehousesLoading, setWarehousesLoading] = useState(true); // Loading warehouses list
+  const [loading, setLoading] = useState(false);
+  const [warehousesLoading, setWarehousesLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -114,7 +122,6 @@ export default function WarehouseSpecificInventoryPage() {
       setWarehousesLoading(true);
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-      // Fetch warehouses and expiration summary in parallel
       const [warehousesResponse, expirationResponse] = await Promise.all([
         fetch(`${apiUrl}/api/v1/warehouses`),
         fetch(`${apiUrl}/api/v1/warehouse-inventory/expiration-summary`)
@@ -127,12 +134,10 @@ export default function WarehouseSpecificInventoryPage() {
       const warehousesData: WarehousesResponse = await warehousesResponse.json();
       setWarehouses(warehousesData.data);
 
-      // Load expiration summary if available
       if (expirationResponse.ok) {
         const expirationData = await expirationResponse.json();
         setExpirationSummary(expirationData.data || {});
       }
-      // Don't auto-select - user must choose a warehouse
     } catch (err: any) {
       console.error('Error fetching warehouses:', err);
       setError(err.message || 'Error al cargar las bodegas');
@@ -153,7 +158,6 @@ export default function WarehouseSpecificInventoryPage() {
 
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-      // Build query params
       const params = new URLSearchParams();
       if (searchQuery) params.append('search', searchQuery);
       if (showOnlyWithStock) params.append('only_with_stock', 'true');
@@ -179,12 +183,8 @@ export default function WarehouseSpecificInventoryPage() {
     }
   };
 
-  // Manual refresh
-  const handleRefresh = () => {
-    fetchWarehouseInventory(true);
-  };
+  const handleRefresh = () => fetchWarehouseInventory(true);
 
-  // Clear all filters
   const handleClearFilters = () => {
     setSearchQuery('');
     setShowOnlyWithStock(false);
@@ -192,31 +192,29 @@ export default function WarehouseSpecificInventoryPage() {
 
   const hasActiveFilters = searchQuery || showOnlyWithStock;
 
-  // Load warehouses on mount
   useEffect(() => {
     if (status === 'authenticated') {
       fetchWarehouses();
     }
   }, [status]);
 
-  // Load inventory when warehouse or filters change
   useEffect(() => {
     if (status === 'authenticated' && selectedWarehouse) {
       fetchWarehouseInventory();
     }
   }, [status, selectedWarehouse, searchQuery, showOnlyWithStock]);
 
-  // Handle auth loading
+  // Auth loading state
   if (status === 'loading') {
     return (
       <>
         <Navigation />
-        <div className="flex justify-center items-center min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-4 border-blue-600 border-t-transparent mx-auto mb-4"></div>
-          <p className="text-gray-600">Cargando...</p>
+        <div className="flex justify-center items-center min-h-screen bg-[var(--background)]">
+          <div className="text-center">
+            <Loader2 className="w-12 h-12 animate-spin text-[var(--primary)] mx-auto mb-4" />
+            <p className="text-[var(--foreground-muted)] font-medium">Cargando...</p>
+          </div>
         </div>
-      </div>
       </>
     );
   }
@@ -226,47 +224,42 @@ export default function WarehouseSpecificInventoryPage() {
       <>
         <Navigation />
         <div className="p-8">
-        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-6 rounded-lg shadow-sm">
-          <div className="flex items-center">
-            <div className="text-4xl mr-4">⚠️</div>
-            <div>
-              <p className="text-lg font-semibold text-yellow-800">Acceso Restringido</p>
-              <p className="text-yellow-700 mt-1">Por favor inicia sesión para ver el inventario.</p>
+          <div className="bg-[var(--warning-light)] border-l-4 border-[var(--warning)] p-6 rounded-lg">
+            <div className="flex items-center gap-4">
+              <ShieldAlert className="w-8 h-8 text-[var(--warning)]" />
+              <div>
+                <p className="text-lg font-semibold text-[var(--foreground)]">Acceso Restringido</p>
+                <p className="text-[var(--foreground-muted)] mt-1">Por favor inicia sesión para ver el inventario.</p>
+              </div>
             </div>
           </div>
         </div>
-      </div>
       </>
     );
   }
 
-  // Group warehouses by type
   const amplificaWarehouses = warehouses.filter((w) => w.code.startsWith('amplifica'));
   const otherWarehouses = warehouses.filter((w) => !w.code.startsWith('amplifica'));
 
   return (
     <>
       <Navigation />
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 p-8">
-      {/* Header with gradient */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-4xl font-bold mb-2 flex items-center gap-3">
-              <span className="text-4xl">🏢</span>
-              <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+      <div className="min-h-screen bg-[var(--background)] p-6 lg:p-8">
+        {/* Header */}
+        <header className="mb-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-3xl lg:text-4xl font-bold text-[var(--foreground)] tracking-tight">
                 Inventario por Bodega
-              </span>
-            </h1>
-            <p className="text-gray-600 text-lg">Vista específica de stock en cada bodega</p>
-          </div>
+              </h1>
+              <p className="text-[var(--foreground-muted)] mt-1">
+                Vista específica de stock en cada bodega
+              </p>
+            </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-3">
-            {/* Upload Button (only for manual warehouses) */}
-            {selectedWarehouse &&
-              warehouseInfo &&
-              warehouseInfo.update_method === 'manual_upload' && (
+            <div className="flex items-center gap-3">
+              {/* Upload Button */}
+              {selectedWarehouse && warehouseInfo && warehouseInfo.update_method === 'manual_upload' && (
                 <InventoryUploadButton
                   warehouseCode={selectedWarehouse}
                   warehouseName={warehouseInfo.name}
@@ -274,344 +267,283 @@ export default function WarehouseSpecificInventoryPage() {
                 />
               )}
 
-            {/* Refresh Button */}
-            <button
-              onClick={handleRefresh}
-              disabled={isRefreshing || !selectedWarehouse}
-              className="flex items-center gap-2 px-6 py-3 bg-white border-2 border-blue-500 text-blue-600 rounded-xl hover:bg-blue-50 transition-all duration-300 shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed font-medium"
-            >
-              <svg
-                className={`w-5 h-5 ${isRefreshing ? 'animate-spin' : ''}`}
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
+              {/* Refresh Button */}
+              <button
+                onClick={handleRefresh}
+                disabled={isRefreshing || !selectedWarehouse}
+                className="flex items-center gap-2 px-4 py-2.5 bg-[var(--surface)] border border-[var(--border)] text-[var(--foreground)] rounded-lg hover:border-[var(--primary)] hover:text-[var(--primary)] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-sm"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">{isRefreshing ? 'Actualizando...' : 'Actualizar'}</span>
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Warehouse Selector */}
+        <div className="bg-[var(--surface)] rounded-xl border border-[var(--border)] p-4 mb-6 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-[var(--foreground)] flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-[var(--primary-light)] flex items-center justify-center">
+                <Building2 className="w-4 h-4 text-[var(--primary)]" />
+              </div>
+              <span>Seleccionar Bodega</span>
+            </h2>
+            {warehouseInfo && (
+              <div className="text-xs text-[var(--foreground-muted)]">
+                Activa: <span className="font-semibold text-[var(--foreground)]">{warehouseInfo.name}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {warehousesLoading && (
+              <div className="col-span-full flex items-center justify-center py-8">
+                <div className="flex items-center gap-3 text-[var(--foreground-muted)]">
+                  <Loader2 className="w-5 h-5 animate-spin text-[var(--primary)]" />
+                  <span>Cargando bodegas...</span>
+                </div>
+              </div>
+            )}
+
+            {!warehousesLoading && warehouses.length === 0 && (
+              <div className="col-span-full flex flex-col items-center justify-center py-8 text-[var(--foreground-muted)]">
+                <Building2 className="w-10 h-10 mb-2 text-stone-300" />
+                <span>No hay bodegas disponibles</span>
+              </div>
+            )}
+
+            {!warehousesLoading && amplificaWarehouses.map((warehouse) => {
+              const warehouseStats = summary && selectedWarehouse === warehouse.code
+                ? { stockCount: summary.total_stock, productCount: summary.total_products }
+                : undefined;
+              const expStats = expirationSummary[warehouse.code];
+
+              return (
+                <WarehouseCard
+                  key={warehouse.code}
+                  code={warehouse.code}
+                  name={warehouse.name}
+                  location={warehouse.location}
+                  updateMethod={warehouse.update_method}
+                  isActive={selectedWarehouse === warehouse.code}
+                  onClick={() => setSelectedWarehouse(warehouse.code)}
+                  stockCount={warehouseStats?.stockCount}
+                  productCount={warehouseStats?.productCount}
+                  expirationSummary={expStats ? {
+                    expired_lots: expStats.expired_lots,
+                    expired_units: expStats.expired_units,
+                    expiring_soon_lots: expStats.expiring_soon_lots,
+                    expiring_soon_units: expStats.expiring_soon_units,
+                    earliest_expiration: expStats.earliest_expiration
+                  } : undefined}
                 />
-              </svg>
-              <span>{isRefreshing ? 'Actualizando...' : 'Actualizar'}</span>
-            </button>
+              );
+            })}
+
+            {!warehousesLoading && otherWarehouses.map((warehouse) => {
+              const warehouseStats = summary && selectedWarehouse === warehouse.code
+                ? { stockCount: summary.total_stock, productCount: summary.total_products }
+                : undefined;
+              const expStats = expirationSummary[warehouse.code];
+
+              return (
+                <WarehouseCard
+                  key={warehouse.code}
+                  code={warehouse.code}
+                  name={warehouse.name}
+                  location={warehouse.location}
+                  updateMethod={warehouse.update_method}
+                  isActive={selectedWarehouse === warehouse.code}
+                  onClick={() => setSelectedWarehouse(warehouse.code)}
+                  stockCount={warehouseStats?.stockCount}
+                  productCount={warehouseStats?.productCount}
+                  expirationSummary={expStats ? {
+                    expired_lots: expStats.expired_lots,
+                    expired_units: expStats.expired_units,
+                    expiring_soon_lots: expStats.expiring_soon_lots,
+                    expiring_soon_units: expStats.expiring_soon_units,
+                    earliest_expiration: expStats.earliest_expiration
+                  } : undefined}
+                />
+              );
+            })}
           </div>
         </div>
-      </div>
 
-      {/* Compact Warehouse Selector - All warehouses in one row */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-            <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
-              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-              </svg>
-            </div>
-            <span>Seleccionar Bodega</span>
-          </h2>
-          {warehouseInfo && (
-            <div className="text-xs text-gray-600">
-              Mostrando: <span className="font-semibold text-gray-900">{warehouseInfo.name}</span>
-            </div>
-          )}
-        </div>
-
-        {/* All warehouses in a single row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {/* Loading state */}
-          {warehousesLoading && (
-            <div className="col-span-full flex items-center justify-center py-8">
-              <div className="flex items-center gap-3 text-gray-500">
-                <svg className="animate-spin h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                <span>Cargando bodegas...</span>
-              </div>
-            </div>
-          )}
-
-          {/* Empty state when no warehouses */}
-          {!warehousesLoading && warehouses.length === 0 && (
-            <div className="col-span-full flex flex-col items-center justify-center py-8 text-gray-500">
-              <svg className="w-12 h-12 mb-2 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-              </svg>
-              <span>No hay bodegas disponibles</span>
-            </div>
-          )}
-
-          {/* Individual Amplifica warehouses (for manual upload) */}
-          {!warehousesLoading && amplificaWarehouses.map((warehouse) => {
-            const warehouseStats = summary && selectedWarehouse === warehouse.code
-              ? { stockCount: summary.total_stock, productCount: summary.total_products }
-              : undefined;
-            const expStats = expirationSummary[warehouse.code];
-
-            return (
-              <WarehouseCard
-                key={warehouse.code}
-                code={warehouse.code}
-                name={warehouse.name}
-                location={warehouse.location}
-                updateMethod={warehouse.update_method}
-                isActive={selectedWarehouse === warehouse.code}
-                onClick={() => setSelectedWarehouse(warehouse.code)}
-                stockCount={warehouseStats?.stockCount}
-                productCount={warehouseStats?.productCount}
-                expirationSummary={expStats ? {
-                  expired_lots: expStats.expired_lots,
-                  expired_units: expStats.expired_units,
-                  expiring_soon_lots: expStats.expiring_soon_lots,
-                  expiring_soon_units: expStats.expiring_soon_units,
-                  earliest_expiration: expStats.earliest_expiration
-                } : undefined}
-              />
-            );
-          })}
-
-          {/* Other warehouses */}
-          {!warehousesLoading && otherWarehouses.map((warehouse) => {
-            const warehouseStats = summary && selectedWarehouse === warehouse.code
-              ? { stockCount: summary.total_stock, productCount: summary.total_products }
-              : undefined;
-            const expStats = expirationSummary[warehouse.code];
-
-            return (
-              <WarehouseCard
-                key={warehouse.code}
-                code={warehouse.code}
-                name={warehouse.name}
-                location={warehouse.location}
-                updateMethod={warehouse.update_method}
-                isActive={selectedWarehouse === warehouse.code}
-                onClick={() => setSelectedWarehouse(warehouse.code)}
-                stockCount={warehouseStats?.stockCount}
-                productCount={warehouseStats?.productCount}
-                expirationSummary={expStats ? {
-                  expired_lots: expStats.expired_lots,
-                  expired_units: expStats.expired_units,
-                  expiring_soon_lots: expStats.expiring_soon_lots,
-                  expiring_soon_units: expStats.expiring_soon_units,
-                  earliest_expiration: expStats.earliest_expiration
-                } : undefined}
-              />
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Enhanced Summary Cards */}
-      {summary && (
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
-          <EnhancedSummaryCard
-            title="Productos en Bodega"
-            value={summary.total_products}
-            icon="📦"
-            color="purple"
-            subtitle="SKUs distintos"
-          />
-          <EnhancedSummaryCard
-            title="Stock Total"
-            value={summary.total_stock}
-            icon="📊"
-            color="blue"
-            subtitle="Unidades disponibles"
-          />
-          <EnhancedSummaryCard
-            title="Total Lotes"
-            value={summary.total_lots}
-            icon="📦"
-            color="amber"
-            subtitle="Con tracking"
-          />
-          {summary.total_valor !== undefined && Number(summary.total_valor) > 0 && (
+        {/* Summary Cards */}
+        {summary && (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
             <EnhancedSummaryCard
-              title="Valor Total"
-              value={`$${Math.round(Number(summary.total_valor)).toLocaleString('es-CL')}`}
-              icon="💰"
-              color="green"
-              subtitle="Valorización bodega"
+              title="Productos"
+              value={summary.total_products}
+              icon="📦"
+              color="purple"
+              subtitle="SKUs distintos"
             />
-          )}
-          <EnhancedSummaryCard
-            title="Última Actualización"
-            value={
-              summary.last_updated
-                ? new Date(summary.last_updated).toLocaleDateString('es-CL', {
-                    day: 'numeric',
-                    month: 'short',
-                  })
-                : 'N/A'
-            }
-            icon="🕒"
-            color="green"
-            subtitle={
-              summary.last_updated
-                ? new Date(summary.last_updated).toLocaleTimeString('es-CL', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })
-                : 'No disponible'
-            }
-          />
-          {summary.expiration && (
-            <>
+            <EnhancedSummaryCard
+              title="Stock Total"
+              value={summary.total_stock}
+              icon="📊"
+              color="blue"
+              subtitle="Unidades"
+            />
+            <EnhancedSummaryCard
+              title="Lotes"
+              value={summary.total_lots}
+              icon="📦"
+              color="amber"
+              subtitle="Con tracking"
+            />
+            {summary.total_valor !== undefined && Number(summary.total_valor) > 0 && (
               <EnhancedSummaryCard
-                title="Próximos a Vencer"
-                value={summary.expiration.expiring_soon_lots}
-                icon="⏰"
-                color="amber"
-                subtitle={`${summary.expiration.expiring_soon_units.toLocaleString()} unidades (30 días)`}
+                title="Valor Total"
+                value={`$${Math.round(Number(summary.total_valor)).toLocaleString('es-CL')}`}
+                icon="💰"
+                color="green"
+                subtitle="Valorización"
               />
-              <EnhancedSummaryCard
-                title="Vencidos"
-                value={summary.expiration.expired_lots}
-                icon="❌"
-                color="red"
-                subtitle={`${summary.expiration.expired_units.toLocaleString()} unidades`}
-              />
-            </>
-          )}
-        </div>
-      )}
+            )}
+            <EnhancedSummaryCard
+              title="Actualización"
+              value={
+                summary.last_updated
+                  ? new Date(summary.last_updated).toLocaleDateString('es-CL', {
+                      day: 'numeric',
+                      month: 'short',
+                    })
+                  : 'N/A'
+              }
+              icon="🕒"
+              color="gray"
+              subtitle={
+                summary.last_updated
+                  ? new Date(summary.last_updated).toLocaleTimeString('es-CL', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })
+                  : 'No disponible'
+              }
+            />
+            {summary.expiration && (
+              <>
+                {(summary.expiration.expiring_soon_lots > 0 || summary.expiration.expired_lots > 0) && (
+                  <>
+                    <EnhancedSummaryCard
+                      title="Por Vencer"
+                      value={summary.expiration.expiring_soon_lots}
+                      icon="⏰"
+                      color="amber"
+                      subtitle={`${summary.expiration.expiring_soon_units.toLocaleString()} uds (30d)`}
+                    />
+                    <EnhancedSummaryCard
+                      title="Vencidos"
+                      value={summary.expiration.expired_lots}
+                      icon="❌"
+                      color="red"
+                      subtitle={`${summary.expiration.expired_units.toLocaleString()} uds`}
+                    />
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
-      {/* Enhanced Filters */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6 backdrop-blur-sm bg-opacity-95">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-            <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
-              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </div>
-            <span>Filtros</span>
-          </h2>
-          {hasActiveFilters && (
-            <button
-              onClick={handleClearFilters}
-              className="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1 transition-colors"
-            >
-              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-              Limpiar
-            </button>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {/* Search */}
-          <div className="md:col-span-2">
-            <div className="relative">
+        {/* Filters */}
+        <div className="bg-[var(--surface)] rounded-xl border border-[var(--border)] p-4 mb-6 shadow-sm">
+          <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+            {/* Search */}
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--foreground-muted)]" />
               <input
                 type="text"
                 placeholder="Buscar por SKU o nombre..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full px-3 py-2 pl-9 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                className="w-full pl-10 pr-10 py-2.5 text-sm border border-[var(--border)] rounded-lg bg-[var(--surface)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-light)] transition-all outline-none"
               />
-              <svg
-                className="absolute left-3 top-2.5 w-4 h-4 text-gray-400"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                />
-              </svg>
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--foreground-muted)] hover:text-[var(--foreground)]"
                 >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  <X className="w-4 h-4" />
                 </button>
               )}
             </div>
-          </div>
 
-          {/* Stock Toggle */}
-          <div className="flex items-center">
-            <label className="flex items-center gap-2 cursor-pointer bg-gray-50 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors w-full">
+            {/* Stock Toggle */}
+            <label className="flex items-center gap-2 cursor-pointer px-3 py-2 rounded-lg hover:bg-[var(--background-subtle)] transition-colors">
               <input
                 type="checkbox"
                 checked={showOnlyWithStock}
                 onChange={(e) => setShowOnlyWithStock(e.target.checked)}
-                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 transition-all"
+                className="w-4 h-4 rounded border-[var(--border)] text-[var(--primary)] focus:ring-[var(--primary)] cursor-pointer"
               />
-              <span className="text-sm font-medium text-gray-700">
-                Solo con stock
-              </span>
+              <span className="text-sm font-medium text-[var(--foreground)]">Solo con stock</span>
             </label>
-          </div>
-        </div>
 
-        {/* Active Filters Display */}
-        {hasActiveFilters && (
-          <div className="mt-3 pt-3 border-t border-gray-200">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-gray-600">Filtros activos:</span>
+            {/* Clear Filters */}
+            {hasActiveFilters && (
+              <button
+                onClick={handleClearFilters}
+                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-[var(--primary)] hover:bg-[var(--primary-light)] rounded-lg transition-colors"
+              >
+                <X className="w-4 h-4" />
+                Limpiar
+              </button>
+            )}
+          </div>
+
+          {/* Active Filters */}
+          {hasActiveFilters && (
+            <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-[var(--border)]">
+              <Filter className="w-4 h-4 text-[var(--foreground-muted)]" />
               {searchQuery && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
-                  Búsqueda: "{searchQuery}"
-                  <button onClick={() => setSearchQuery('')} className="hover:bg-blue-200 rounded-full p-0.5">
-                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[var(--primary-light)] text-[var(--primary)] rounded-full text-xs font-medium">
+                  "{searchQuery}"
+                  <button onClick={() => setSearchQuery('')} className="hover:bg-[var(--primary)] hover:text-white rounded-full p-0.5 transition-colors">
+                    <X className="w-3 h-3" />
                   </button>
                 </span>
               )}
               {showOnlyWithStock && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                  Solo con stock
-                  <button onClick={() => setShowOnlyWithStock(false)} className="hover:bg-green-200 rounded-full p-0.5">
-                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[var(--success-light)] text-[var(--success)] rounded-full text-xs font-medium">
+                  Con stock
                 </span>
               )}
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
 
-      {/* Error Display */}
-      {error && (
-        <div className="bg-red-50 border-l-4 border-red-500 p-6 mb-8 rounded-lg shadow-sm">
-          <div className="flex items-center">
-            <div className="text-4xl mr-4">❌</div>
-            <div>
-              <p className="text-lg font-semibold text-red-800">Error al cargar datos</p>
-              <p className="text-red-700 mt-1">{error}</p>
+        {/* Error */}
+        {error && (
+          <div className="bg-[var(--danger-light)] border-l-4 border-[var(--danger)] p-4 mb-6 rounded-lg">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="w-5 h-5 text-[var(--danger)]" />
+              <div>
+                <p className="font-semibold text-[var(--danger)]">Error al cargar datos</p>
+                <p className="text-sm text-red-700 mt-0.5">{error}</p>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Enhanced Inventory Table or empty state */}
-      {!selectedWarehouse ? (
-        <div className="bg-white rounded-xl border-2 border-dashed border-gray-300 p-12 text-center">
-          <div className="text-6xl mb-4">🏢</div>
-          <h3 className="text-xl font-semibold text-gray-900 mb-2">Selecciona una bodega</h3>
-          <p className="text-gray-600">Elige una bodega arriba para ver su inventario</p>
-        </div>
-      ) : (
-        // Single warehouse view: use expandable table with lot details
-        <ExpandableProductTable
-          products={products}
-          loading={loading}
-        />
-      )}
-    </div>
+        {/* Content */}
+        {!selectedWarehouse ? (
+          <div className="bg-[var(--surface)] rounded-xl border-2 border-dashed border-[var(--border)] p-12 text-center">
+            <Building2 className="w-16 h-16 text-stone-300 mx-auto mb-4" />
+            <h3 className="text-xl font-semibold text-[var(--foreground)] mb-2">Selecciona una bodega</h3>
+            <p className="text-[var(--foreground-muted)]">Elige una bodega arriba para ver su inventario</p>
+          </div>
+        ) : (
+          <ExpandableProductTable
+            products={products}
+            loading={loading}
+          />
+        )}
+      </div>
     </>
   );
 }

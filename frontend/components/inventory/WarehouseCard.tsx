@@ -1,6 +1,18 @@
 'use client';
 
 import Image from 'next/image';
+import {
+  Warehouse,
+  FileUp,
+  Link2,
+  MapPin,
+  AlertTriangle,
+  Clock,
+  Calendar,
+  ShoppingCart,
+  Package,
+  Boxes,
+} from 'lucide-react';
 
 interface ExpirationSummary {
   expiring_soon_lots: number;
@@ -35,14 +47,12 @@ export default function WarehouseCard({
 }: WarehouseCardProps) {
   const isAmplifica = code.startsWith('amplifica');
 
-  // Format expiration date as DD/MM/YYYY
   const formatExpDate = (dateStr: string | null | undefined): string => {
     if (!dateStr) return '';
     const date = new Date(dateStr);
-    return date.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    return date.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: '2-digit' });
   };
 
-  // Calculate days until earliest expiration
   const getDaysToExpiration = (): number | null => {
     if (!expirationSummary?.earliest_expiration) return null;
     const expDate = new Date(expirationSummary.earliest_expiration);
@@ -53,17 +63,16 @@ export default function WarehouseCard({
   };
 
   const daysToExpiration = getDaysToExpiration();
-  const hasExpirationWarning = expirationSummary && (expirationSummary.expiring_soon_lots > 0 || expirationSummary.expired_lots > 0);
 
   return (
     <button
       onClick={onClick}
       className={`
-        relative overflow-hidden rounded-lg border-2 p-3 text-left transition-all duration-300
+        relative overflow-hidden rounded-xl border-2 p-3 text-left transition-all duration-200
         ${
           isActive
-            ? 'border-blue-500 bg-gradient-to-br from-blue-50 to-blue-100 shadow-md scale-[1.02]'
-            : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
+            ? 'border-[var(--primary)] bg-[var(--primary-lighter)] shadow-md'
+            : 'border-[var(--border)] bg-[var(--surface)] hover:border-[var(--border-subtle)] hover:shadow-sm'
         }
         group
       `}
@@ -71,8 +80,8 @@ export default function WarehouseCard({
       {/* Active Indicator */}
       {isActive && (
         <div className="absolute top-2 right-2">
-          <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse">
-            <div className="absolute inset-0 bg-blue-500 rounded-full animate-ping opacity-75" />
+          <div className="w-2.5 h-2.5 bg-[var(--primary)] rounded-full">
+            <div className="absolute inset-0 bg-[var(--primary)] rounded-full animate-ping opacity-50" />
           </div>
         </div>
       )}
@@ -80,11 +89,11 @@ export default function WarehouseCard({
       {/* Warehouse Icon */}
       <div
         className={`
-        inline-flex items-center justify-center w-12 h-12 rounded-md mb-2 transition-all duration-300 overflow-hidden
+        inline-flex items-center justify-center w-11 h-11 rounded-lg mb-2 transition-all duration-200 overflow-hidden
         ${
           isActive
-            ? 'bg-blue-500 shadow-md'
-            : 'bg-white border border-gray-200 group-hover:border-gray-300'
+            ? 'bg-[var(--primary)] shadow-sm'
+            : 'bg-stone-100 border border-stone-200 group-hover:border-stone-300'
         }
       `}
       >
@@ -92,52 +101,45 @@ export default function WarehouseCard({
           <Image
             src="/images/amplifica_logo.png"
             alt="Amplifica"
-            width={28}
-            height={28}
+            width={26}
+            height={26}
             className="rounded-full"
           />
         ) : code === 'packner' ? (
           <Image
             src="/images/logo_packner.png"
             alt="Packner"
-            width={32}
-            height={32}
+            width={30}
+            height={30}
           />
         ) : code === 'mercadolibre' ? (
           <Image
             src="/images/logo_ml.webp"
             alt="MercadoLibre"
-            width={32}
-            height={32}
+            width={30}
+            height={30}
             className="rounded-sm"
           />
         ) : code === 'orinoco' ? (
-          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
-            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-            </svg>
-          </div>
+          <Boxes className={`w-5 h-5 ${isActive ? 'text-white' : 'text-[var(--secondary)]'}`} />
         ) : (
-          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center">
-            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
-            </svg>
-          </div>
+          <ShoppingCart className={`w-5 h-5 ${isActive ? 'text-white' : 'text-[var(--primary)]'}`} />
         )}
       </div>
 
       {/* Warehouse Name */}
       <div className="mb-1.5">
         <h3
-          className={`text-sm font-bold transition-colors truncate ${
-            isActive ? 'text-blue-900' : 'text-gray-900'
+          className={`text-sm font-semibold transition-colors truncate ${
+            isActive ? 'text-[var(--primary-hover)]' : 'text-[var(--foreground)]'
           }`}
         >
           {name.replace('Amplifica - ', '')}
         </h3>
         {location && (
-          <p className="text-xs text-gray-500 mt-0.5 truncate">
-            📍 {location}
+          <p className="text-xs text-[var(--foreground-muted)] mt-0.5 truncate flex items-center gap-1">
+            <MapPin className="w-3 h-3" />
+            {location}
           </p>
         )}
       </div>
@@ -149,20 +151,20 @@ export default function WarehouseCard({
             <div className="flex items-center gap-1">
               <div
                 className={`w-1.5 h-1.5 rounded-full ${
-                  productCount > 0 ? 'bg-green-500' : 'bg-gray-300'
+                  productCount > 0 ? 'bg-[var(--success)]' : 'bg-stone-300'
                 }`}
               />
-              <span className="text-gray-600">{productCount} prod.</span>
+              <span className="text-[var(--foreground-muted)] font-mono">{productCount}</span>
             </div>
           )}
           {stockCount !== undefined && (
             <div className="flex items-center gap-1">
               <div
                 className={`w-1.5 h-1.5 rounded-full ${
-                  stockCount > 0 ? 'bg-blue-500' : 'bg-gray-300'
+                  stockCount > 0 ? 'bg-[var(--secondary)]' : 'bg-stone-300'
                 }`}
               />
-              <span className="text-gray-600">{stockCount.toLocaleString()} un.</span>
+              <span className="text-[var(--foreground-muted)] font-mono">{stockCount.toLocaleString()}</span>
             </div>
           )}
         </div>
@@ -171,31 +173,28 @@ export default function WarehouseCard({
       {/* Expiration Indicators */}
       {expirationSummary && (expirationSummary.expiring_soon_lots > 0 || expirationSummary.expired_lots > 0 || expirationSummary.earliest_expiration) && (
         <div className="mb-2 space-y-1">
-          {/* Expired warning */}
           {expirationSummary.expired_lots > 0 && (
             <div className="flex items-center gap-1 text-xs">
-              <span className="text-red-500">❌</span>
-              <span className="text-red-600 font-medium">
+              <AlertTriangle className="w-3 h-3 text-[var(--danger)]" />
+              <span className="text-[var(--danger)] font-medium">
                 {expirationSummary.expired_lots} vencido{expirationSummary.expired_lots > 1 ? 's' : ''}
               </span>
             </div>
           )}
-          {/* Expiring soon warning */}
           {expirationSummary.expiring_soon_lots > 0 && (
             <div className="flex items-center gap-1 text-xs">
-              <span className="text-amber-500">⏰</span>
-              <span className="text-amber-600 font-medium">
+              <Clock className="w-3 h-3 text-[var(--warning)]" />
+              <span className="text-amber-700 font-medium">
                 {expirationSummary.expiring_soon_lots} por vencer
               </span>
             </div>
           )}
-          {/* Earliest expiration date */}
           {expirationSummary.earliest_expiration && daysToExpiration !== null && (
             <div className="flex items-center gap-1 text-xs">
-              <span className={daysToExpiration < 30 ? 'text-amber-500' : 'text-green-500'}>📅</span>
-              <span className={`${daysToExpiration < 30 ? 'text-amber-600' : 'text-gray-600'}`}>
-                Vence: {formatExpDate(expirationSummary.earliest_expiration)}
-                <span className="text-gray-400 ml-1">({daysToExpiration}d)</span>
+              <Calendar className={`w-3 h-3 ${daysToExpiration < 30 ? 'text-[var(--warning)]' : 'text-[var(--success)]'}`} />
+              <span className={`font-mono ${daysToExpiration < 30 ? 'text-amber-700' : 'text-[var(--foreground-muted)]'}`}>
+                {formatExpDate(expirationSummary.earliest_expiration)}
+                <span className="text-stone-400 ml-1">({daysToExpiration}d)</span>
               </span>
             </div>
           )}
@@ -205,30 +204,31 @@ export default function WarehouseCard({
       {/* Update Method Badge */}
       <div
         className={`
-        inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium
+        inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium
         ${
           updateMethod === 'manual_upload'
             ? isActive
-              ? 'bg-blue-200 text-blue-800'
-              : 'bg-gray-100 text-gray-700'
+              ? 'bg-[var(--primary-light)] text-[var(--primary-hover)]'
+              : 'bg-stone-100 text-stone-600'
             : isActive
-            ? 'bg-green-200 text-green-800'
-            : 'bg-green-50 text-green-700'
+            ? 'bg-[var(--success-light)] text-green-800'
+            : 'bg-emerald-50 text-emerald-700'
         }
       `}
       >
-        <span className="text-xs">{updateMethod === 'manual_upload' ? '📁' : '🔗'}</span>
+        {updateMethod === 'manual_upload' ? (
+          <FileUp className="w-3 h-3" />
+        ) : (
+          <Link2 className="w-3 h-3" />
+        )}
         <span>{updateMethod === 'manual_upload' ? 'Manual' : 'API'}</span>
       </div>
-
-      {/* Hover shine effect */}
-      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0 group-hover:opacity-10 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-all duration-700" />
 
       {/* Bottom accent line */}
       <div
         className={`
-        absolute bottom-0 left-0 right-0 h-1 transition-all duration-300
-        ${isActive ? 'bg-gradient-to-r from-blue-500 to-blue-600' : 'bg-gray-200 group-hover:bg-gray-300'}
+        absolute bottom-0 left-0 right-0 h-1 transition-all duration-200
+        ${isActive ? 'bg-[var(--primary)]' : 'bg-stone-200 group-hover:bg-stone-300'}
       `}
       />
     </button>
