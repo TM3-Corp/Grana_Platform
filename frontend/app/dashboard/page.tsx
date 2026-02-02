@@ -80,28 +80,28 @@ interface DistributionItem {
 }
 
 interface YTDDailyData {
-  day_of_year: number
+  day_of_month: number
   date_previous_year: string | null
   date_current_year: string | null
   cumulative_previous_year: number
   cumulative_current_year: number
   daily_previous_year: number
   daily_current_year: number
-  ytd_difference: number
-  ytd_difference_percent: number
+  mtd_difference: number
+  mtd_difference_percent: number
 }
 
 interface YTDProgressData {
   previous_year: number
   current_year: number
   current_month: number
-  current_day_of_year: number
+  current_day_of_month: number
   current_date: string
   summary: {
-    ytd_previous_year: number
-    ytd_current_year: number
-    ytd_difference: number
-    ytd_difference_percent: number
+    mtd_previous_year: number
+    mtd_current_year: number
+    mtd_difference: number
+    mtd_difference_percent: number
     monthly_goal: number
     distance_to_goal: number
     goal_exceeded: boolean
@@ -622,7 +622,7 @@ function DashboardContent() {
               previousYear={ytdData.previous_year}
               currentYear={ytdData.current_year}
               currentMonth={ytdData.current_month}
-              currentDayOfYear={ytdData.current_day_of_year}
+              currentDayOfMonth={ytdData.current_day_of_month}
               currentDate={ytdData.current_date}
             />
           ) : null}

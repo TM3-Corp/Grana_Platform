@@ -5,22 +5,22 @@ import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, Compos
 import { TrendingUp, Calendar, Target, Trophy } from 'lucide-react'
 
 interface DailyData {
-  day_of_year: number
+  day_of_month: number
   date_previous_year: string | null
   date_current_year: string | null
   cumulative_previous_year: number
   cumulative_current_year: number
   daily_previous_year: number
   daily_current_year: number
-  ytd_difference: number
-  ytd_difference_percent: number
+  mtd_difference: number
+  mtd_difference_percent: number
 }
 
-interface YTDSummary {
-  ytd_previous_year: number
-  ytd_current_year: number
-  ytd_difference: number
-  ytd_difference_percent: number
+interface MTDSummary {
+  mtd_previous_year: number
+  mtd_current_year: number
+  mtd_difference: number
+  mtd_difference_percent: number
   monthly_goal: number
   distance_to_goal: number
   goal_exceeded: boolean
@@ -28,17 +28,17 @@ interface YTDSummary {
 
 interface YTDProgressChartProps {
   dailyData: DailyData[]
-  summary: YTDSummary
+  summary: MTDSummary
   previousYear: number
   currentYear: number
   currentMonth: number
-  currentDayOfYear: number
+  currentDayOfMonth: number
   currentDate: string
   loading?: boolean
 }
 
 // Custom tooltip
-const CustomTooltip = ({ active, payload, previousYear, currentYear }: any) => {
+const CustomTooltip = ({ active, payload, previousYear, currentYear, monthName }: any) => {
   if (!active || !payload || payload.length === 0) return null
 
   const data = payload[0]?.payload
@@ -54,7 +54,7 @@ const CustomTooltip = ({ active, payload, previousYear, currentYear }: any) => {
   return (
     <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-4 min-w-[280px]">
       <p className="font-bold text-gray-900 mb-3 border-b pb-2">
-        Día {data.day_of_year} del año
+        Día {data.day_of_month} de {monthName}
       </p>
 
       <div className="space-y-3">
@@ -63,7 +63,7 @@ const CustomTooltip = ({ active, payload, previousYear, currentYear }: any) => {
           <div className="flex justify-between items-center">
             <span className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full bg-indigo-500"></span>
-              <span className="text-gray-600">{previousYear} YTD:</span>
+              <span className="text-gray-600">{previousYear} MTD:</span>
             </span>
             <span className="font-semibold text-indigo-600">
               {formatCurrency(data.cumulative_previous_year)}
@@ -79,7 +79,7 @@ const CustomTooltip = ({ active, payload, previousYear, currentYear }: any) => {
           <div className="flex justify-between items-center">
             <span className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full bg-teal-600"></span>
-              <span className="text-gray-600">{currentYear} YTD:</span>
+              <span className="text-gray-600">{currentYear} MTD:</span>
             </span>
             <span className="font-semibold text-teal-700">
               {formatCurrency(data.cumulative_current_year)}
@@ -94,13 +94,13 @@ const CustomTooltip = ({ active, payload, previousYear, currentYear }: any) => {
       {/* Difference */}
       <div className="mt-3 pt-3 border-t border-gray-200">
         <div className="flex justify-between items-center">
-          <span className="text-gray-600 font-medium text-sm">Diferencia YTD:</span>
+          <span className="text-gray-600 font-medium text-sm">Diferencia MTD:</span>
           <div className="text-right">
-            <span className={`font-bold ${data.ytd_difference >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {data.ytd_difference >= 0 ? '+' : ''}{data.ytd_difference_percent}%
+            <span className={`font-bold ${data.mtd_difference >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {data.mtd_difference >= 0 ? '+' : ''}{data.mtd_difference_percent}%
             </span>
-            <p className={`text-xs ${data.ytd_difference >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-              {data.ytd_difference >= 0 ? '+' : ''}{formatCurrency(data.ytd_difference)}
+            <p className={`text-xs ${data.mtd_difference >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+              {data.mtd_difference >= 0 ? '+' : ''}{formatCurrency(data.mtd_difference)}
             </p>
           </div>
         </div>
@@ -115,7 +115,7 @@ export default function YTDProgressChart({
   previousYear,
   currentYear,
   currentMonth,
-  currentDayOfYear,
+  currentDayOfMonth,
   currentDate,
   loading
 }: YTDProgressChartProps) {
@@ -123,18 +123,11 @@ export default function YTDProgressChart({
   const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
     'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
   const currentMonthName = monthNames[currentMonth - 1] || ''
-  // Sample data for better performance (every 7 days for weekly view)
+
+  // For MTD chart, show all days of the month (max 31 days)
   const chartData = useMemo(() => {
     if (!dailyData || dailyData.length === 0) return []
-
-    // Show every day if less than 60 days, otherwise sample weekly
-    if (dailyData.length <= 60) {
-      return dailyData
-    }
-
-    // Sample every 7 days + always include the last day
-    const sampled = dailyData.filter((d, i) => i % 7 === 0 || i === dailyData.length - 1)
-    return sampled
+    return dailyData // Show all days for the current month
   }, [dailyData])
 
   // Abbreviated format for chart axis
@@ -161,15 +154,15 @@ export default function YTDProgressChart({
   if (!dailyData || dailyData.length === 0) {
     return (
       <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Progreso YTD</h2>
+        <h2 className="text-xl font-bold text-gray-900 mb-4">Progreso {currentMonthName}</h2>
         <div className="flex items-center justify-center h-64 text-gray-500 text-sm">
-          No hay datos disponibles
+          No hay datos disponibles para {currentMonthName}
         </div>
       </div>
     )
   }
 
-  const isPositive = summary.ytd_difference >= 0
+  const isPositive = summary.mtd_difference >= 0
 
   return (
     <div className="bg-white rounded-2xl shadow-lg border border-gray-200 border-l-4 border-l-emerald-500 p-6">
@@ -180,10 +173,10 @@ export default function YTDProgressChart({
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-100 to-teal-100 flex items-center justify-center">
               <TrendingUp className="w-4 h-4 text-emerald-600" strokeWidth={2} />
             </div>
-            Progreso YTD Acumulado
+            Progreso {currentMonthName} Acumulado
           </h2>
           <p className="text-sm text-gray-500 mt-1 ml-10">
-            Comparación día a día: {previousYear} vs {currentYear}
+            Comparación día a día: {currentMonthName} {previousYear} vs {currentMonthName} {currentYear}
           </p>
         </div>
 
@@ -194,10 +187,10 @@ export default function YTDProgressChart({
           <Calendar className={`w-4 h-4 ${isPositive ? 'text-green-500' : 'text-red-500'}`} strokeWidth={1.75} />
           <div className="text-right">
             <div className={`text-lg font-bold ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
-              {isPositive ? '+' : ''}{summary.ytd_difference_percent}%
+              {isPositive ? '+' : ''}{summary.mtd_difference_percent}%
             </div>
             <div className="text-xs text-gray-500">
-              Día {currentDayOfYear}
+              Día {currentDayOfMonth}
             </div>
           </div>
         </div>
@@ -206,23 +199,23 @@ export default function YTDProgressChart({
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-indigo-50 rounded-xl p-4 border border-indigo-100">
-          <div className="text-xs text-indigo-600 font-medium mb-1">{previousYear} YTD</div>
-          <div className="text-lg font-bold text-indigo-700">{formatCurrencyFull(summary.ytd_previous_year)}</div>
+          <div className="text-xs text-indigo-600 font-medium mb-1">{currentMonthName} {previousYear}</div>
+          <div className="text-lg font-bold text-indigo-700">{formatCurrencyFull(summary.mtd_previous_year)}</div>
         </div>
         <div className="bg-teal-50 rounded-xl p-4 border border-teal-100">
-          <div className="text-xs text-teal-600 font-medium mb-1">{currentYear} YTD</div>
-          <div className="text-lg font-bold text-teal-700">{formatCurrencyFull(summary.ytd_current_year)}</div>
+          <div className="text-xs text-teal-600 font-medium mb-1">{currentMonthName} {currentYear}</div>
+          <div className="text-lg font-bold text-teal-700">{formatCurrencyFull(summary.mtd_current_year)}</div>
         </div>
         <div className={`rounded-xl p-4 border ${isPositive ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'}`}>
-          <div className={`text-xs font-medium mb-1 ${isPositive ? 'text-green-600' : 'text-red-600'}`}>Diferencia YTD</div>
+          <div className={`text-xs font-medium mb-1 ${isPositive ? 'text-green-600' : 'text-red-600'}`}>Diferencia MTD</div>
           <div className={`text-lg font-bold ${isPositive ? 'text-green-700' : 'text-red-700'}`}>
-            {isPositive ? '+' : ''}{formatCurrencyFull(summary.ytd_difference)}
+            {isPositive ? '+' : ''}{formatCurrencyFull(summary.mtd_difference)}
           </div>
         </div>
         {/* Distancia a Meta card with progress fill */}
         {(() => {
           const goalProgress = summary.monthly_goal > 0
-            ? (summary.ytd_current_year / summary.monthly_goal) * 100
+            ? (summary.mtd_current_year / summary.monthly_goal) * 100
             : 0
           const fillPercent = Math.min(goalProgress, 100) // Cap visual fill at 100%
           const displayPercent = Math.round(goalProgress)
@@ -291,15 +284,11 @@ export default function YTDProgressChart({
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
           <XAxis
-            dataKey="day_of_year"
+            dataKey="day_of_month"
             tick={{ fontSize: 11 }}
             stroke="#6B7280"
-            tickFormatter={(day) => {
-              // Convert day of year to month abbreviation
-              const date = new Date(currentYear, 0, day)
-              return date.toLocaleDateString('es-CL', { day: 'numeric', month: 'short' })
-            }}
-            interval={Math.floor(chartData.length / 8)}
+            tickFormatter={(day) => `${day}`}
+            interval={chartData.length > 15 ? Math.floor(chartData.length / 8) : 0}
           />
           <YAxis
             tickFormatter={formatCurrencyShort}
@@ -307,7 +296,7 @@ export default function YTDProgressChart({
             stroke="#6B7280"
             domain={[0, 'auto']}
           />
-          <Tooltip content={<CustomTooltip previousYear={previousYear} currentYear={currentYear} />} />
+          <Tooltip content={<CustomTooltip previousYear={previousYear} currentYear={currentYear} monthName={currentMonthName} />} />
 
           {/* Previous year area */}
           <Area
@@ -316,7 +305,7 @@ export default function YTDProgressChart({
             stroke="#6366F1"
             strokeWidth={2}
             fill="url(#gradientPrevYear)"
-            name={`${previousYear} YTD`}
+            name={`${currentMonthName} ${previousYear}`}
             dot={false}
           />
 
@@ -326,7 +315,7 @@ export default function YTDProgressChart({
             dataKey="cumulative_current_year"
             stroke="#0D9488"
             strokeWidth={3}
-            name={`${currentYear} YTD`}
+            name={`${currentMonthName} ${currentYear}`}
             dot={false}
             activeDot={{ r: 6, fill: '#0D9488', stroke: '#115E59', strokeWidth: 2 }}
           />
@@ -338,12 +327,12 @@ export default function YTDProgressChart({
         <div className="flex flex-wrap items-center justify-center gap-6 text-xs text-gray-600">
           <div className="flex items-center gap-2">
             <div className="w-4 h-2 bg-indigo-500 rounded opacity-60"></div>
-            <span>{previousYear} YTD acumulado</span>
+            <span>{currentMonthName} {previousYear} acumulado</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-4 h-0.5 bg-teal-600"></div>
             <div className="w-2 h-2 rounded-full bg-teal-600 -ml-1"></div>
-            <span>{currentYear} YTD acumulado</span>
+            <span>{currentMonthName} {currentYear} acumulado</span>
           </div>
         </div>
       </div>

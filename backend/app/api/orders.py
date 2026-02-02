@@ -784,13 +784,14 @@ async def get_ytd_progress(
     product_family: Optional[str] = Query(None, description="Filter by product family (BARRAS, CRACKERS, GRANOLAS, KEEPERS)")
 ):
     """
-    Get cumulative Year-To-Date (YTD) progress comparison between current and previous year.
+    Get cumulative Month-To-Date (MTD) progress comparison between current and previous year.
 
-    Returns daily cumulative revenue for:
-    - Previous year (same period as current YTD)
-    - Current year (up to today)
+    Returns daily cumulative revenue for the CURRENT MONTH only:
+    - Previous year same month (e.g., Feb 2025 when current is Feb 2026)
+    - Current year current month (up to today)
 
-    This allows comparing "On day X of the year, last year I had $Y, this year I have $Z"
+    This allows comparing "On day X of the month, last year I had $Y, this year I have $Z"
+    The chart resets each month to show only current month progress.
     """
     conn = None
     cursor = None
@@ -804,7 +805,8 @@ async def get_ytd_progress(
         current_date = datetime.now()
         current_year = current_date.year
         previous_year = current_year - 1
-        day_of_year = current_date.timetuple().tm_yday
+        current_month = current_date.month
+        current_day_of_month = current_date.day
 
         # Build WHERE clause for product family filter
         family_filter = ""
@@ -814,62 +816,63 @@ async def get_ytd_progress(
             family_filter = "AND category = %s"
             params = [product_family.upper()]
 
-        # Query for PREVIOUS YEAR daily cumulative data (same day range as current YTD)
+        # Query for PREVIOUS YEAR same month daily cumulative data (up to same day of month)
         query_prev_year = f"""
             WITH daily_sales AS (
                 SELECT
                     order_date,
-                    EXTRACT(DOY FROM order_date)::int as day_of_year,
+                    EXTRACT(DAY FROM order_date)::int as day_of_month,
                     COALESCE(SUM(revenue), 0) as daily_revenue
                 FROM sales_facts_mv
                 WHERE EXTRACT(YEAR FROM order_date) = %s
-                AND EXTRACT(DOY FROM order_date) <= %s
+                AND EXTRACT(MONTH FROM order_date) = %s
+                AND EXTRACT(DAY FROM order_date) <= %s
                 AND source = 'relbase'
                 {family_filter}
                 GROUP BY order_date
                 ORDER BY order_date
             )
             SELECT
-                day_of_year,
+                day_of_month,
                 order_date,
                 daily_revenue,
                 SUM(daily_revenue) OVER (ORDER BY order_date) as cumulative_revenue
             FROM daily_sales
-            ORDER BY day_of_year
+            ORDER BY day_of_month
         """
 
-        cursor.execute(query_prev_year, [previous_year, day_of_year] + params)
+        cursor.execute(query_prev_year, [previous_year, current_month, current_day_of_month] + params)
         data_prev_year = cursor.fetchall()
 
-        # Query for CURRENT YEAR daily cumulative data
+        # Query for CURRENT YEAR current month daily cumulative data
         query_curr_year = f"""
             WITH daily_sales AS (
                 SELECT
                     order_date,
-                    EXTRACT(DOY FROM order_date)::int as day_of_year,
+                    EXTRACT(DAY FROM order_date)::int as day_of_month,
                     COALESCE(SUM(revenue), 0) as daily_revenue
                 FROM sales_facts_mv
                 WHERE EXTRACT(YEAR FROM order_date) = %s
+                AND EXTRACT(MONTH FROM order_date) = %s
                 AND source = 'relbase'
                 {family_filter}
                 GROUP BY order_date
                 ORDER BY order_date
             )
             SELECT
-                day_of_year,
+                day_of_month,
                 order_date,
                 daily_revenue,
                 SUM(daily_revenue) OVER (ORDER BY order_date) as cumulative_revenue
             FROM daily_sales
-            ORDER BY day_of_year
+            ORDER BY day_of_month
         """
 
-        cursor.execute(query_curr_year, [current_year] + params)
+        cursor.execute(query_curr_year, [current_year, current_month] + params)
         data_curr_year = cursor.fetchall()
 
         # Query for MONTHLY GOAL: Full month revenue from previous year (same month)
-        # e.g., if we're in January 2026, get all of January 2025's revenue
-        current_month = current_date.month
+        # e.g., if we're in February 2026, get all of February 2025's revenue
         query_monthly_goal = f"""
             SELECT COALESCE(SUM(revenue), 0) as monthly_total
             FROM sales_facts_mv
@@ -882,18 +885,14 @@ async def get_ytd_progress(
         monthly_goal_result = cursor.fetchone()
         monthly_goal = float(monthly_goal_result['monthly_total']) if monthly_goal_result else 0
 
-        # Create lookup by day_of_year for easy comparison
-        prev_year_by_day = {row['day_of_year']: row for row in data_prev_year}
-        curr_year_by_day = {row['day_of_year']: row for row in data_curr_year}
+        # Create lookup by day_of_month for easy comparison
+        prev_year_by_day = {row['day_of_month']: row for row in data_prev_year}
+        curr_year_by_day = {row['day_of_month']: row for row in data_curr_year}
 
-        # Build combined daily data
+        # Build combined daily data for the month
         daily_data = []
-        # Always include up to current day, even if there are no sales on that day
-        max_day_from_data = max(
-            max([d['day_of_year'] for d in data_prev_year]) if data_prev_year else 0,
-            max([d['day_of_year'] for d in data_curr_year]) if data_curr_year else 0
-        )
-        max_day = max(max_day_from_data, day_of_year)  # Ensure we include today
+        # Include up to current day of month
+        max_day = current_day_of_month
 
         # Track running totals for days without sales
         prev_cumulative = 0
@@ -908,20 +907,20 @@ async def get_ytd_progress(
             if curr_data:
                 curr_cumulative = float(curr_data['cumulative_revenue'])
 
-            # Calculate YoY difference
-            ytd_diff = curr_cumulative - prev_cumulative if prev_cumulative > 0 else 0
-            ytd_diff_percent = ((curr_cumulative - prev_cumulative) / prev_cumulative * 100) if prev_cumulative > 0 else 0
+            # Calculate MoM (Month over Month) difference
+            mtd_diff = curr_cumulative - prev_cumulative if prev_cumulative > 0 else curr_cumulative
+            mtd_diff_percent = ((curr_cumulative - prev_cumulative) / prev_cumulative * 100) if prev_cumulative > 0 else 0
 
             daily_data.append({
-                'day_of_year': day,
+                'day_of_month': day,
                 'date_previous_year': prev_data['order_date'].isoformat() if prev_data else None,
                 'date_current_year': curr_data['order_date'].isoformat() if curr_data else None,
                 'cumulative_previous_year': prev_cumulative,
                 'cumulative_current_year': curr_cumulative,
                 'daily_previous_year': float(prev_data['daily_revenue']) if prev_data else 0,
                 'daily_current_year': float(curr_data['daily_revenue']) if curr_data else 0,
-                'ytd_difference': ytd_diff,
-                'ytd_difference_percent': round(ytd_diff_percent, 1)
+                'mtd_difference': mtd_diff,
+                'mtd_difference_percent': round(mtd_diff_percent, 1)
             })
 
         # Calculate summary stats
@@ -931,8 +930,8 @@ async def get_ytd_progress(
         total_diff_percent = ((final_curr - final_prev) / final_prev * 100) if final_prev > 0 else 0
 
         # Calculate distance to goal
-        # Goal = Previous year's full month revenue (e.g., all of January 2025)
-        # Distance = Goal - Current YTD (positive means still need to reach, negative means exceeded)
+        # Goal = Previous year's full month revenue (e.g., all of February 2025)
+        # Distance = Goal - Current MTD (positive means still need to reach, negative means exceeded)
         distance_to_goal = monthly_goal - final_curr
         goal_exceeded = final_curr >= monthly_goal
 
@@ -941,13 +940,13 @@ async def get_ytd_progress(
             "previous_year": previous_year,
             "current_year": current_year,
             "current_month": current_month,
-            "current_day_of_year": day_of_year,
+            "current_day_of_month": current_day_of_month,
             "current_date": current_date.strftime('%Y-%m-%d'),
             "summary": {
-                "ytd_previous_year": final_prev,
-                "ytd_current_year": final_curr,
-                "ytd_difference": total_diff,
-                "ytd_difference_percent": round(total_diff_percent, 1),
+                "mtd_previous_year": final_prev,
+                "mtd_current_year": final_curr,
+                "mtd_difference": total_diff,
+                "mtd_difference_percent": round(total_diff_percent, 1),
                 "monthly_goal": monthly_goal,
                 "distance_to_goal": abs(distance_to_goal),
                 "goal_exceeded": goal_exceeded
