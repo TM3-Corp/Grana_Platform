@@ -115,12 +115,13 @@ async def get_warehouses():
             ORDER BY
                 CASE
                     WHEN code LIKE 'amplifica%' THEN 1
-                    WHEN code = 'packner' THEN 2
-                    WHEN code = 'orinoco' THEN 3
-                    WHEN code LIKE 'mercado%' THEN 4
-                    WHEN code = 'mi_bodega' THEN 5
-                    WHEN code LIKE 'produccion%' THEN 6
-                    ELSE 7
+                    WHEN code ILIKE '%klog%' THEN 2
+                    WHEN code = 'packner' THEN 3
+                    WHEN code = 'orinoco' THEN 4
+                    WHEN code LIKE 'mercado%' THEN 5
+                    WHEN code = 'mi_bodega' THEN 6
+                    WHEN code LIKE 'produccion%' THEN 7
+                    ELSE 8
                 END,
                 name
         """)

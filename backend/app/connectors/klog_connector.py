@@ -307,6 +307,39 @@ class KLOGConnector:
             payload=payload
         )
 
+    async def get_all_active_inventory(self, sitio: str = None) -> Dict:
+        """
+        Get ALL inventory with stock > 0 from KLOG.
+
+        This is the preferred method for syncing. Instead of querying specific
+        SKUs (which may not exist in KLOG), we let KLOG tell us what inventory
+        it has. This eliminates:
+        - Batch size limits (no need for batching)
+        - Failed SKUs (only returns what exists)
+        - Guessing which SKUs are in KLOG
+
+        According to INVAS API docs (line 3167-3170):
+        "Si solo se quieren obtener los registros de SKU con Inventario > 0
+        unidades, se puede consultar la misma URL añadiendo la palabra
+        'Activo' al final de la URL, con el mismo request."
+
+        Args:
+            sitio: Optional site filter (e.g., "KW BOD 7 LAMPA")
+
+        Returns:
+            Dict with:
+            - listainvsku: All inventory items with stock > 0
+            - registros: Total count
+            - page: Pagination info
+
+        Example:
+            result = await connector.get_all_active_inventory()
+            for item in result['listainvsku']:
+                print(f"{item['sku']}: {item['totalDisponible']} disponible")
+        """
+        # Empty listasku = return ALL SKUs with inventory > 0
+        return await self.get_active_inventory(sku_list=[], sitio=sitio)
+
     async def get_inventory_for_skus(
         self,
         skus: list[str],
@@ -315,6 +348,9 @@ class KLOGConnector:
     ) -> Dict:
         """
         Get inventory for a list of SKUs, handling batch limits and errors.
+
+        NOTE: Prefer get_all_active_inventory() for syncing. This method is
+        useful when you need inventory for specific SKUs only.
 
         This method:
         1. Splits SKUs into batches of 6 (API limit)

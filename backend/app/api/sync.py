@@ -208,6 +208,7 @@ async def sync_inventory():
             relbase_warehouses_synced=result.relbase_warehouses_synced,
             relbase_products_updated=result.relbase_products_updated,
             mercadolibre_products_updated=result.mercadolibre_products_updated,
+            klog_products_updated=result.klog_products_updated,
             errors=result.errors,
             duration_seconds=result.duration_seconds
         )
@@ -281,6 +282,7 @@ async def sync_all(
             relbase_warehouses_synced=inventory_result.relbase_warehouses_synced,
             relbase_products_updated=inventory_result.relbase_products_updated,
             mercadolibre_products_updated=inventory_result.mercadolibre_products_updated,
+            klog_products_updated=inventory_result.klog_products_updated,
             errors=inventory_result.errors,
             duration_seconds=inventory_result.duration_seconds
         )
