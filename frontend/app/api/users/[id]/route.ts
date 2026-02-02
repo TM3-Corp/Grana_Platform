@@ -118,8 +118,13 @@ export async function DELETE(
       headers,
     });
 
+    // 204 No Content - return empty response (can't have body)
+    if (response.status === 204) {
+      return new NextResponse(null, { status: 204 });
+    }
+
     const data = await safeJsonParse(response);
-    return NextResponse.json(data || { success: true }, { status: response.status });
+    return NextResponse.json(data || { detail: 'Delete failed' }, { status: response.status });
   } catch (error) {
     console.error('Error deleting user:', error);
     return NextResponse.json({ detail: 'Failed to delete user' }, { status: 500 });

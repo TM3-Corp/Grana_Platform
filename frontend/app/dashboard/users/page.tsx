@@ -77,6 +77,7 @@ export default function UsersPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isResetPasswordModalOpen, setIsResetPasswordModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
 
   // Form states
@@ -274,6 +275,41 @@ export default function UsersPage() {
     }
   };
 
+  // Delete user
+  const handleDelete = async () => {
+    if (!editingUser) return;
+
+    setFormLoading(true);
+    try {
+      const response = await fetch(`/api/users/${editingUser.id}`, {
+        method: 'DELETE',
+      });
+
+      // 204 No Content is success for DELETE
+      if (!response.ok && response.status !== 204) {
+        const data = await response.json();
+        throw new Error(data.detail || 'Error al eliminar usuario');
+      }
+
+      setIsDeleteModalOpen(false);
+      setEditingUser(null);
+      setSuccessMessage('Usuario eliminado exitosamente');
+      setTimeout(() => setSuccessMessage(null), 3000);
+      fetchUsers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error desconocido');
+      setTimeout(() => setError(null), 3000);
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  // Open delete confirmation modal
+  const openDeleteModal = (user: User) => {
+    setEditingUser(user);
+    setIsDeleteModalOpen(true);
+  };
+
   // Open edit modal
   const openEditModal = (user: User) => {
     setEditingUser(user);
@@ -433,25 +469,36 @@ export default function UsersPage() {
                               Resetear
                             </button>
                             {user.id.toString() !== currentUserId && (
-                              <button
-                                onClick={() => handleToggleActive(user)}
-                                className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md border transition-colors ${
-                                  user.is_active
-                                    ? 'border-red-300 text-red-700 bg-red-50 hover:bg-red-100'
-                                    : 'border-green-300 text-green-700 bg-green-50 hover:bg-green-100'
-                                }`}
-                              >
-                                {user.is_active ? (
+                              <>
+                                <button
+                                  onClick={() => handleToggleActive(user)}
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md border transition-colors ${
+                                    user.is_active
+                                      ? 'border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100'
+                                      : 'border-green-300 text-green-700 bg-green-50 hover:bg-green-100'
+                                  }`}
+                                >
+                                  {user.is_active ? (
+                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                    </svg>
+                                  ) : (
+                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                  )}
+                                  {user.is_active ? 'Desactivar' : 'Activar'}
+                                </button>
+                                <button
+                                  onClick={() => openDeleteModal(user)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md border border-red-300 text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
+                                >
                                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                   </svg>
-                                ) : (
-                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                  </svg>
-                                )}
-                                {user.is_active ? 'Desactivar' : 'Activar'}
-                              </button>
+                                  Eliminar
+                                </button>
+                              </>
                             )}
                           </div>
                         </td>
@@ -716,6 +763,62 @@ export default function UsersPage() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setEditingUser(null);
+        }}
+        title="Eliminar Usuario"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+            <svg className="w-6 h-6 text-red-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <div>
+              <p className="text-sm font-medium text-red-800">
+                ¿Estás seguro de eliminar este usuario?
+              </p>
+              <p className="text-sm text-red-600 mt-1">
+                Usuario: <strong>{editingUser?.email}</strong>
+              </p>
+            </div>
+          </div>
+          <p className="text-sm text-gray-600">
+            Esta acción eliminará permanentemente al usuario del sistema. Esta acción no se puede deshacer.
+          </p>
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setIsDeleteModalOpen(false);
+                setEditingUser(null);
+              }}
+              className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={formLoading}
+              className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+            >
+              {formLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  Eliminando...
+                </>
+              ) : (
+                'Eliminar Usuario'
+              )}
+            </button>
+          </div>
+        </div>
       </Modal>
     </>
   );

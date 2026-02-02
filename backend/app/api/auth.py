@@ -261,7 +261,7 @@ async def delete_user(
     user_id: int,
     current_user: TokenUser = Depends(require_admin)
 ):
-    """Delete a user (admin only) - soft delete by setting is_active=false"""
+    """Delete a user (admin only) - permanently removes user from database"""
     # Prevent self-deletion
     if str(user_id) == current_user.id:
         raise HTTPException(
@@ -272,7 +272,7 @@ async def delete_user(
     conn, cursor = get_db_cursor()
     try:
         cursor.execute("""
-            UPDATE users SET is_active = FALSE, updated_at = NOW()
+            DELETE FROM users
             WHERE id = %s
             RETURNING id
         """, (user_id,))
