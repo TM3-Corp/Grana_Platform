@@ -24,12 +24,10 @@ interface ClientAnalysis {
   order_count: number;
   orders_without_channel: number;
   total_revenue: number;
-  // Override rule info (if exists)
-  rule_id: number | null;
+  // Override rule info (if exists) - identified by override_channel_id
   override_channel: string | null;
   override_channel_id: number | null;
   rule_reason: string | null;
-  rule_active: boolean | null;
 }
 
 interface AnalysisStats {
@@ -237,6 +235,13 @@ export default function ChannelMappingsPage() {
 
       if (data.status === 'success') {
         setIsModalOpen(false);
+
+        // Show success message with historical orders info
+        const historicalOrders = data.historical_orders_updated || 0;
+        if (historicalOrders > 0) {
+          alert(`Canal asignado exitosamente.\n\n${historicalOrders} orden(es) historica(s) actualizada(s) con el nuevo canal.`);
+        }
+
         // Refresh data
         const params = new URLSearchParams();
         if (debouncedSearch) params.append('search', debouncedSearch);
@@ -264,11 +269,11 @@ export default function ChannelMappingsPage() {
 
   // Delete rule
   const handleDeleteRule = async (client: ClientAnalysis) => {
-    if (!client.rule_id) return;
+    if (!client.override_channel_id) return;
     if (!confirm('Eliminar esta regla de override?')) return;
 
     try {
-      const response = await fetch(`${API_URL}/api/v1/channel-mappings/${client.rule_id}?hard_delete=true`, {
+      const response = await fetch(`${API_URL}/api/v1/channel-mappings/customer/${client.customer_external_id}?hard_delete=true`, {
         method: 'DELETE'
       });
       const data = await response.json();
@@ -427,7 +432,7 @@ export default function ChannelMappingsPage() {
                   {clients.map(client => {
                     const hasMultipleChannels = client.channel_count > 1;
                     const hasOrdersWithoutChannel = client.orders_without_channel > 0;
-                    const hasRule = client.rule_id !== null;
+                    const hasRule = client.override_channel_id !== null;
 
                     // Unmapped (orders without channel) = red, Multiple channels = orange
                     const rowBgClass = hasOrdersWithoutChannel && !hasRule
@@ -561,7 +566,7 @@ export default function ChannelMappingsPage() {
             <div className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
               <div className="p-6">
                 <h2 className="text-xl font-bold mb-2">
-                  {selectedClient.rule_id ? 'Editar Regla Override' : 'Crear Regla Override'}
+                  {selectedClient.override_channel_id ? 'Editar Regla Override' : 'Crear Regla Override'}
                 </h2>
                 <p className="text-gray-600 text-sm mb-4">
                   Cliente: <strong>{selectedClient.customer_name}</strong>

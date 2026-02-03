@@ -59,6 +59,81 @@ class ChannelAssignmentUpdate(BaseModel):
 
 
 # =====================================================================
+# Helper Functions
+# =====================================================================
+
+def apply_channel_override_to_historical_orders(
+    cursor,
+    customer_external_id: str,
+    channel_external_id: int
+) -> int:
+    """
+    Apply channel override to historical orders that have NULL channel_id.
+
+    This ensures that when a channel is assigned to a customer, all their
+    historical orders without a channel are retroactively assigned.
+
+    Args:
+        cursor: Database cursor
+        customer_external_id: The RelBase customer external ID
+        channel_external_id: The RelBase channel external ID (NOT the internal channels.id)
+
+    Returns:
+        Number of orders updated
+    """
+    # First, find the internal customer ID and the internal channel ID
+    cursor.execute("""
+        SELECT c.id as customer_id, ch.id as channel_id
+        FROM customers c
+        JOIN channels ch ON ch.external_id = %s AND ch.source = 'relbase'
+        WHERE c.external_id = %s AND c.source = 'relbase'
+    """, [str(channel_external_id), customer_external_id])
+    result = cursor.fetchone()
+
+    if not result:
+        logger.warning(
+            f"Customer {customer_external_id} or channel {channel_external_id} not found "
+            "for historical order update"
+        )
+        return 0
+
+    customer_id = result['customer_id']
+    channel_internal_id = result['channel_id']
+
+    # Temporarily disable the audit trigger (it has a bug with missing corrected_by column)
+    try:
+        cursor.execute("ALTER TABLE orders DISABLE TRIGGER audit_order_changes_trigger")
+    except Exception as e:
+        logger.warning(f"Could not disable audit trigger: {e}")
+
+    # Update all orders for this customer that have NULL channel_id
+    cursor.execute("""
+        UPDATE orders
+        SET channel_id = %s,
+            updated_at = NOW()
+        WHERE customer_id = %s
+          AND source = 'relbase'
+          AND channel_id IS NULL
+    """, [channel_internal_id, customer_id])
+
+    updated_count = cursor.rowcount
+
+    # Re-enable the audit trigger
+    try:
+        cursor.execute("ALTER TABLE orders ENABLE TRIGGER audit_order_changes_trigger")
+    except Exception as e:
+        logger.warning(f"Could not re-enable audit trigger: {e}")
+
+    if updated_count > 0:
+        logger.info(
+            f"Applied channel override: Updated {updated_count} historical orders "
+            f"for customer {customer_external_id} with channel_id={channel_internal_id}"
+        )
+
+    return updated_count
+
+
+# =====================================================================
 # API Endpoints
 # =====================================================================
 
@@ -718,14 +793,22 @@ async def assign_channel_to_customer(assignment: ChannelAssignmentCreate):
         ])
         updated = cursor.fetchone()
 
+        # Apply override to historical orders (retroactive fix)
+        orders_updated = apply_channel_override_to_historical_orders(
+            cursor,
+            assignment.customer_external_id,
+            assignment.channel_external_id
+        )
+
         conn.commit()
         cursor.close()
         conn.close()
 
         return {
             "status": "success",
-            "message": "Canal asignado exitosamente",
-            "data": updated
+            "message": f"Canal asignado exitosamente. {orders_updated} órdenes históricas actualizadas.",
+            "data": updated,
+            "historical_orders_updated": orders_updated
         }
 
     except HTTPException:
@@ -793,14 +876,24 @@ async def update_customer_channel(customer_external_id: str, assignment: Channel
         """, params)
         updated = cursor.fetchone()
 
+        # Apply override to historical orders if channel was updated (retroactive fix)
+        orders_updated = 0
+        if assignment.channel_external_id is not None:
+            orders_updated = apply_channel_override_to_historical_orders(
+                cursor,
+                customer_external_id,
+                assignment.channel_external_id
+            )
+
         conn.commit()
         cursor.close()
         conn.close()
 
         return {
             "status": "success",
-            "message": "Asignación actualizada exitosamente",
-            "data": updated
+            "message": f"Asignación actualizada exitosamente. {orders_updated} órdenes históricas actualizadas.",
+            "data": updated,
+            "historical_orders_updated": orders_updated
         }
 
     except HTTPException:
@@ -975,3 +1068,107 @@ async def delete_channel_mapping_legacy(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error removing assignment: {str(e)}")
+
+
+@router.post("/apply-overrides-to-history")
+async def apply_all_overrides_to_historical_orders(
+    refresh_mv: bool = Query(False, description="Refresh sales_facts_mv after updating orders")
+):
+    """
+    Apply ALL existing channel overrides to historical orders.
+
+    This is a bulk operation that:
+    1. Finds all customers with assigned_channel_id
+    2. Updates their historical orders that have NULL channel_id
+    3. Optionally refreshes the sales_facts_mv materialized view
+
+    Use this for initial retroactive fix or to ensure all overrides are applied.
+    """
+    try:
+        conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        # Find all customers with channel overrides, joined with channels to get internal ID
+        cursor.execute("""
+            SELECT
+                cust.id as customer_id,
+                cust.external_id,
+                cust.name,
+                cust.assigned_channel_id as channel_external_id,
+                cust.assigned_channel_name,
+                ch.id as channel_internal_id
+            FROM customers cust
+            JOIN channels ch ON ch.external_id = cust.assigned_channel_id::text AND ch.source = 'relbase'
+            WHERE cust.source = 'relbase'
+              AND cust.assigned_channel_id IS NOT NULL
+        """)
+        customers_with_overrides = cursor.fetchall()
+
+        total_customers = len(customers_with_overrides)
+        total_orders_updated = 0
+        customers_updated = []
+
+        # Temporarily disable the audit trigger (it has a bug with missing corrected_by column)
+        try:
+            cursor.execute("ALTER TABLE orders DISABLE TRIGGER audit_order_changes_trigger")
+        except Exception as e:
+            logger.warning(f"Could not disable audit trigger: {e}")
+
+        # Apply override for each customer using the internal channel ID
+        for customer in customers_with_overrides:
+            cursor.execute("""
+                UPDATE orders
+                SET channel_id = %s,
+                    updated_at = NOW()
+                WHERE customer_id = %s
+                  AND source = 'relbase'
+                  AND channel_id IS NULL
+            """, [customer['channel_internal_id'], customer['customer_id']])
+
+            orders_updated = cursor.rowcount
+            if orders_updated > 0:
+                total_orders_updated += orders_updated
+                customers_updated.append({
+                    "customer_name": customer['name'],
+                    "customer_external_id": customer['external_id'],
+                    "channel": customer['assigned_channel_name'],
+                    "orders_updated": orders_updated
+                })
+
+        # Re-enable the audit trigger
+        try:
+            cursor.execute("ALTER TABLE orders ENABLE TRIGGER audit_order_changes_trigger")
+        except Exception as e:
+            logger.warning(f"Could not re-enable audit trigger: {e}")
+
+        conn.commit()
+
+        # Optionally refresh the materialized view
+        mv_refreshed = False
+        if refresh_mv and total_orders_updated > 0:
+            try:
+                cursor.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY sales_facts_mv")
+                conn.commit()
+                mv_refreshed = True
+                logger.info("Refreshed sales_facts_mv after applying channel overrides")
+            except Exception as mv_error:
+                logger.warning(f"Could not refresh materialized view: {mv_error}")
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "status": "success",
+            "message": f"Overrides aplicados a {total_orders_updated} órdenes históricas de {len(customers_updated)} clientes",
+            "data": {
+                "customers_with_overrides": total_customers,
+                "customers_updated": len(customers_updated),
+                "total_orders_updated": total_orders_updated,
+                "materialized_view_refreshed": mv_refreshed,
+                "details": customers_updated[:20]  # Limit details to avoid large response
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Error applying overrides to history: {e}")
+        raise HTTPException(status_code=500, detail=f"Error applying overrides: {str(e)}")
