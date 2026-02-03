@@ -68,10 +68,11 @@ def apply_channel_override_to_historical_orders(
     channel_external_id: int
 ) -> int:
     """
-    Apply channel override to historical orders that have NULL channel_id.
+    Apply channel override to ALL historical orders for a customer.
 
-    This ensures that when a channel is assigned to a customer, all their
-    historical orders without a channel are retroactively assigned.
+    This ensures that when a channel is assigned to a customer, ALL their
+    historical orders are corrected to use the assigned channel - both orders
+    with NULL channel and orders with wrong channels.
 
     Args:
         cursor: Database cursor
@@ -106,15 +107,16 @@ def apply_channel_override_to_historical_orders(
     except Exception as e:
         logger.warning(f"Could not disable audit trigger: {e}")
 
-    # Update all orders for this customer that have NULL channel_id
+    # Update ALL orders for this customer that don't have the correct channel
+    # This fixes both NULL channels AND wrong channels
     cursor.execute("""
         UPDATE orders
         SET channel_id = %s,
             updated_at = NOW()
         WHERE customer_id = %s
           AND source = 'relbase'
-          AND channel_id IS NULL
-    """, [channel_internal_id, customer_id])
+          AND (channel_id IS NULL OR channel_id != %s)
+    """, [channel_internal_id, customer_id, channel_internal_id])
 
     updated_count = cursor.rowcount
 
@@ -126,8 +128,8 @@ def apply_channel_override_to_historical_orders(
 
     if updated_count > 0:
         logger.info(
-            f"Applied channel override: Updated {updated_count} historical orders "
-            f"for customer {customer_external_id} with channel_id={channel_internal_id}"
+            f"Applied channel override: Corrected {updated_count} historical orders "
+            f"for customer {customer_external_id} to channel_id={channel_internal_id}"
         )
 
     return updated_count
@@ -1115,6 +1117,7 @@ async def apply_all_overrides_to_historical_orders(
             logger.warning(f"Could not disable audit trigger: {e}")
 
         # Apply override for each customer using the internal channel ID
+        # Updates ALL orders that don't have the correct channel (NULL or wrong)
         for customer in customers_with_overrides:
             cursor.execute("""
                 UPDATE orders
@@ -1122,8 +1125,8 @@ async def apply_all_overrides_to_historical_orders(
                     updated_at = NOW()
                 WHERE customer_id = %s
                   AND source = 'relbase'
-                  AND channel_id IS NULL
-            """, [customer['channel_internal_id'], customer['customer_id']])
+                  AND (channel_id IS NULL OR channel_id != %s)
+            """, [customer['channel_internal_id'], customer['customer_id'], customer['channel_internal_id']])
 
             orders_updated = cursor.rowcount
             if orders_updated > 0:
