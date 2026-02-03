@@ -24,6 +24,7 @@ backend/
 │   │   └── product_mapping_service.py
 │   │
 │   ├── connectors/           # External API Clients
+│   │   ├── klog_connector.py       # KLOG/INVAS warehouse API
 │   │   ├── mercadolibre_connector.py
 │   │   └── shopify_connector.py
 │   │
@@ -243,6 +244,47 @@ This backend follows **layered architecture**:
 - ✅ **Separation of Concerns**: API ≠ Business Logic ≠ Data Access
 - ✅ **Type Safety**: Type hints everywhere
 - ✅ **Documentation**: Docstrings in all public functions
+
+## 🔌 External API Connectors
+
+### KLOG/INVAS (Warehouse Management)
+
+KLOG is Grana's 3PL warehouse system. The connector (`app/connectors/klog_connector.py`) provides:
+
+**Authentication:** Dual auth - Bearer token in headers + credentials in request body.
+
+**Key Endpoints:**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| Summary | `consultaInventarioSkuActivo` | Aggregate inventory by SKU |
+| Lot-level | `consultaWmsCajaAlmacenadasWS` | Box-level with lot/expiration |
+
+**Lot/Expiration API (added 2026-02-03):**
+
+```python
+from app.connectors.klog_connector import KLOGConnector
+
+connector = KLOGConnector()
+
+# Get lot-level inventory with expiration dates
+lots = await connector.get_inventory_with_lots(empresa="GRANA")
+
+# Get inventory expiring within 90 days (FEFO alerts)
+expiring = await connector.get_expiring_inventory(days_threshold=90)
+```
+
+**Response fields:** `lote` (lot number), `fechaVencimiento` (expiration date), `unidadesDisponibles` (available units)
+
+**Site code:** `"KW BOD 7 LAMPA"` (not `"1KW BOD 7 LAMPA"`)
+
+### MercadoLibre
+
+OAuth-based marketplace API. See `app/connectors/mercadolibre_connector.py`.
+
+### Shopify
+
+GraphQL API for e-commerce. See `app/connectors/shopify_connector.py`.
 
 ## 🐛 Troubleshooting
 
