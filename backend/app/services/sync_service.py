@@ -1399,23 +1399,23 @@ class SyncService:
                 logger.error(f"ML sync error: {e}")
 
             # ================================================================
-            # Phase 4: Sync Stock from KLOG API (Direct)
+            # Phase 4: Sync Stock from KLOG API (Direct) with Lot/Expiration
             # ================================================================
             # POKA-YOKE: KLOG warehouse is excluded from RelBase sync (Phase 2)
             # to prevent duplicate/conflicting data. This phase syncs directly
             # from KLOG API which provides real-time inventory data.
             #
+            # LOT-LEVEL SYNC (updated 2026-02-03):
+            # - Uses consultaWmsCajaAlmacenadasWS endpoint for box-level data
+            # - Captures lot numbers (lote) and expiration dates (fechaVencimiento)
+            # - Enables FEFO (First Expired, First Out) picking
+            #
             # CONVERSION LOGIC:
-            # - Query ALL SKUs from product_catalog (both sku and sku_master)
             # - Master box SKUs (sku_master) are converted to display units (sku)
             #   using units_per_master_box conversion factor
             # - Example: BACM_C02810 (master) × 28 = BACM_U20010 (display x5)
-            #
-            # KLOG API Quirks (handled by KLOGConnector):
-            # - Max 6 SKUs per batch (more = silent failure)
-            # - Invalid SKUs kill entire batch (retry individually)
             # ================================================================
-            logger.info("Phase 4: Syncing stock from KLOG API (direct)...")
+            logger.info("Phase 4: Syncing stock from KLOG API (lot-level)...")
 
             try:
                 from app.connectors.klog_connector import KLOGConnector
@@ -1431,8 +1431,6 @@ class SyncService:
                     klog_connector = KLOGConnector(klog_usuario, klog_password)
 
                     # Get KLOG warehouse from DB
-                    # NOTE: Use ILIKE pattern because warehouse code is sanitized from RelBase name
-                    # (e.g., "KLOG Bodega 7 Lampa" -> "klog_bodega__lampa")
                     cursor.execute("""
                         SELECT id, code FROM warehouses
                         WHERE (code ILIKE '%klog%' OR name ILIKE '%klog%')
@@ -1442,7 +1440,7 @@ class SyncService:
                     klog_warehouse_result = cursor.fetchone()
 
                     if not klog_warehouse_result:
-                        logger.warning("KLOG warehouse not found in database (searched code/name containing 'klog') - skipping KLOG sync")
+                        logger.warning("KLOG warehouse not found in database - skipping KLOG sync")
                         errors.append("KLOG warehouse not found in database")
                     else:
                         klog_warehouse_id = klog_warehouse_result[0]
@@ -1452,7 +1450,6 @@ class SyncService:
                         # --------------------------------------------------------
                         # Step 1: Build SKU mappings from product_catalog
                         # --------------------------------------------------------
-                        # Get all base SKUs (display products)
                         cursor.execute("""
                             SELECT DISTINCT sku FROM product_catalog
                             WHERE sku IS NOT NULL
@@ -1466,104 +1463,98 @@ class SyncService:
                             WHERE sku_master IS NOT NULL AND units_per_master_box IS NOT NULL
                         """)
                         master_to_base = {}
-                        master_skus = set()
                         for sku_master, sku, units in cursor.fetchall():
                             master_to_base[sku_master] = (sku, units)
-                            master_skus.add(sku_master)
 
-                        # All SKUs to query from KLOG
-                        all_catalog_skus = list(base_skus | master_skus)
-                        logger.info(f"Querying KLOG for {len(all_catalog_skus)} SKUs ({len(base_skus)} base + {len(master_skus)} master)")
-
-                        # Get product_id mapping for base SKUs from products table
-                        # Include both 'relbase' (from sales) and 'CATALOG' (manually added) sources
+                        # Get product_id mapping for base SKUs
                         cursor.execute("""
                             SELECT sku, id FROM products
                             WHERE source IN ('relbase', 'CATALOG')
                         """)
                         sku_to_product_id = {r[0]: r[1] for r in cursor.fetchall()}
 
-                        # Record sync start time for KLOG stale deletion
-                        # IMPORTANT: Use utcnow() to match PostgreSQL's UTC timezone
+                        # Record sync start time for stale deletion
                         klog_sync_start = datetime.utcnow()
 
                         # --------------------------------------------------------
-                        # Step 2: Fetch inventory from KLOG API
+                        # Step 2: Fetch LOT-LEVEL inventory from KLOG API
                         # --------------------------------------------------------
-                        klog_result = await klog_connector.get_inventory_for_skus(all_catalog_skus)
+                        lot_inventory = await klog_connector.get_inventory_with_lots(
+                            empresa="GRANA",
+                            include_zero_stock=False
+                        )
 
-                        klog_items = klog_result.get('listainvsku', [])
-                        failed_skus = klog_result.get('failed_skus', [])
-
-                        logger.info(f"KLOG returned {len(klog_items)} inventory records, {len(failed_skus)} SKUs not in KLOG")
+                        logger.info(f"KLOG returned {len(lot_inventory)} lot records")
 
                         # --------------------------------------------------------
-                        # Step 3: Convert and aggregate inventory
+                        # Step 3: Convert and store lot-level inventory
                         # --------------------------------------------------------
-                        # Aggregate inventory by base SKU (display product)
-                        aggregated_inventory = {}  # base_sku -> total_units
+                        # Key: (base_sku, lot_number, expiration_date) -> quantity
+                        lot_aggregated = {}
 
-                        for item in klog_items:
-                            sku = item.get('sku')
-                            # KLOG API returns 'totalDisponible' (available) not 'totalInv'
-                            stock = float(item.get('totalDisponible', 0))
+                        for lot_record in lot_inventory:
+                            sku = lot_record.get('sku')
+                            lot_number = lot_record.get('lot_number')
+                            exp_date = lot_record.get('expiration_date')
+                            units = float(lot_record.get('total_units', 0))
 
+                            if units <= 0:
+                                continue
+
+                            # Convert master box to base units
                             if sku in master_to_base:
-                                # Master box SKU - convert to base units
                                 base_sku, units_per_box = master_to_base[sku]
-                                converted_units = stock * units_per_box
-                                aggregated_inventory[base_sku] = aggregated_inventory.get(base_sku, 0) + converted_units
-                                logger.debug(f"KLOG: {sku} (master) × {units_per_box} = {converted_units:.0f} → {base_sku}")
+                                converted_units = units * units_per_box
+                                key = (base_sku, lot_number, exp_date)
+                                lot_aggregated[key] = lot_aggregated.get(key, 0) + converted_units
                             elif sku in base_skus:
-                                # Base SKU - add directly
-                                aggregated_inventory[sku] = aggregated_inventory.get(sku, 0) + stock
-                            # else: SKU not in product_catalog, skip
+                                key = (sku, lot_number, exp_date)
+                                lot_aggregated[key] = lot_aggregated.get(key, 0) + units
 
-                        logger.info(f"KLOG aggregated to {len(aggregated_inventory)} base SKUs")
-
-                        # Log top inventory items
-                        top_items = sorted(aggregated_inventory.items(), key=lambda x: -x[1])[:5]
-                        for sku, qty in top_items:
-                            logger.info(f"KLOG top: {sku} = {qty:.0f} units")
+                        logger.info(f"KLOG aggregated to {len(lot_aggregated)} (sku, lot, exp) combinations")
 
                         # --------------------------------------------------------
-                        # Step 4: Upsert aggregated inventory to warehouse_stock
-                        # KLOG API is the source of truth for KLOG warehouse
+                        # Step 4: Upsert lot-level inventory to warehouse_stock
                         # --------------------------------------------------------
-                        unmapped_skus = []
-                        for base_sku, quantity in aggregated_inventory.items():
+                        unmapped_skus = set()
+                        for (base_sku, lot_number, exp_date), quantity in lot_aggregated.items():
                             product_id = sku_to_product_id.get(base_sku)
 
                             if not product_id:
-                                # Base SKU not in products table
-                                unmapped_skus.append(base_sku)
+                                unmapped_skus.add(base_sku)
                                 continue
 
-                            # Only store if there's any inventory
-                            if quantity > 0:
-                                # IMPORTANT: Use clock_timestamp() instead of NOW()
-                                # NOW() returns transaction start time (same for all inserts)
-                                # clock_timestamp() returns actual current time
-                                cursor.execute("""
-                                    INSERT INTO warehouse_stock (
-                                        product_id, warehouse_id, quantity, lot_number,
-                                        last_updated, updated_by
-                                    )
-                                    VALUES (%s, %s, %s, 'KLOG_STOCK', clock_timestamp(), 'klog_api')
-                                    ON CONFLICT (product_id, warehouse_id, lot_number)
-                                    DO UPDATE SET
-                                        quantity = EXCLUDED.quantity,
-                                        last_updated = clock_timestamp(),
-                                        updated_by = 'klog_api'
-                                """, (product_id, klog_warehouse_id, quantity))
+                            # Parse expiration date
+                            expiration_date = None
+                            if exp_date:
+                                try:
+                                    expiration_date = datetime.strptime(exp_date, '%Y-%m-%d').date()
+                                except (ValueError, TypeError):
+                                    pass
 
-                                klog_products_updated += 1
+                            # Use lot_number or 'KLOG_NO_LOT' for items without lot
+                            effective_lot = lot_number or 'KLOG_NO_LOT'
+
+                            cursor.execute("""
+                                INSERT INTO warehouse_stock (
+                                    product_id, warehouse_id, quantity, lot_number,
+                                    expiration_date, last_updated, updated_by
+                                )
+                                VALUES (%s, %s, %s, %s, %s, clock_timestamp(), 'klog_api')
+                                ON CONFLICT (product_id, warehouse_id, lot_number)
+                                DO UPDATE SET
+                                    quantity = EXCLUDED.quantity,
+                                    expiration_date = EXCLUDED.expiration_date,
+                                    last_updated = clock_timestamp(),
+                                    updated_by = 'klog_api'
+                            """, (product_id, klog_warehouse_id, int(quantity), effective_lot, expiration_date))
+
+                            klog_products_updated += 1
 
                         conn.commit()
 
-                        # Log unmapped SKUs (in product_catalog but not in products table)
                         if unmapped_skus:
-                            logger.info(f"KLOG: {len(unmapped_skus)} base SKUs not in products table: {unmapped_skus[:10]}")
+                            logger.info(f"KLOG: {len(unmapped_skus)} SKUs not in products table: {list(unmapped_skus)[:10]}")
 
                         # Delete stale KLOG entries (items no longer in KLOG)
                         cursor.execute("""
@@ -1578,7 +1569,12 @@ class SyncService:
                             logger.info(f"KLOG: Deleted {len(stale_klog)} stale entries")
                         conn.commit()
 
-                        logger.info(f"KLOG sync: {klog_products_updated} base SKUs updated, {len(unmapped_skus)} not in products table")
+                        # Log expiring inventory summary
+                        expiring_soon = await klog_connector.get_expiring_inventory(days_threshold=90)
+                        if expiring_soon:
+                            logger.warning(f"KLOG: {len(expiring_soon)} lots expiring within 90 days")
+
+                        logger.info(f"KLOG sync: {klog_products_updated} lot records updated")
 
             except Exception as e:
                 errors.append(f"KLOG sync error: {str(e)}")

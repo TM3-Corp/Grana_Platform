@@ -54,7 +54,7 @@ class KLOGConnector:
     API_BASE_PATH = "/api/invas/rest"  # For login and data endpoints
     WMS_BASE_PATH = "/dm/invas/rest"   # For WMS endpoints (requires special permissions)
     LOGIN_PATH = "/api/invas/rest/usuario/loginWS"
-    DEFAULT_SITIO = "1KW BOD 7 LAMPA"  # Grana warehouse site code
+    DEFAULT_SITIO = "KW BOD 7 LAMPA"  # Grana warehouse site code (confirmed 2026-02-03)
 
     def __init__(self, usuario: str = None, password: str = None):
         """
@@ -407,6 +407,209 @@ class KLOGConnector:
             "found": len(all_results),
             "failed_skus": failed_skus
         }
+
+    # ==========================================
+    # Lot/Expiration Inventory Endpoints
+    # ==========================================
+    # Box-level inventory with lot numbers and expiration dates
+
+    async def get_inventory_by_lot(
+        self,
+        sitio: str = None,
+        desde: str = None,
+        hasta: str = None,
+        empresa: str = None
+    ) -> Dict:
+        """
+        Get box-level inventory with lot and expiration details.
+
+        This endpoint returns LPN (License Plate Number) level data including:
+        - lote: Lot/batch number
+        - fechaVencimiento: Expiration date
+        - unidadesDisponibles: Available units per LPN
+
+        Args:
+            sitio: Warehouse site code (defaults to DEFAULT_SITIO)
+            desde: Start date for storage filter (YYYY-MM-DD), defaults to 2024-01-01
+            hasta: End date for storage filter (YYYY-MM-DD), defaults to today
+            empresa: Filter by company name (e.g., "GRANA")
+
+        Returns:
+            Dict with:
+            - listaWmsCaja: List of box/LPN records with lot and expiration data
+
+        Example response item:
+            {
+                "idLpn": "GRALPN0096",
+                "sku": "BACM_U64010",
+                "lote": "11489",
+                "fechaVencimiento": "2026-11-13 09:00:00.0",
+                "unidadesDisponibles": 2,
+                "nombre": "BARRA LOW CARB CACAO MANÍ X16 DISPLAY",
+                "empresa": "GRANA",
+                "sitio": "KW BOD 7 LAMPA",
+                "estado": "UBICADO",
+                "ubicacion": "ESTANTERIA-FS-08-01-04"
+            }
+        """
+        payload = {
+            "sitio": sitio or self.DEFAULT_SITIO,
+            "desde": desde or "2024-01-01",
+            "hasta": hasta or datetime.now().strftime("%Y-%m-%d")
+        }
+
+        result = await self._make_request(
+            "POST",
+            "/wmscaja/consultaWmsCajaAlmacenadasWS",
+            payload=payload
+        )
+
+        # Optionally filter by empresa (company)
+        if empresa and result.get('listaWmsCaja'):
+            result['listaWmsCaja'] = [
+                box for box in result['listaWmsCaja']
+                if box.get('empresa', '').upper() == empresa.upper()
+            ]
+
+        return result
+
+    async def get_inventory_with_lots(
+        self,
+        sitio: str = None,
+        empresa: str = "GRANA",
+        include_zero_stock: bool = False
+    ) -> list[Dict]:
+        """
+        Get inventory aggregated by SKU, lot, and expiration date.
+
+        This method fetches box-level data and aggregates it into a useful format
+        for inventory management and expiration tracking.
+
+        Args:
+            sitio: Warehouse site code (defaults to DEFAULT_SITIO)
+            empresa: Filter by company name (defaults to "GRANA")
+            include_zero_stock: Include records with 0 available units
+
+        Returns:
+            List of aggregated inventory records:
+            [
+                {
+                    "sku": "BACM_U64010",
+                    "lot_number": "11489",
+                    "expiration_date": "2026-11-13",
+                    "total_units": 50,
+                    "lpn_count": 5,
+                    "product_name": "BARRA LOW CARB CACAO MANÍ X16 DISPLAY",
+                    "sitio": "KW BOD 7 LAMPA"
+                },
+                ...
+            ]
+        """
+        raw = await self.get_inventory_by_lot(sitio=sitio, empresa=empresa)
+
+        boxes = raw.get('listaWmsCaja', [])
+        if not boxes:
+            logger.warning(f"No boxes returned from KLOG for empresa={empresa}")
+            return []
+
+        # Aggregate by (sku, lote, fechaVencimiento)
+        aggregated: Dict[tuple, Dict] = {}
+
+        for box in boxes:
+            sku = box.get('sku')
+            lote = box.get('lote')
+            fecha_venc = box.get('fechaVencimiento')
+            units = float(box.get('unidadesDisponibles') or 0)
+
+            # Skip zero-stock if not requested
+            if not include_zero_stock and units <= 0:
+                continue
+
+            # Parse expiration date if present
+            exp_date = None
+            if fecha_venc:
+                try:
+                    # Format: "2026-11-13 09:00:00.0"
+                    exp_date = fecha_venc.split(' ')[0]  # Just the date part
+                except (ValueError, AttributeError):
+                    exp_date = str(fecha_venc)
+
+            key = (sku, lote, exp_date)
+
+            if key not in aggregated:
+                aggregated[key] = {
+                    'sku': sku,
+                    'lot_number': lote,
+                    'expiration_date': exp_date,
+                    'total_units': 0,
+                    'lpn_count': 0,
+                    'product_name': box.get('nombre'),
+                    'sitio': box.get('sitio'),
+                    'empresa': box.get('empresa')
+                }
+
+            aggregated[key]['total_units'] += units
+            aggregated[key]['lpn_count'] += 1
+
+        result = list(aggregated.values())
+
+        # Sort by expiration date (soonest first), then by SKU
+        def sort_key(x):
+            exp = x.get('expiration_date') or '9999-99-99'
+            return (exp, x.get('sku', ''))
+
+        result.sort(key=sort_key)
+
+        logger.info(
+            f"KLOG lot inventory: {len(result)} unique SKU/lot combinations "
+            f"from {len(boxes)} boxes"
+        )
+
+        return result
+
+    async def get_expiring_inventory(
+        self,
+        days_threshold: int = 90,
+        sitio: str = None,
+        empresa: str = "GRANA"
+    ) -> list[Dict]:
+        """
+        Get inventory that expires within the specified number of days.
+
+        Useful for:
+        - FEFO (First Expired, First Out) picking prioritization
+        - Expiration alerts and notifications
+        - Markdown/clearance planning
+
+        Args:
+            days_threshold: Number of days to look ahead (default 90)
+            sitio: Warehouse site code (defaults to DEFAULT_SITIO)
+            empresa: Filter by company name (defaults to "GRANA")
+
+        Returns:
+            List of inventory records expiring within threshold, sorted by
+            expiration date (soonest first)
+        """
+        from datetime import timedelta
+
+        all_lots = await self.get_inventory_with_lots(
+            sitio=sitio,
+            empresa=empresa,
+            include_zero_stock=False
+        )
+
+        cutoff_date = (datetime.now() + timedelta(days=days_threshold)).strftime("%Y-%m-%d")
+
+        expiring = [
+            lot for lot in all_lots
+            if lot.get('expiration_date') and lot['expiration_date'] <= cutoff_date
+        ]
+
+        logger.info(
+            f"Found {len(expiring)} lot records expiring within {days_threshold} days"
+        )
+
+        return expiring
 
     async def get_product(self, sku: str) -> Dict:
         """
