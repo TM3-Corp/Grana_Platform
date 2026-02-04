@@ -333,8 +333,8 @@ export default function ExpandableProductTable({
         aVal = a.lots.length;
         bVal = b.lots.length;
       } else if (sortField === 'valor') {
-        aVal = a.valor || 0;
-        bVal = b.valor || 0;
+        aVal = Number(a.valor) || 0;
+        bVal = Number(b.valor) || 0;
       } else if (sortField === 'next_expiration') {
         const aLot = a.lots.find(l => l.days_to_expiration !== null);
         const bLot = b.lots.find(l => l.days_to_expiration !== null);
