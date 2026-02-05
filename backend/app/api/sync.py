@@ -164,7 +164,7 @@ async def sync_sales(
     """
     try:
         logger.info(f"Starting sales sync (days_back={days_back}, force_full={force_full}, date_from={date_from}, date_to={date_to})")
-        result = await sync_service.sync_sales_from_relbase(
+        result = sync_service.sync_sales_from_relbase(
             days_back=days_back,
             force_full=force_full,
             date_from_override=date_from,
@@ -271,7 +271,7 @@ async def sync_all(
         logger.info(f"Starting full sync (days_back={days_back})")
 
         # Run sales sync
-        sales_result = await sync_service.sync_sales_from_relbase(days_back=days_back)
+        sales_result = sync_service.sync_sales_from_relbase(days_back=days_back)
 
         # Run inventory sync
         inventory_result = await sync_service.sync_inventory()

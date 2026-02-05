@@ -686,7 +686,7 @@ class SyncService:
     # Sales Sync Logic
     # =========================================================================
 
-    async def sync_sales_from_relbase(
+    def sync_sales_from_relbase(
         self,
         days_back: int = 7,
         force_full: bool = False,
@@ -1652,7 +1652,7 @@ class SyncService:
         """
         logger.info(f"Starting full sync (days_back={days_back})")
 
-        sales_result = await self.sync_sales_from_relbase(days_back=days_back)
+        sales_result = self.sync_sales_from_relbase(days_back=days_back)
         inventory_result = await self.sync_inventory()
 
         return {
