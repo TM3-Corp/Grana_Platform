@@ -122,7 +122,7 @@ class FullSyncResponse(BaseModel):
 # ============================================================================
 
 @router.get("/status", response_model=SyncStatusResponse)
-async def get_sync_status():
+def get_sync_status():
     """
     Get current sync status and statistics
 
@@ -133,7 +133,7 @@ async def get_sync_status():
     - Warehouse and stock counts
     """
     try:
-        status = await sync_service.get_sync_status()
+        status = sync_service.get_sync_status()
         return status
     except Exception as e:
         logger.error(f"Error getting sync status: {e}")
@@ -141,7 +141,7 @@ async def get_sync_status():
 
 
 @router.post("/sales", response_model=SalesSyncResponse, dependencies=[Depends(verify_sync_key)])
-async def sync_sales(
+def sync_sales(
     days_back: int = Query(default=7, ge=1, le=365, description="Days to look back for missing data"),
     force_full: bool = Query(default=False, description="Force full sync instead of incremental"),
     date_from: Optional[str] = Query(default=None, description="Override start date (YYYY-MM-DD format)"),
@@ -189,7 +189,7 @@ async def sync_sales(
 
 
 @router.post("/inventory", response_model=InventorySyncResponse, dependencies=[Depends(verify_sync_key)])
-async def sync_inventory(
+def sync_inventory(
     background_tasks: BackgroundTasks,
     run_in_background: bool = Query(default=False, description="Run sync in background")
 ):
@@ -220,7 +220,7 @@ async def sync_inventory(
 
     try:
         logger.info("Starting inventory sync")
-        result = await sync_service.sync_inventory()
+        result = sync_service.sync_inventory()
         # Convert dataclass to Pydantic model
         return InventorySyncResponse(
             success=result.success,
@@ -238,7 +238,7 @@ async def sync_inventory(
 
 
 @router.post("/all", response_model=FullSyncResponse, dependencies=[Depends(verify_sync_key)])
-async def sync_all(
+def sync_all(
     background_tasks: BackgroundTasks,
     days_back: int = Query(default=3, ge=1, le=30, description="Days to look back for sales"),
     run_in_background: bool = Query(default=False, description="Run sync in background")
@@ -274,7 +274,7 @@ async def sync_all(
         sales_result = sync_service.sync_sales_from_relbase(days_back=days_back)
 
         # Run inventory sync
-        inventory_result = await sync_service.sync_inventory()
+        inventory_result = sync_service.sync_inventory()
 
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()

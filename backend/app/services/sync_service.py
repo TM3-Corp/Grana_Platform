@@ -5,6 +5,7 @@ Handles syncing sales from RelBase and inventory from RelBase + MercadoLibre
 Author: Claude Code
 Date: 2025-11-28
 """
+import asyncio
 import os
 import json
 import time
@@ -82,7 +83,7 @@ class SyncService:
     # Status Methods
     # =========================================================================
 
-    async def get_sync_status(self) -> Dict:
+    def get_sync_status(self) -> Dict:
         """
         Get current sync status and statistics
 
@@ -160,7 +161,67 @@ class SyncService:
             'Content-Type': 'application/json'
         }
 
-    def _fetch_relbase_dtes(self, date_from: str, date_to: str, page: int = 1, doc_type: int = 33) -> Dict:
+    def _relbase_request_with_retry(
+        self,
+        method: str,
+        url: str,
+        *,
+        params: Optional[Dict] = None,
+        timeout: int = 30,
+        max_retries: int = 3,
+    ) -> Optional[requests.Response]:
+        """
+        Make a RelBase API request with exponential backoff retry.
+
+        Retries on: timeout, connection error, HTTP 429/500/502/503/504.
+        Raises on non-retryable client errors (4xx except 429).
+
+        Returns:
+            requests.Response on success, None on exhausted retries.
+        """
+        headers = self._get_relbase_headers()
+        retryable_status_codes = {429, 500, 502, 503, 504}
+
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    backoff = min(2 ** attempt, 10)
+                    logger.info(f"Retry {attempt}/{max_retries - 1} for {url} (backoff {backoff}s)")
+                    time.sleep(backoff)
+
+                response = requests.request(
+                    method, url, headers=headers, params=params, timeout=timeout
+                )
+
+                if response.status_code < 400:
+                    return response
+
+                if response.status_code in retryable_status_codes:
+                    logger.warning(
+                        f"Retryable HTTP {response.status_code} from {url}, "
+                        f"attempt {attempt + 1}/{max_retries}"
+                    )
+                    continue
+
+                # Non-retryable client error (400, 401, 403, 404, etc.)
+                response.raise_for_status()
+
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+                logger.warning(
+                    f"{type(e).__name__} for {url}, attempt {attempt + 1}/{max_retries}"
+                )
+                if attempt == max_retries - 1:
+                    logger.error(f"All {max_retries} attempts failed for {url}: {e}")
+                    return None
+                continue
+            except requests.exceptions.HTTPError:
+                # Non-retryable HTTP error already logged by raise_for_status
+                raise
+
+        logger.error(f"All {max_retries} attempts exhausted for {url}")
+        return None
+
+    def _fetch_relbase_dtes(self, date_from: str, date_to: str, page: int = 1, doc_type: int = 33) -> Optional[Dict]:
         """
         Fetch DTEs (invoices/boletas) from RelBase API
 
@@ -171,10 +232,9 @@ class SyncService:
             doc_type: Document type (33=Factura, 39=Boleta)
 
         Returns:
-            API response with DTEs
+            API response dict on success, None on error.
         """
         url = f"{self.relbase_base_url}/api/v1/dtes"
-        headers = self._get_relbase_headers()
         # IMPORTANT: RelBase API uses 'start_date' and 'end_date' parameters
         # NOT 'date_from' and 'date_to' (which are silently ignored!)
         params = {
@@ -186,21 +246,26 @@ class SyncService:
         }
 
         try:
-            response = requests.get(url, headers=headers, params=params, timeout=60)
-            response.raise_for_status()
+            response = self._relbase_request_with_retry(
+                'GET', url, params=params, timeout=60, max_retries=3
+            )
+            if response is None:
+                return None
             return response.json()
         except Exception as e:
             logger.error(f"Error fetching RelBase DTEs (type={doc_type}): {e}")
-            return {}
+            return None
 
     def _fetch_relbase_dte_detail(self, dte_id: int) -> Dict:
         """Fetch detailed DTE information including products"""
         url = f"{self.relbase_base_url}/api/v1/dtes/{dte_id}"
-        headers = self._get_relbase_headers()
 
         try:
-            response = requests.get(url, headers=headers, timeout=30)
-            response.raise_for_status()
+            response = self._relbase_request_with_retry(
+                'GET', url, timeout=30, max_retries=2
+            )
+            if response is None:
+                return {}
             return response.json()
         except Exception as e:
             logger.error(f"Error fetching DTE {dte_id}: {e}")
@@ -209,11 +274,13 @@ class SyncService:
     def _fetch_relbase_warehouses(self) -> List[Dict]:
         """Fetch all warehouses from RelBase API"""
         url = f"{self.relbase_base_url}/api/v1/bodegas"
-        headers = self._get_relbase_headers()
 
         try:
-            response = requests.get(url, headers=headers, timeout=30)
-            response.raise_for_status()
+            response = self._relbase_request_with_retry(
+                'GET', url, timeout=30, max_retries=3
+            )
+            if response is None:
+                return []
             data = response.json()
             return data.get('data', {}).get('warehouses', [])
         except Exception as e:
@@ -223,11 +290,13 @@ class SyncService:
     def _fetch_relbase_lot_serial(self, product_id: int, warehouse_id: int) -> List[Dict]:
         """Fetch lot/serial numbers for a product in a warehouse"""
         url = f"{self.relbase_base_url}/api/v1/productos/{product_id}/lotes_series/{warehouse_id}"
-        headers = self._get_relbase_headers()
 
         try:
-            response = requests.get(url, headers=headers, timeout=30)
-            response.raise_for_status()
+            response = self._relbase_request_with_retry(
+                'GET', url, timeout=30, max_retries=2
+            )
+            if response is None:
+                return []
             data = response.json()
             return data.get('data', {}).get('lot_serial_numbers', [])
         except requests.exceptions.HTTPError as e:
@@ -244,7 +313,7 @@ class SyncService:
             logger.error(f"Error fetching lots for product {product_id}: {e}")
             return []
 
-    def _fetch_relbase_active_products(self) -> List[Dict]:
+    def _fetch_relbase_active_products(self) -> Optional[List[Dict]]:
         """
         Fetch ACTIVE products from RelBase API.
 
@@ -256,8 +325,7 @@ class SyncService:
         about products that no longer exist or are inactive in RelBase.
 
         Returns:
-            List of product dictionaries with 'id', 'name', 'sku', etc.
-            Empty list on error.
+            List of product dictionaries on success, None on error.
 
         Note:
             - This endpoint may be paginated for large catalogs
@@ -265,11 +333,13 @@ class SyncService:
             - SKUs starting with ANU- are legacy and should be filtered out
         """
         url = f"{self.relbase_base_url}/api/v1/productos"
-        headers = self._get_relbase_headers()
 
         try:
-            response = requests.get(url, headers=headers, timeout=60)
-            response.raise_for_status()
+            response = self._relbase_request_with_retry(
+                'GET', url, timeout=60, max_retries=3
+            )
+            if response is None:
+                return None
             data = response.json()
             products = data.get('data', {}).get('products', [])
 
@@ -280,7 +350,7 @@ class SyncService:
             return products
         except Exception as e:
             logger.error(f"Error fetching active products from RelBase: {e}")
-            return []
+            return None
 
     def _fetch_relbase_channels(self) -> List[Dict]:
         """
@@ -290,11 +360,13 @@ class SyncService:
             List of channel dictionaries with id and name
         """
         url = f"{self.relbase_base_url}/api/v1/canal_ventas"
-        headers = self._get_relbase_headers()
 
         try:
-            response = requests.get(url, headers=headers, timeout=30)
-            response.raise_for_status()
+            response = self._relbase_request_with_retry(
+                'GET', url, timeout=30, max_retries=2
+            )
+            if response is None:
+                return []
             data = response.json()
             return data.get('data', {}).get('channels', [])
         except Exception as e:
@@ -313,38 +385,24 @@ class SyncService:
             Customer data dict or None if not found
         """
         url = f"{self.relbase_base_url}/api/v1/clientes/{customer_id}"
-        headers = self._get_relbase_headers()
 
-        for attempt in range(retries):
-            try:
-                # Add small delay between retries to avoid rate limiting
-                if attempt > 0:
-                    time.sleep(0.5 * attempt)  # 0.5s, 1s delay on retries
-
-                response = requests.get(url, headers=headers, timeout=30)
-                response.raise_for_status()
-                return response.json()
-            except requests.exceptions.HTTPError as e:
-                if e.response.status_code == 404:
-                    logger.warning(f"Customer {customer_id} not found in RelBase (404)")
-                    return None
-                elif e.response.status_code == 429:  # Rate limited
-                    logger.warning(f"Rate limited fetching customer {customer_id}, attempt {attempt + 1}/{retries}")
-                    continue
-                else:
-                    logger.error(f"HTTP error fetching customer {customer_id}: {e}")
-                    if attempt == retries - 1:
-                        return None
-            except requests.exceptions.Timeout:
-                logger.warning(f"Timeout fetching customer {customer_id}, attempt {attempt + 1}/{retries}")
-                continue
-            except Exception as e:
-                logger.error(f"Error fetching customer {customer_id}: {e}")
-                if attempt == retries - 1:
-                    return None
-
-        logger.error(f"Failed to fetch customer {customer_id} after {retries} attempts")
-        return None
+        try:
+            response = self._relbase_request_with_retry(
+                'GET', url, timeout=30, max_retries=retries
+            )
+            if response is None:
+                logger.error(f"Failed to fetch customer {customer_id} after {retries} attempts")
+                return None
+            return response.json()
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                logger.warning(f"Customer {customer_id} not found in RelBase (404)")
+                return None
+            logger.error(f"HTTP error fetching customer {customer_id}: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Error fetching customer {customer_id}: {e}")
+            return None
 
     def _fix_missing_order_references(self, cursor) -> tuple:
         """
@@ -712,6 +770,7 @@ class SyncService:
             SalesSyncResult with statistics
         """
         start_time = time.time()
+        SYNC_TIMEOUT_SECONDS = 300  # 5 min max for sales sync
         errors = []
         orders_created = 0
         orders_updated = 0
@@ -780,16 +839,18 @@ class SyncService:
             # Fetch DTEs from RelBase for both Facturas (33) and Boletas (39)
             total_dtes = 0
             document_types = [33, 39]  # 33=Factura, 39=Boleta
+            MAX_PAGES = 100  # Safety limit to prevent infinite pagination
 
             for doc_type in document_types:
                 page = 1
                 logger.info(f"Fetching document type {doc_type}...")
 
-                while True:
+                while page <= MAX_PAGES:
                     dte_response = self._fetch_relbase_dtes(date_from, date_to, page, doc_type)
 
-                    if not dte_response:
-                        break
+                    if dte_response is None:
+                        errors.append(f"Failed to fetch DTEs page {page} (type={doc_type})")
+                        break  # stop this doc_type on API error
 
                     dtes = dte_response.get('data', {}).get('dtes', [])
 
@@ -1016,8 +1077,19 @@ class SyncService:
                     if page >= pagination.get('total_pages', 1):
                         break
 
+                    # Check overall timeout
+                    if time.time() - start_time > SYNC_TIMEOUT_SECONDS:
+                        logger.error(f"Sales sync timed out after {SYNC_TIMEOUT_SECONDS}s on doc_type={doc_type}")
+                        errors.append(f"Sales sync timed out after {SYNC_TIMEOUT_SECONDS}s")
+                        break
+
                     page += 1
                     time.sleep(self.rate_limit_delay)  # Rate limiting between pages
+
+                else:
+                    # while loop exhausted MAX_PAGES without break
+                    logger.error(f"Hit MAX_PAGES={MAX_PAGES} for doc_type={doc_type} — possible infinite pagination")
+                    errors.append(f"Pagination limit reached for doc_type={doc_type}")
 
             # === CLEANUP: Fix any orders with missing customer/channel data ===
             customers_fixed, channels_fixed = self._fix_missing_order_references(cursor)
@@ -1100,7 +1172,7 @@ class SyncService:
     # Inventory Sync Logic
     # =========================================================================
 
-    async def sync_inventory(self) -> InventorySyncResult:
+    def sync_inventory(self) -> InventorySyncResult:
         """
         Sync inventory from RelBase and MercadoLibre
 
@@ -1117,6 +1189,7 @@ class SyncService:
             InventorySyncResult with statistics
         """
         start_time = time.time()
+        INVENTORY_TIMEOUT_SECONDS = 600  # 10 min max for inventory sync
         errors = []
         warehouses_synced = 0
         relbase_products_updated = 0
@@ -1191,9 +1264,11 @@ class SyncService:
             # Fetch active products directly from RelBase (the correct approach)
             relbase_products = self._fetch_relbase_active_products()
 
-            if not relbase_products:
-                logger.warning("No active products returned from RelBase API - skipping stock sync")
+            if relbase_products is None:
+                logger.error("Failed to fetch active products from RelBase API - skipping stock sync")
                 errors.append("Failed to fetch active products from RelBase API")
+            elif not relbase_products:
+                logger.warning("No active products returned from RelBase API - skipping stock sync")
             else:
                 # Get warehouses from DB
                 # IMPORTANT: Exclude KLOG warehouse - it's synced directly via KLOG API (Phase 4)
@@ -1229,6 +1304,12 @@ class SyncService:
                 for product in relbase_products:
                     if skip_lot_sync:
                         break  # Stop trying if auth is failing
+
+                    # Check overall inventory timeout
+                    if time.time() - start_time > INVENTORY_TIMEOUT_SECONDS:
+                        logger.error(f"Inventory sync timed out after {INVENTORY_TIMEOUT_SECONDS}s during RelBase stock sync")
+                        errors.append(f"Inventory sync timed out after {INVENTORY_TIMEOUT_SECONDS}s")
+                        break
 
                     product_external_id = product.get('id')
                     product_sku = product.get('sku', '')
@@ -1338,7 +1419,7 @@ class SyncService:
             logger.info("Phase 3: Syncing stock from MercadoLibre...")
 
             try:
-                ml_listings = await self._fetch_ml_listings()
+                ml_listings = asyncio.run(self._fetch_ml_listings())
 
                 # Get the existing Mercado Libre warehouse (from RelBase sync)
                 # Use 'mercado_libre' which has source='relbase' and external_id=2013
@@ -1479,10 +1560,10 @@ class SyncService:
                         # --------------------------------------------------------
                         # Step 2: Fetch LOT-LEVEL inventory from KLOG API
                         # --------------------------------------------------------
-                        lot_inventory = await klog_connector.get_inventory_with_lots(
+                        lot_inventory = asyncio.run(klog_connector.get_inventory_with_lots(
                             empresa="GRANA",
                             include_zero_stock=False
-                        )
+                        ))
 
                         logger.info(f"KLOG returned {len(lot_inventory)} lot records")
 
@@ -1570,7 +1651,7 @@ class SyncService:
                         conn.commit()
 
                         # Log expiring inventory summary
-                        expiring_soon = await klog_connector.get_expiring_inventory(days_threshold=90)
+                        expiring_soon = asyncio.run(klog_connector.get_expiring_inventory(days_threshold=90))
                         if expiring_soon:
                             logger.warning(f"KLOG: {len(expiring_soon)} lots expiring within 90 days")
 
@@ -1640,7 +1721,7 @@ class SyncService:
     # Combined Sync (for background execution)
     # =========================================================================
 
-    async def run_full_sync(self, days_back: int = 3) -> Dict:
+    def run_full_sync(self, days_back: int = 3) -> Dict:
         """
         Run full sync (sales + inventory) - designed for background execution
 
@@ -1653,7 +1734,7 @@ class SyncService:
         logger.info(f"Starting full sync (days_back={days_back})")
 
         sales_result = self.sync_sales_from_relbase(days_back=days_back)
-        inventory_result = await self.sync_inventory()
+        inventory_result = self.sync_inventory()
 
         return {
             'sales': {

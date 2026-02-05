@@ -33,18 +33,17 @@ jobs:
         run: |
           DAYS_BACK="${{ github.event.inputs.days_back || '7' }}"
 
-          echo "🔄 Triggering sales sync with days_back=$DAYS_BACK (synchronous mode)"
-          echo "   Sales sync is fast (~10-30s), running directly without background"
+          echo "Triggering sales sync with days_back=$DAYS_BACK (synchronous mode)"
 
           ENDPOINT="https://granaplatform-production.up.railway.app/api/v1/sync/sales?days_back=$DAYS_BACK"
           echo "Calling: $ENDPOINT"
 
-          # Make the API call with 90s timeout (should complete in ~10-30s)
+          # Make the API call with 120s timeout (now runs in threadpool, should not block)
           RESPONSE=$(curl -s -w "\n%{http_code}" \
             -X POST "$ENDPOINT" \
             -H "Content-Type: application/json" \
             -H "X-Sync-Key: ${{ secrets.SYNC_API_KEY }}" \
-            --max-time 90)
+            --max-time 120)
 
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           BODY=$(echo "$RESPONSE" | sed '$d')
@@ -52,11 +51,20 @@ jobs:
           echo "HTTP Status: $HTTP_CODE"
           echo "Response: $BODY"
 
+          # Parse response body for details
+          SUCCESS=$(echo "$BODY" | jq -r '.success // false')
+          ORDERS_CREATED=$(echo "$BODY" | jq -r '.orders_created // 0')
+          ORDERS_UPDATED=$(echo "$BODY" | jq -r '.orders_updated // 0')
+          ERRORS_COUNT=$(echo "$BODY" | jq -r '.errors | length // 0')
+          DURATION=$(echo "$BODY" | jq -r '.duration_seconds // 0')
+
+          echo "Sync success=$SUCCESS, created=$ORDERS_CREATED, updated=$ORDERS_UPDATED, errors=$ERRORS_COUNT, duration=${DURATION}s"
+
           if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-            echo "✅ Sales sync completed successfully"
+            echo "Sales sync completed (HTTP $HTTP_CODE)"
             echo "trigger_response=$BODY" >> $GITHUB_OUTPUT
           else
-            echo "⚠️  Sales sync failed: HTTP $HTTP_CODE"
+            echo "Sales sync failed: HTTP $HTTP_CODE"
             echo "trigger_response=$BODY" >> $GITHUB_OUTPUT
             exit 1
           fi
@@ -64,8 +72,7 @@ jobs:
       - name: Trigger Inventory Sync (Background)
         id: trigger_inventory
         run: |
-          echo "🔄 Triggering inventory sync (background mode)"
-          echo "   Inventory sync is slower (~4-5 min), using background mode"
+          echo "Triggering inventory sync (background mode)"
 
           ENDPOINT="https://granaplatform-production.up.railway.app/api/v1/sync/inventory?run_in_background=true"
           echo "Calling: $ENDPOINT"
@@ -84,24 +91,63 @@ jobs:
           echo "Response: $BODY"
 
           if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-            echo "✅ Inventory sync queued in background"
+            echo "Inventory sync queued in background"
             echo "trigger_response=$BODY" >> $GITHUB_OUTPUT
           else
-            echo "⚠️  Inventory sync queue failed: HTTP $HTTP_CODE"
+            echo "Inventory sync queue failed: HTTP $HTTP_CODE"
             echo "trigger_response=$BODY" >> $GITHUB_OUTPUT
             # Don't exit on error - sales sync already completed
           fi
 
-      - name: Wait for Inventory Sync Completion
+      - name: Poll for Inventory Sync Completion
+        id: poll_inventory
         run: |
-          echo "⏳ Waiting 5 minutes for background inventory sync to complete..."
-          echo "   (Inventory typically takes ~4-5 minutes)"
-          sleep 300
+          echo "Polling /sync/status every 30s until inventory sync completes (max 8 min)..."
+
+          # Record the time we started polling
+          POLL_START=$(date +%s)
+          MAX_WAIT=480  # 8 minutes max
+          POLL_INTERVAL=30
+          INVENTORY_COMPLETED=false
+
+          # Get initial inventory sync timestamp to detect change
+          INITIAL_STATUS=$(curl -s \
+            "https://granaplatform-production.up.railway.app/api/v1/sync/status" \
+            --max-time 15)
+          INITIAL_INV_TS=$(echo "$INITIAL_STATUS" | jq -r '.last_inventory_sync // empty')
+          echo "Initial inventory sync timestamp: $INITIAL_INV_TS"
+
+          while true; do
+            ELAPSED=$(( $(date +%s) - POLL_START ))
+
+            if [ "$ELAPSED" -ge "$MAX_WAIT" ]; then
+              echo "WARNING: Polling timeout after ${MAX_WAIT}s - inventory may still be running"
+              break
+            fi
+
+            sleep $POLL_INTERVAL
+
+            RESPONSE=$(curl -s \
+              "https://granaplatform-production.up.railway.app/api/v1/sync/status" \
+              --max-time 15)
+
+            CURRENT_INV_TS=$(echo "$RESPONSE" | jq -r '.last_inventory_sync // empty')
+            echo "[${ELAPSED}s] last_inventory_sync=$CURRENT_INV_TS"
+
+            # Inventory is done when the timestamp changes from the initial value
+            if [ -n "$CURRENT_INV_TS" ] && [ "$CURRENT_INV_TS" != "$INITIAL_INV_TS" ]; then
+              echo "Inventory sync completed (timestamp updated)"
+              INVENTORY_COMPLETED=true
+              break
+            fi
+          done
+
+          echo "inventory_completed=$INVENTORY_COMPLETED" >> $GITHUB_OUTPUT
 
       - name: Verify Sync Status
         id: verify
         run: |
-          echo "🔍 Checking sync status..."
+          echo "Checking final sync status..."
 
           RESPONSE=$(curl -s \
             "https://granaplatform-production.up.railway.app/api/v1/sync/status" \
@@ -111,21 +157,49 @@ jobs:
           echo "Status: $RESPONSE"
           echo "response=$RESPONSE" >> $GITHUB_OUTPUT
 
-          # Parse timestamps to verify recent sync
+          # Parse timestamps
           LAST_SALES=$(echo "$RESPONSE" | jq -r '.last_sales_sync // empty')
           LAST_INV=$(echo "$RESPONSE" | jq -r '.last_inventory_sync // empty')
 
           echo ""
-          echo "📊 Last Sales Sync: $LAST_SALES"
-          echo "📦 Last Inventory Sync: $LAST_INV"
-          echo "📋 Orders in DB: $(echo "$RESPONSE" | jq -r '.orders_count')"
-          echo "🏭 Warehouses: $(echo "$RESPONSE" | jq -r '.warehouses_count')"
-          echo "📦 Products with stock: $(echo "$RESPONSE" | jq -r '.products_with_stock')"
+          echo "Last Sales Sync: $LAST_SALES"
+          echo "Last Inventory Sync: $LAST_INV"
+          echo "Orders in DB: $(echo "$RESPONSE" | jq -r '.orders_count')"
+          echo "Warehouses: $(echo "$RESPONSE" | jq -r '.warehouses_count')"
+          echo "Products with stock: $(echo "$RESPONSE" | jq -r '.products_with_stock')"
+
+          # Verify timestamps are recent (within 15 minutes)
+          NOW_EPOCH=$(date +%s)
+
+          if [ -n "$LAST_SALES" ]; then
+            # Parse ISO timestamp to epoch (handles both Z and +00:00 suffixes)
+            SALES_EPOCH=$(date -d "$LAST_SALES" +%s 2>/dev/null || echo 0)
+            SALES_AGE=$(( NOW_EPOCH - SALES_EPOCH ))
+            if [ "$SALES_AGE" -gt 900 ]; then
+              echo "WARNING: Sales sync timestamp is ${SALES_AGE}s old (>15 min)"
+            else
+              echo "Sales sync timestamp is recent (${SALES_AGE}s ago)"
+            fi
+          else
+            echo "WARNING: No sales sync timestamp found"
+          fi
+
+          if [ -n "$LAST_INV" ]; then
+            INV_EPOCH=$(date -d "$LAST_INV" +%s 2>/dev/null || echo 0)
+            INV_AGE=$(( NOW_EPOCH - INV_EPOCH ))
+            if [ "$INV_AGE" -gt 900 ]; then
+              echo "WARNING: Inventory sync timestamp is ${INV_AGE}s old (>15 min)"
+            else
+              echo "Inventory sync timestamp is recent (${INV_AGE}s ago)"
+            fi
+          else
+            echo "WARNING: No inventory sync timestamp found"
+          fi
 
       - name: Parse and Report Results
         if: success()
         run: |
-          echo "## 📊 Sync Results" >> $GITHUB_STEP_SUMMARY
+          echo "## Sync Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Sales Sync (Synchronous)" >> $GITHUB_STEP_SUMMARY
           echo '```json' >> $GITHUB_STEP_SUMMARY
@@ -133,6 +207,7 @@ jobs:
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Inventory Sync (Background)" >> $GITHUB_STEP_SUMMARY
+          echo "Completed: ${{ steps.poll_inventory.outputs.inventory_completed }}" >> $GITHUB_STEP_SUMMARY
           echo '```json' >> $GITHUB_STEP_SUMMARY
           echo '${{ steps.trigger_inventory.outputs.trigger_response }}' | jq '.' >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo '${{ steps.trigger_inventory.outputs.trigger_response }}' >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
@@ -145,7 +220,7 @@ jobs:
       - name: Report Failure
         if: failure()
         run: |
-          echo "## ❌ Sync Failed" >> $GITHUB_STEP_SUMMARY
+          echo "## Sync Failed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "The daily sync failed. Check the logs above for details." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY

@@ -17,4 +17,4 @@ COPY backend/app ./app
 EXPOSE 8000
 
 # Comando de inicio (usa $PORT de Railway, default 8000)
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 2 --timeout-keep-alive 65
