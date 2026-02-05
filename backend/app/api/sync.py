@@ -189,7 +189,10 @@ async def sync_sales(
 
 
 @router.post("/inventory", response_model=InventorySyncResponse, dependencies=[Depends(verify_sync_key)])
-async def sync_inventory():
+async def sync_inventory(
+    background_tasks: BackgroundTasks,
+    run_in_background: bool = Query(default=False, description="Run sync in background")
+):
     """
     Sync inventory from RelBase and MercadoLibre
 
@@ -197,7 +200,24 @@ async def sync_inventory():
     1. Fetch warehouse stock from RelBase (all warehouses)
     2. Fetch active listings from MercadoLibre
     3. Update warehouse_stock table
+
+    Args:
+        run_in_background: If True, start sync in background and return immediately
     """
+    if run_in_background:
+        # Queue inventory sync for background execution
+        background_tasks.add_task(sync_service.sync_inventory)
+        return InventorySyncResponse(
+            success=True,
+            message="Inventory sync started in background",
+            relbase_warehouses_synced=0,
+            relbase_products_updated=0,
+            mercadolibre_products_updated=0,
+            klog_products_updated=0,
+            errors=[],
+            duration_seconds=0
+        )
+
     try:
         logger.info("Starting inventory sync")
         result = await sync_service.sync_inventory()

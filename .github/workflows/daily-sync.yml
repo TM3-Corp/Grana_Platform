@@ -28,27 +28,49 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Trigger Platform Sync (Background)
-        id: trigger
+      - name: Trigger Sales Sync (Synchronous)
+        id: trigger_sales
         run: |
-          SYNC_TYPE="${{ github.event.inputs.sync_type || 'all' }}"
           DAYS_BACK="${{ github.event.inputs.days_back || '7' }}"
 
-          echo "🔄 Triggering $SYNC_TYPE sync with days_back=$DAYS_BACK (background mode)"
+          echo "🔄 Triggering sales sync with days_back=$DAYS_BACK (synchronous mode)"
+          echo "   Sales sync is fast (~10-30s), running directly without background"
 
-          # Build the endpoint URL - use run_in_background=true to avoid timeout
-          if [ "$SYNC_TYPE" = "all" ]; then
-            ENDPOINT="https://granaplatform-production.up.railway.app/api/v1/sync/all?days_back=$DAYS_BACK&run_in_background=true"
-          elif [ "$SYNC_TYPE" = "sales" ]; then
-            # Sales sync is fast (~10s), run synchronously
-            ENDPOINT="https://granaplatform-production.up.railway.app/api/v1/sync/sales?days_back=$DAYS_BACK"
-          else
-            ENDPOINT="https://granaplatform-production.up.railway.app/api/v1/sync/inventory"
-          fi
-
+          ENDPOINT="https://granaplatform-production.up.railway.app/api/v1/sync/sales?days_back=$DAYS_BACK"
           echo "Calling: $ENDPOINT"
 
-          # Make the API call
+          # Make the API call with 90s timeout (should complete in ~10-30s)
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -X POST "$ENDPOINT" \
+            -H "Content-Type: application/json" \
+            -H "X-Sync-Key: ${{ secrets.SYNC_API_KEY }}" \
+            --max-time 90)
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "✅ Sales sync completed successfully"
+            echo "trigger_response=$BODY" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️  Sales sync failed: HTTP $HTTP_CODE"
+            echo "trigger_response=$BODY" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      - name: Trigger Inventory Sync (Background)
+        id: trigger_inventory
+        run: |
+          echo "🔄 Triggering inventory sync (background mode)"
+          echo "   Inventory sync is slower (~4-5 min), using background mode"
+
+          ENDPOINT="https://granaplatform-production.up.railway.app/api/v1/sync/inventory?run_in_background=true"
+          echo "Calling: $ENDPOINT"
+
+          # Make the API call with 60s timeout
           RESPONSE=$(curl -s -w "\n%{http_code}" \
             -X POST "$ENDPOINT" \
             -H "Content-Type: application/json" \
@@ -62,19 +84,18 @@ jobs:
           echo "Response: $BODY"
 
           if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-            echo "✅ Sync triggered successfully"
+            echo "✅ Inventory sync queued in background"
             echo "trigger_response=$BODY" >> $GITHUB_OUTPUT
-            exit 0
           else
-            echo "❌ Failed to trigger sync: HTTP $HTTP_CODE"
-            exit 1
+            echo "⚠️  Inventory sync queue failed: HTTP $HTTP_CODE"
+            echo "trigger_response=$BODY" >> $GITHUB_OUTPUT
+            # Don't exit on error - sales sync already completed
           fi
 
-      - name: Wait for Sync Completion
-        if: success() && github.event.inputs.sync_type != 'sales'
+      - name: Wait for Inventory Sync Completion
         run: |
-          echo "⏳ Waiting 5 minutes for sync to complete..."
-          echo "   (Sales: ~10s, Inventory: ~4-5 min)"
+          echo "⏳ Waiting 5 minutes for background inventory sync to complete..."
+          echo "   (Inventory typically takes ~4-5 minutes)"
           sleep 300
 
       - name: Verify Sync Status
@@ -106,9 +127,14 @@ jobs:
         run: |
           echo "## 📊 Sync Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Trigger Response" >> $GITHUB_STEP_SUMMARY
+          echo "### Sales Sync (Synchronous)" >> $GITHUB_STEP_SUMMARY
           echo '```json' >> $GITHUB_STEP_SUMMARY
-          echo '${{ steps.trigger.outputs.trigger_response }}' | jq '.' >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo '${{ steps.trigger.outputs.trigger_response }}' >> $GITHUB_STEP_SUMMARY
+          echo '${{ steps.trigger_sales.outputs.trigger_response }}' | jq '.' >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo '${{ steps.trigger_sales.outputs.trigger_response }}' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Inventory Sync (Background)" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          echo '${{ steps.trigger_inventory.outputs.trigger_response }}' | jq '.' >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo '${{ steps.trigger_inventory.outputs.trigger_response }}' >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Final Status" >> $GITHUB_STEP_SUMMARY
