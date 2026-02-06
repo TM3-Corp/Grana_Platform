@@ -1042,11 +1042,19 @@ class SyncService:
                             # This approach uses 13 smart rules (exact match, ANU- prefix, _WEB suffix, etc.)
                             # instead of the legacy relbase_product_mappings table.
                             products = dte_data.get('products', [])
+                            invoice_type = dte_data.get('type_document')  # 33=Factura, 39=Boleta
                             for product in products:
                                 product_code = product.get('code', '')
                                 product_name = product.get('name', '')
                                 quantity = float(product.get('quantity', 0))  # Can be decimal
                                 price = float(product.get('price', 0))
+
+                                # CRITICAL FIX: For Boletas, RelBase returns Gross prices (includes 19% IVA)
+                                # Convert to Net to match order.subtotal (from amount_neto)
+                                # Facturas already return Net prices, so no conversion needed
+                                if invoice_type == 39:  # Boleta DTE type
+                                    price = price / 1.19
+
                                 subtotal = quantity * price
 
                                 cursor.execute("""
