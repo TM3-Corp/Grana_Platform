@@ -1,21 +1,23 @@
 # Análisis de Problemas Críticos del Sistema
 
 > **Fecha de análisis:** 2026-01-14
-> **Última actualización:** 2026-01-14 21:27
+> **Última actualización:** 2026-02-10
 > **Método:** Análisis multi-agente línea por línea del código fuente
-> **Estado:** 2 resueltos, 1 pendiente
+> **Estado:** 4 resueltos, 1 pendiente
 
 ---
 
 ## Resumen Ejecutivo
 
-Se identificaron y confirmaron **3 problemas críticos** en el sistema de mapeo y cálculo de unidades:
+Se identificaron y confirmaron **5 problemas críticos** en el sistema:
 
 | # | Problema | Severidad | Estado | Issue |
 |---|----------|-----------|--------|-------|
 | 1 | `sales_facts_mv.units_sold` no aplica factores de conversión | 🔴 Crítico | ✅ **RESUELTO** | CORP-162 |
 | 2 | Totales del audit ignoran filtros de categoría/canal/cliente | 🔴 Crítico | ✅ **RESUELTO** | CORP-155 |
 | 3 | Tres sistemas de mapeo con diferente cobertura | 🔴 Crítico | 🔴 Pendiente | — |
+| 4 | Sales sync silenciosamente fallando (5 bugs en cadena) | 🔴 Crítico | ✅ **RESUELTO** | — |
+| 5 | Velocity subqueries usan `original_sku` en vez de `catalog_sku` | 🟡 Alto | ✅ **RESUELTO** | — |
 
 ---
 

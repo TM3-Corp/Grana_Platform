@@ -228,11 +228,13 @@ SKU fields calculated dynamically via `ProductCatalogService` (not stored in ord
 
 | Issue | Status | Impact |
 |-------|--------|--------|
-| `sales_facts_mv.units_sold` missing conversion factors | 🔴 Open | Units under-reported 80-99% |
-| Audit totals ignore category/channel filters | 🔴 Open | Totals don't match filtered rows |
+| `sales_facts_mv.units_sold` missing conversion factors | ✅ Resolved | Fixed via migration (CORP-162) |
+| Audit totals ignore category/channel filters | ✅ Resolved | Fixed (CORP-155) |
 | Three SKU mapping systems with different coverage | 🔴 Open | SKUs mapped in audit, unmapped in analytics |
+| Sales sync silent failure (5 chained bugs) | ✅ Resolved | Feb 2026 data recovered ($5.4M→$11M) |
+| Inventory velocity using `original_sku` not `catalog_sku` | ✅ Resolved | Variant sales now included in velocity calc |
 
-**Warning:** Sales Analytics and Dashboard KPIs using `sales_facts_mv` may show incorrect unit counts.
+**Warning:** `REFRESH MATERIALIZED VIEW CONCURRENTLY` is not supported on `sales_facts_mv` (no unique index). The sync uses non-concurrent refresh as fallback.
 
 ---
 
