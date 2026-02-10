@@ -61,10 +61,15 @@ jobs:
           echo "Sync success=$SUCCESS, created=$ORDERS_CREATED, updated=$ORDERS_UPDATED, errors=$ERRORS_COUNT, duration=${DURATION}s"
 
           if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-            echo "Sales sync completed (HTTP $HTTP_CODE)"
+            if [ "$SUCCESS" = "false" ] && [ "$ORDERS_CREATED" = "0" ]; then
+              echo "::error::Sales sync returned success=false with 0 orders created"
+              echo "trigger_response=$BODY" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+            echo "Sales sync completed (HTTP $HTTP_CODE, created=$ORDERS_CREATED)"
             echo "trigger_response=$BODY" >> $GITHUB_OUTPUT
           else
-            echo "Sales sync failed: HTTP $HTTP_CODE"
+            echo "::error::Sales sync failed: HTTP $HTTP_CODE"
             echo "trigger_response=$BODY" >> $GITHUB_OUTPUT
             exit 1
           fi

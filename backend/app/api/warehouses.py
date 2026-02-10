@@ -348,10 +348,11 @@ async def get_inventory_general(
                     COALESCE(pis.estimation_months, 6) as estimation_months,
                     -- Get recommended_min_stock based on configurable monthly sales average
                     -- Uses per-product estimation_months from product_inventory_settings
+                    -- Uses catalog_sku to capture all variant SKUs (ANU-, _WEB, ML listings)
                     COALESCE(
                         (SELECT ROUND(SUM(sfm.units_sold)::NUMERIC / COALESCE(pis.estimation_months, 6))::INTEGER
                          FROM sales_facts_mv sfm
-                         WHERE sfm.original_sku = at.sku
+                         WHERE (sfm.catalog_sku = at.sku OR (sfm.catalog_sku IS NULL AND sfm.original_sku = at.sku))
                            AND sfm.order_date >= CURRENT_DATE - MAKE_INTERVAL(months => COALESCE(pis.estimation_months, 6))),
                         0
                     ) as recommended_min_stock,
@@ -367,14 +368,14 @@ async def get_inventory_general(
                         WHEN COALESCE(
                             (SELECT ROUND(SUM(sfm.units_sold)::NUMERIC / COALESCE(pis.estimation_months, 6))::INTEGER
                              FROM sales_facts_mv sfm
-                             WHERE sfm.original_sku = at.sku
+                             WHERE (sfm.catalog_sku = at.sku OR (sfm.catalog_sku IS NULL AND sfm.original_sku = at.sku))
                                AND sfm.order_date >= CURRENT_DATE - MAKE_INTERVAL(months => COALESCE(pis.estimation_months, 6))),
                             0
                         ) > 0 THEN
                             ROUND(COALESCE(ipf.stock_usable, at.stock_total, 0)::NUMERIC * 30 /
                                   (SELECT ROUND(SUM(sfm.units_sold)::NUMERIC / COALESCE(pis.estimation_months, 6))::INTEGER
                                    FROM sales_facts_mv sfm
-                                   WHERE sfm.original_sku = at.sku
+                                   WHERE (sfm.catalog_sku = at.sku OR (sfm.catalog_sku IS NULL AND sfm.original_sku = at.sku))
                                      AND sfm.order_date >= CURRENT_DATE - MAKE_INTERVAL(months => COALESCE(pis.estimation_months, 6))))::INTEGER
                         ELSE 999  -- No sales = infinite coverage
                     END as days_of_coverage,
@@ -384,7 +385,7 @@ async def get_inventory_general(
                         ROUND(COALESCE(
                             (SELECT ROUND(SUM(sfm.units_sold)::NUMERIC / COALESCE(pis.estimation_months, 6))::INTEGER
                              FROM sales_facts_mv sfm
-                             WHERE sfm.original_sku = at.sku
+                             WHERE (sfm.catalog_sku = at.sku OR (sfm.catalog_sku IS NULL AND sfm.original_sku = at.sku))
                                AND sfm.order_date >= CURRENT_DATE - MAKE_INTERVAL(months => COALESCE(pis.estimation_months, 6))),
                             0
                         ) * 1.2 - COALESCE(ipf.stock_usable, at.stock_total, 0))::INTEGER

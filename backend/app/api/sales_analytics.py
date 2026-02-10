@@ -628,10 +628,11 @@ async def get_sku_sales_timeline(
                         DATE_TRUNC('month', order_date) as month,
                         -- Raw units_sold (display quantities, not converted to individual units)
                         -- This is what we need for inventory planning of this specific display format
+                        -- Uses catalog_sku to capture all variant SKUs (ANU-, _WEB, ML listings)
                         SUM(units_sold) as units_sold,
                         SUM(revenue) as revenue
                     FROM sales_facts_mv
-                    WHERE original_sku = %s
+                    WHERE (catalog_sku = %s OR (catalog_sku IS NULL AND original_sku = %s))
                       AND source = %s
                       AND order_date >= CURRENT_DATE - INTERVAL '{months} months'
                     GROUP BY DATE_TRUNC('month', order_date)
@@ -699,7 +700,12 @@ async def get_sku_sales_timeline(
                 )
         """
 
-        cursor.execute(query, (query_sku, source))
+        # for_inventory uses catalog_sku with fallback (2 SKU params)
+        # for sales analytics uses sku_primario (1 SKU param)
+        if for_inventory:
+            cursor.execute(query, (query_sku, query_sku, source))
+        else:
+            cursor.execute(query, (query_sku, source))
         result = cursor.fetchone()
 
         cursor.close()

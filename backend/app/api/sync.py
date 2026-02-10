@@ -171,7 +171,7 @@ def sync_sales(
             date_to_override=date_to
         )
         # Convert dataclass to Pydantic model
-        return SalesSyncResponse(
+        response = SalesSyncResponse(
             success=result.success,
             message=result.message,
             orders_created=result.orders_created,
@@ -183,6 +183,13 @@ def sync_sales(
             customers_fixed=result.customers_fixed,
             channels_fixed=result.channels_fixed
         )
+
+        # Return HTTP 500 when sync completely failed (no orders created)
+        if not result.success and result.orders_created == 0:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(status_code=500, content=response.model_dump())
+
+        return response
     except Exception as e:
         logger.error(f"Error syncing sales: {e}")
         raise HTTPException(status_code=500, detail=str(e))

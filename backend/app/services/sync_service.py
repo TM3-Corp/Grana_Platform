@@ -863,6 +863,9 @@ class SyncService:
                         try:
                             dte_id = dte.get('id')
 
+                            # SAVEPOINT per DTE so one failure doesn't poison the transaction
+                            cursor.execute(f"SAVEPOINT sp_dte_{int(dte_id)}")
+
                             # Check if order exists
                             cursor.execute("""
                                 SELECT id FROM orders
@@ -948,18 +951,20 @@ class SyncService:
                                         logger.warning(f"Channel {channel_id_relbase} not found in RelBase API - order will have NULL channel")
 
                             # Step 4: If no channel_id yet and customer has assigned channel, use it
-                            # Uses customers.assigned_channel_id for customer-specific channel mapping
+                            # assigned_channel_id stores RelBase external ID, resolve to internal id via channels table
                             if channel_id is None and customer_id_relbase:
                                 cursor.execute("""
-                                    SELECT assigned_channel_id
-                                    FROM customers
-                                    WHERE external_id = %s AND source = 'relbase'
-                                      AND assigned_channel_id IS NOT NULL
+                                    SELECT ch.id
+                                    FROM customers cust
+                                    JOIN channels ch ON ch.external_id = cust.assigned_channel_id::text
+                                                    AND ch.source = 'relbase'
+                                    WHERE cust.external_id = %s AND cust.source = 'relbase'
+                                      AND cust.assigned_channel_id IS NOT NULL
                                 """, (str(customer_id_relbase),))
                                 assigned_result = cursor.fetchone()
                                 if assigned_result:
                                     channel_id = assigned_result[0]
-                                    logger.info(f"Applied assigned channel for customer {customer_id_relbase}")
+                                    logger.info(f"Applied assigned channel for customer {customer_id_relbase} (resolved channel_id={channel_id})")
 
                             # Map RelBase customer_id to internal customer via external_id
                             # If not found, fetch from API and create
@@ -1074,9 +1079,17 @@ class SyncService:
                                 ))
                                 order_items_created += 1
 
+                            # Release savepoint on success
+                            cursor.execute(f"RELEASE SAVEPOINT sp_dte_{int(dte_id)}")
+
                         except Exception as e:
+                            # Rollback to savepoint so the transaction stays usable
+                            try:
+                                cursor.execute(f"ROLLBACK TO SAVEPOINT sp_dte_{int(dte_id)}")
+                            except Exception:
+                                pass
                             errors.append(f"Error processing DTE {dte.get('id')}: {str(e)}")
-                            logger.error(f"Error processing DTE: {e}")
+                            logger.error(f"Error processing DTE {dte.get('id')}: {e}")
                             continue
 
                     # Check for more pages
@@ -1115,8 +1128,15 @@ class SyncService:
                     conn.commit()
                     logger.info("Materialized view refreshed successfully (no read locks)")
                 except Exception as mv_error:
-                    logger.warning(f"Could not refresh materialized view: {mv_error}")
-                    # Don't fail the whole sync if MV refresh fails
+                    conn.rollback()  # Clean aborted transaction before continuing
+                    logger.warning(f"CONCURRENTLY refresh failed: {mv_error}, trying non-concurrent...")
+                    try:
+                        cursor.execute("REFRESH MATERIALIZED VIEW sales_facts_mv")
+                        conn.commit()
+                        logger.info("Materialized view refreshed (non-concurrent fallback)")
+                    except Exception as mv_error2:
+                        conn.rollback()
+                        logger.warning(f"Could not refresh materialized view: {mv_error2}")
 
             # Log sync
             cursor.execute("""
