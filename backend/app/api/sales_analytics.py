@@ -18,6 +18,14 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 router = APIRouter()
 
+# Derived format label: business-meaningful taxonomy instead of raw package_type
+FORMAT_LABEL_EXPR = """CASE
+    WHEN mv.is_caja_master THEN 'Caja Master'
+    WHEN mv.quantity_multiplier > 1 THEN 'Promo Pack'
+    WHEN mv.units_per_display > 1 THEN 'Display x' || mv.units_per_display::text
+    ELSE 'Granel'
+END"""
+
 # Database connection
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -198,7 +206,7 @@ async def get_sales_analytics(
             'category': 'mv.category',
             'channel': 'mv.channel_name',
             'customer': 'mv.customer_name',
-            'format': 'mv.package_type',
+            'format': FORMAT_LABEL_EXPR,
             'sku_primario': 'mv.sku_primario'
         }
         group_field = group_field_map.get(group_by, 'mv.category')  # Default to category
@@ -946,7 +954,7 @@ async def export_sales_analytics(
             'category': ('mv.category', 'Familia'),
             'channel': ('mv.channel_name', 'Canal'),
             'customer': ('mv.customer_name', 'Cliente'),
-            'format': ('mv.package_type', 'Formato'),
+            'format': (FORMAT_LABEL_EXPR, 'Formato'),
             'sku_primario': ('mv.sku_primario', 'SKU Primario')
         }
         group_field, group_label = group_field_map.get(group_by, ('mv.category', 'Familia'))
