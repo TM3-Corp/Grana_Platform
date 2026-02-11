@@ -1,0 +1,307 @@
+id,channel_product_sku,official_product_sku,channel,confidence_score,mapping_method,notes,created_at,updated_at
+1,CRSM_U02520,CRSM_U02510,shopify,1.00,,,2025-10-24 04:30:43.174060,2025-10-24 04:30:43.174060
+2,CRSM_U25020,CRSM_U25010,shopify,1.00,,,2025-10-24 04:30:43.174060,2025-10-24 04:30:43.174060
+3,PACKBABE_U20010,BABE_U20010,shopify,1.00,,,2025-10-24 04:30:43.174060,2025-10-24 04:30:43.174060
+4,PACKBACM_U20010,BACM_U20010,shopify,1.00,,,2025-10-24 04:30:43.174060,2025-10-24 04:30:43.174060
+5,PACKBAKC_U20010,BAKC_U20010,shopify,1.00,,,2025-10-24 04:30:43.174060,2025-10-24 04:30:43.174060
+6,PACKBAMC_U20010,BAMC_U20010,shopify,1.00,,,2025-10-24 04:30:43.174060,2025-10-24 04:30:43.174060
+7,PACKGRAL_U26010,GRAL_U26010,shopify,1.00,,,2025-10-24 04:30:43.174060,2025-10-24 04:30:43.174060
+8,PACKGRBE_U26010,GRBE_U26010,shopify,1.00,,,2025-10-24 04:30:43.174060,2025-10-24 04:30:43.174060
+9,PACKGRCA_U26010,GRCA_U26010,shopify,1.00,,,2025-10-24 04:30:43.174060,2025-10-24 04:30:43.174060
+10,PACKGRKC_U21010,GRKC_U21010,shopify,1.00,,,2025-10-24 04:30:43.174060,2025-10-24 04:30:43.174060
+11,PACKCRAA_U13510,CRAA_U13510,shopify,1.00,,,2025-10-24 04:30:43.174060,2025-10-24 04:30:43.174060
+12,PACKCRPM_U13510,CRPM_U13510,shopify,1.00,,,2025-10-24 04:30:43.174060,2025-10-24 04:30:43.174060
+13,PACKCRRO_U13510,CRRO_U13510,shopify,1.00,,,2025-10-24 04:30:43.174060,2025-10-24 04:30:43.174060
+14,PACKCRSM_U13510,CRSM_U13510,shopify,1.00,,,2025-10-24 04:30:43.174060,2025-10-24 04:30:43.174060
+15,PACKCRSM_U25020,CRSM_U25010,shopify,1.00,,,2025-10-24 04:30:43.174060,2025-10-24 04:30:43.174060
+16,PACKKSMC_U15010,KSMC_U15010,shopify,1.00,,,2025-10-24 04:30:43.174060,2025-10-24 04:30:43.174060
+17,PACKKSMC_U54010,KSMC_U54010,shopify,1.00,,,2025-10-24 04:30:43.174060,2025-10-24 04:30:43.174060
+18,KEEPER_PIONEROS,KPMC_U30010,shopify,1.00,,,2025-10-24 04:30:43.174060,2025-10-24 04:30:43.174060
+19,KEEPERPACK,KSMC_U15010,shopify,1.00,,,2025-10-24 04:30:43.174060,2025-10-24 04:30:43.174060
+20,ML-MLC1630337053,BAMC_U64010,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+21,ML-MLC1630349929,BACM_U04010,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+22,MLC1630349929,BACM_U04010,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+23,ML-MLC1630414337,BACM_U20010,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+24,ML-MLC1630416135,BAMC_U20010,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+25,MLC1630416135,BAMC_U20010,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+26,ML-MLC2929973548,BAKC_U04010,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+27,MLC2929973548,BAKC_U04010,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+28,ML-MLC2930199094,BAKC_U20010,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+29,MLC2930199094,BAKC_U20010,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+30,ML-MLC2938290826,BAMC_U20010,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+31,ML-MLC2978631042,BACM_U20010,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+32,MLC2978631042,BACM_U20010,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+33,MLC1630337051,BABE_U20010,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+34,ML-MLC1630369169,CRPM_U13510,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+35,MLC1630369169,CRPM_U13510,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+36,ML-MLC2930200766,CRAA_U13510,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+37,MLC2930200766,CRAA_U13510,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+38,ML-MLC2930215860,CRSM_U13510,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+39,MLC2930215860,CRSM_U13510,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+40,ML-MLC2930238714,CRRO_U13510,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+41,MLC2930238714,CRRO_U13510,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+42,ML-MLC2933751572,CRRO_U13510,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+43,MLC2933751572,CRRO_U13510,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+44,ML-MLC2966323128,GRBE_U26010,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+45,ML-MLC2967399930,GRAL_U26010,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+46,ML-MLC2978641268,GRBE_U26010,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+47,MLC2978641268,GRBE_U26010,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+48,ML-MLC3029455396,GRAL_U26010,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+49,MLC1630349931,GRCA_U26010,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+50,MLC1644022833,GRCA_U26010,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+51,MLC2930070644,GRCA_U26010,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+52,MLC2930251054,KSMC_U03010,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+53,MLC3016921654,KSMC_U03010,mercadolibre,1.00,,,2025-10-24 04:32:09.280069,2025-10-24 04:32:09.280069
+500,KSMC_U03010,KSMC_U03010,lokal,1.00,exact_match,Exact SKU match (Direct),2025-10-24 04:54:06.182042,2025-10-24 04:54:06.182042
+501,CRSA1UES,CRSM_U13510,lokal,1.00,manual_mapping,Formato antiguo de cracker (Old cracker format),2025-10-24 04:54:06.182042,2025-10-24 04:54:06.182042
+502,CRRO1UES,CRRO_U13510,lokal,1.00,manual_mapping,Formato antiguo de cracker (Old cracker format),2025-10-24 04:54:06.182042,2025-10-24 04:54:06.182042
+503,BAKC_U04020,BAKC_U04010,lokal,0.95,suffix_normalized,Suffix normalized: 20 → 10 (Suffix normalization),2025-10-24 04:54:06.182042,2025-10-24 04:54:06.182042
+504,CRCU1UES,CRCU_U13510,lokal,1.00,manual_mapping,Formato antiguo de cracker (Old cracker format),2025-10-24 04:54:06.182042,2025-10-24 04:54:06.182042
+505,CRAA1UES,CRAA_U13510,lokal,1.00,manual_mapping,Formato antiguo de cracker (Old cracker format),2025-10-24 04:54:06.182042,2025-10-24 04:54:06.182042
+506,GRCA_U26020,GRCA_U26010,lokal,0.95,suffix_normalized,Suffix normalized: 20 → 10 (Suffix normalization),2025-10-24 04:54:06.182042,2025-10-24 04:54:06.182042
+507,CRPI1UES,CRPM_U13510,lokal,1.00,manual_mapping,Formato antiguo de cracker (Old cracker format),2025-10-24 04:54:06.182042,2025-10-24 04:54:06.182042
+508,GRKC_U21020,GRKC_U21010,lokal,0.95,suffix_normalized,Suffix normalized: 20 → 10 (Suffix normalization),2025-10-24 04:54:06.182042,2025-10-24 04:54:06.182042
+509,GRAL_U26020,GRAL_U26010,lokal,0.95,suffix_normalized,Suffix normalized: 20 → 10 (Suffix normalization),2025-10-24 04:54:06.182042,2025-10-24 04:54:06.182042
+510,GRBE_U26020,GRBE_U26010,lokal,0.95,suffix_normalized,Suffix normalized: 20 → 10 (Suffix normalization),2025-10-24 04:54:06.182042,2025-10-24 04:54:06.182042
+511,BABE_C028220,BABE_U20010,lokal,1.00,manual_mapping,SKU de caja usado para display x5 (Box SKU used for display),2025-10-24 04:54:06.182042,2025-10-24 04:54:06.182042
+512,BAKC_U64020,BAKC_U64010,lokal,0.95,suffix_normalized,Suffix normalized: 20 → 10 (Suffix normalization),2025-10-24 04:54:06.182042,2025-10-24 04:54:06.182042
+513,BAMC_C02820,BACM_U20010,lokal,1.00,manual_mapping,Error BAMC→BACM + SKU de caja usado para display x5 (Code error + Box SKU used for display),2025-10-24 04:54:06.182042,2025-10-24 04:54:06.182042
+514,BAMC_C01220,BACM_U64010,lokal,1.00,manual_mapping,Error BAMC→BACM + SKU de caja usado para display x16 (Code error + Box SKU used for display),2025-10-24 04:54:06.182042,2025-10-24 04:54:06.182042
+515,BAMC_U64020,BAMC_U64010,lokal,0.95,suffix_normalized,Suffix normalized: 20 → 10 (Suffix normalization),2025-10-24 04:54:06.182042,2025-10-24 04:54:06.182042
+516,BAKC_U20020,BAKC_U20010,lokal,0.95,suffix_normalized,Suffix normalized: 20 → 10 (Suffix normalization),2025-10-24 04:54:06.182042,2025-10-24 04:54:06.182042
+517,BABE_C20020,BABE_U04010,lokal,1.00,manual_mapping,SKU de caja usado para unidad/granel (Box SKU used for unit),2025-10-24 04:54:06.182042,2025-10-24 04:54:06.182042
+518,BAMC_C20020,BACM_U04010,lokal,1.00,manual_mapping,Error BAMC→BACM + SKU de caja usado para unidad/granel (Code error + Box SKU used for unit),2025-10-24 04:54:06.182042,2025-10-24 04:54:06.182042
+519,CRSM_U25020,CRSM_U25010,lokal,0.95,suffix_normalized,Suffix normalized: 20 → 10 (Suffix normalization),2025-10-24 04:54:06.182042,2025-10-24 04:54:06.182042
+520,BAMC_U20020,BAMC_U20010,lokal,0.95,suffix_normalized,Suffix normalized: 20 → 10 (Suffix normalization),2025-10-24 04:54:06.182042,2025-10-24 04:54:06.182042
+521,BAMC_U04020,BAMC_U04010,lokal,0.95,suffix_normalized,Suffix normalized: 20 → 10 (Suffix normalization),2025-10-24 04:54:06.182042,2025-10-24 04:54:06.182042
+522,KSMC_U54010,KSMC_U54010,lokal,1.00,exact_match,Exact SKU match (Direct),2025-10-24 04:54:06.182042,2025-10-24 04:54:06.182042
+523,KSMC_U15010,KSMC_U15010,lokal,1.00,exact_match,Exact SKU match (Direct),2025-10-24 04:54:06.182042,2025-10-24 04:54:06.182042
+436,BAMC_U20010,BAMC_U20010,relbase,1.00,exact,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+494,PACKGRBE_U26010,GRBE_U26010,relbase,0.50,pack_variant,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+271,155,GRA-250-001,relbase,0.85,name_fuzzy,Fuzzy match: Granola → Granola 250g (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+272,250,GRKC_U21010,relbase,0.85,name_fuzzy,Fuzzy match: Granola Nuez → Granola Keto Nuez 210 grs (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+273,ANU-001GR-KET-WB,MLC2930070644,relbase,0.50,description_fuzzy,Fuzzy match: Granola Cacao → Granola Grana Cacao 260 G Bolsa Semillas (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+274,ANU-10658325395232,MLC1630337051,relbase,0.50,description_fuzzy,Fuzzy match: Barra → Barra Cereal Grana Sour Berries 5 Un (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+275,ANU-10658325395256,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+276,ANU-1102808234,MLC1630337051,relbase,0.50,description_fuzzy,Fuzzy match: Berries → Barra Cereal Grana Sour Berries 5 Un (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+277,ANU-17804649590027,MLC2929973548,relbase,0.50,description_fuzzy,Fuzzy match: Chocolate → Barras Keto Chocolate Nuez Grana Vegana 35 Gr - 16 Un (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+278,ANU-27804649590031,MLC1630337051,relbase,0.50,description_fuzzy,Fuzzy match: Berries → Barra Cereal Grana Sour Berries 5 Un (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+279,ANU-6662808095,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+280,ANU-745853840440,CRAA_U13510,relbase,0.50,description_fuzzy,Fuzzy match: Crackers → Crackers Keto Ajo Albahaca 135 grs (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+281,ANU-ALDEA_BAcacao1ud,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+282,ANU-ALDEA_BAcacao5ud,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+283,ANU-ALDEA_GRAketo210,GRA-250-001,relbase,0.50,description_fuzzy,Fuzzy match: Granola 210g → Granola 250g (92%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+284,ANU-B-BC-569258,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+285,ANU-B-BC-571036,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+286,ANU-B-BU-448140,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+287,ANU-B-C5-436138,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+288,ANU-B-C5-57779,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+289,ANU-B-D5-954112,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+290,ANU-B-UB-104034,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Barra Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+291,ANU-B-UB-553899,MLC1630337051,relbase,0.50,description_fuzzy,Fuzzy match: Barra → Barra Cereal Grana Sour Berries 5 Un (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+292,ANU-B-UB-617158,BAKC_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Barra Nuez → Barra Keto Nuez - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+293,ANU-BABE_U04010_WEB,MLC1630337051,relbase,0.50,description_fuzzy,Fuzzy match: Barra Berries → Barra Cereal Grana Sour Berries 5 Un (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+294,ANU-BACM_C20010,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Barra Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+295,ANU-BACM_U04010,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Barra Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+296,ANU-BACM_U04010_NR,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Barra Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+297,ANU-BACM_U04010_WEB,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Barra Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+298,ANU-BACM_U20010,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Barra Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+299,ANU-BACM_U20010_WEB,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Barra Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+300,ANU-BACM_U64010,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Barra Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+301,ANU-BACM_U64010_WEB,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Barra Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+302,ANU-BAKC_C02810,BAKC_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Barra Nuez → Barra Keto Nuez - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+303,ANU-BAKC_C02810_WAL,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Barra Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+304,ANU-BAKC_C20010,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Barra Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+305,ANU-BAKC_U04010,BAKC_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Barra Nuez → Barra Keto Nuez - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+306,ANU-BAKC_U04010_NR,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Barra Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+307,ANU-BAKC_U04010_WEB,BAKC_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Barra Nuez → Barra Keto Nuez - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+308,ANU-BAKC_U20010,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Barra Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+309,ANU-BAKC_U20010_WEB,BAKC_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Barra Nuez → Barra Keto Nuez - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+310,ANU-BAKC_U64010,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Barra Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+311,ANU-BAKC_U64010_WEB,BAKC_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Barra Nuez → Barra Keto Nuez - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+312,ANU-BAMC_C02810,MLC1630337051,relbase,0.50,description_fuzzy,Fuzzy match: Barra → Barra Cereal Grana Sour Berries 5 Un (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+313,ANU-BAMC_C02810_WAL,MLC1630337051,relbase,0.50,description_fuzzy,Fuzzy match: Barra → Barra Cereal Grana Sour Berries 5 Un (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+314,ANU-BAMC_C20010,MLC1630337051,relbase,0.50,description_fuzzy,Fuzzy match: Barra → Barra Cereal Grana Sour Berries 5 Un (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+315,ANU-BAMC_U04010,MLC1630337051,relbase,0.50,description_fuzzy,Fuzzy match: Barra → Barra Cereal Grana Sour Berries 5 Un (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+316,ANU-BAMC_U04010_WEB,MLC1630337051,relbase,0.50,description_fuzzy,Fuzzy match: Barra → Barra Cereal Grana Sour Berries 5 Un (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+317,ANU-BAMC_U20010,MLC1630337051,relbase,0.50,description_fuzzy,Fuzzy match: Barra → Barra Cereal Grana Sour Berries 5 Un (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+318,ANU-BAMC_U20010_WEB,MLC1630337051,relbase,0.50,description_fuzzy,Fuzzy match: Barra → Barra Cereal Grana Sour Berries 5 Un (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+319,ANU-BAMC_U64010,MLC1630337051,relbase,0.50,description_fuzzy,Fuzzy match: Barra → Barra Cereal Grana Sour Berries 5 Un (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+320,ANU-BAMC_U64010_WEB,MLC1630337051,relbase,0.50,description_fuzzy,Fuzzy match: Barra → Barra Cereal Grana Sour Berries 5 Un (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+321,ANU-C-GB-166690,ML-MLC2978641268,relbase,0.50,description_fuzzy,"Fuzzy match: Granola Berries → Granola Grana Low Carb Berries Y Semillas, Vegana, Sin Aceit (100%)",2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+322,ANU-C-GC-756818,MLC2930070644,relbase,0.50,description_fuzzy,Fuzzy match: Granola Cacao → Granola Grana Cacao 260 G Bolsa Semillas (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+323,ANU-C-GC-795320,GRA-250-001,relbase,0.50,description_fuzzy,Fuzzy match: Granola → Granola 250g (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+324,ANU-C-GK-232292,GRA-250-001,relbase,0.50,description_fuzzy,Fuzzy match: Granola → Granola 250g (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+325,ANU-C-P3-166101,BACM_U04010,relbase,0.40,description_fuzzy,Fuzzy match: Cacao 3g → Barra Low Carb Cacao Maní - 1 unidad (77%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+326,ANU-C-P3-270364,MLC1630337051,relbase,0.40,description_fuzzy,Fuzzy match: Berries 3g → Barra Cereal Grana Sour Berries 5 Un (82%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+327,ANU-C-P3-299827,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+328,ANU-C-P3-767977,MLC1630337051,relbase,0.50,description_fuzzy,Fuzzy match: Berries → Barra Cereal Grana Sour Berries 5 Un (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+329,ANU-CRAA_C01410,CRAA_U13510,relbase,0.40,description_fuzzy,Fuzzy match: Crackers 120g → Crackers Keto Ajo Albahaca 135 grs (76%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+330,ANU-CRAA_U13510_WEB,ML-MLC2930200766,relbase,0.50,description_fuzzy,Fuzzy match: Crackers 135g → Galletas Crackers Grana Keto Sabor Ajo Albahaca 135g Vegana (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+331,ANU-CRCU_C01010,ML-MLC2930200766,relbase,0.50,description_fuzzy,Fuzzy match: Crackers 135g → Galletas Crackers Grana Keto Sabor Ajo Albahaca 135g Vegana (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+332,ANU-CRCU_C01410,ML-MLC2930200766,relbase,0.50,description_fuzzy,Fuzzy match: Crackers 135g → Galletas Crackers Grana Keto Sabor Ajo Albahaca 135g Vegana (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+333,ANU-CRCU_U13510_WEB,ML-MLC2930200766,relbase,0.50,description_fuzzy,Fuzzy match: Crackers 135g → Galletas Crackers Grana Keto Sabor Ajo Albahaca 135g Vegana (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+334,ANU-CRPM_C01410,ML-MLC2930200766,relbase,0.50,description_fuzzy,Fuzzy match: Crackers 135g → Galletas Crackers Grana Keto Sabor Ajo Albahaca 135g Vegana (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+335,ANU-CRPM_U13510_WEB,ML-MLC2930200766,relbase,0.50,description_fuzzy,Fuzzy match: Crackers 135g → Galletas Crackers Grana Keto Sabor Ajo Albahaca 135g Vegana (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+336,ANU-CRRO_C01010,MLC2933751572,relbase,0.50,description_fuzzy,Fuzzy match: Crackers Romero 135g → Galletas Crackers Grana Keto Sabor Romero 135g Vegana (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+337,ANU-CRRO_C01410,MLC2933751572,relbase,0.50,description_fuzzy,Fuzzy match: Crackers Romero 135g → Galletas Crackers Grana Keto Sabor Romero 135g Vegana (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+338,ANU-CRRO_U13510,MLC2933751572,relbase,0.50,description_fuzzy,Fuzzy match: Crackers Romero 135g → Galletas Crackers Grana Keto Sabor Romero 135g Vegana (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+339,ANU-CRRO_U13510_WEB,MLC2933751572,relbase,0.50,description_fuzzy,Fuzzy match: Crackers Romero 135g → Galletas Crackers Grana Keto Sabor Romero 135g Vegana (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+340,ANU-CRSM_C01010,CRSM_U25010,relbase,0.40,description_fuzzy,Fuzzy match: Crackers Sal de Mar 135g → Crackers Keto Sal de Mar (88%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+341,ANU-CRSM_C01410,CRSM_U25010,relbase,0.40,description_fuzzy,Fuzzy match: Crackers Sal de Mar 135g → Crackers Keto Sal de Mar (88%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+342,ANU-CRSM_U13510,CRSM_U25010,relbase,0.40,description_fuzzy,Fuzzy match: Crackers Sal de Mar 135g → Crackers Keto Sal de Mar (88%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+343,ANU-CRSM_U13510_WEB,CRSM_U25010,relbase,0.40,description_fuzzy,Fuzzy match: Crackers Sal de Mar 135g → Crackers Keto Sal de Mar (88%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+344,ANU-CRSM_U25020,CRSM_U25010,relbase,0.50,description_fuzzy,Fuzzy match: Crackers Sal de Mar → Crackers Keto Sal de Mar (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+345,ANU-CRSMFFES,CRSM_U25010,relbase,0.40,description_fuzzy,Fuzzy match: Crackers Sal de Mar 120g → Crackers Keto Sal de Mar (88%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+346,ANU-DIRECTO_BAcacao16ud,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+347,ANU-DIRECTO_BAcacao1ud,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+348,ANU-DIRECTO_BAcacao5ud,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+349,ANU-DIRECTO_BAketo1ud,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+350,ANU-DIRECTO_GRAcacaolow260,MLC2930070644,relbase,0.50,description_fuzzy,Fuzzy match: Granola Cacao → Granola Grana Cacao 260 G Bolsa Semillas (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+351,ANU-DISTRIB_BAcacao16ud,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+352,ANU-DISTRIB_BAcacao1ud,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+353,ANU-DISTRIB_GRAberries260,ML-MLC2978641268,relbase,0.40,description_fuzzy,"Fuzzy match: Granola Berries 260g → Granola Grana Low Carb Berries Y Semillas, Vegana, Sin Aceit (86%)",2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+354,ANU-DISTRIB_GRAcacao260,MLC2930070644,relbase,0.40,description_fuzzy,Fuzzy match: Granola Cacao 260g → Granola Grana Cacao 260 G Bolsa Semillas (84%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+355,ANU-DISTRIB_GRAclásica260,GRA-250-001,relbase,0.50,description_fuzzy,Fuzzy match: Granola 260g → Granola 250g (92%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+356,ANU-DISTRIB_GRAketo210,GRA-250-001,relbase,0.50,description_fuzzy,Fuzzy match: Granola 210g → Granola 250g (92%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+357,ANU-EMPORIO_BAcacao16ud,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+358,ANU-EMPORIO_BAcacao1ud,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+359,ANU-EMPORIO_BAcacao5ud,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+360,ANU-EMPORIO_CRA_albahacaajo,CRAA_U13510,relbase,0.50,description_fuzzy,Fuzzy match: Crackers → Crackers Keto Ajo Albahaca 135 grs (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+361,ANU-EMPORIO_CRA_Cúrcuma,CRAA_U13510,relbase,0.50,description_fuzzy,Fuzzy match: Crackers → Crackers Keto Ajo Albahaca 135 grs (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+362,ANU-EMPORIO_CRA_pimienta,CRAA_U13510,relbase,0.50,description_fuzzy,Fuzzy match: Crackers → Crackers Keto Ajo Albahaca 135 grs (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+363,ANU-EMPORIO_CRA_Romero,CRRO_U13510,relbase,0.50,description_fuzzy,Fuzzy match: Crackers Romero → Crackers Keto Romero 135 grs (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+364,ANU-EMPORIO_CRA_saldemar,CRSM_U25010,relbase,0.50,description_fuzzy,Fuzzy match: Crackers Sal de Mar → Crackers Keto Sal de Mar (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+365,ANU-EMPORIO_GRAberries260,ML-MLC2978641268,relbase,0.40,description_fuzzy,"Fuzzy match: Granola Berries 260g → Granola Grana Low Carb Berries Y Semillas, Vegana, Sin Aceit (86%)",2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+366,ANU-EMPORIO_GRAcacao260,MLC2930070644,relbase,0.40,description_fuzzy,Fuzzy match: Granola Cacao 260g → Granola Grana Cacao 260 G Bolsa Semillas (84%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+367,ANU-EMPORIO_GRAclásica260,GRA-250-001,relbase,0.50,description_fuzzy,Fuzzy match: Granola 260g → Granola 250g (92%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+368,ANU-EMPORIO_GRAketo210,GRA-250-001,relbase,0.50,description_fuzzy,Fuzzy match: Granola 210g → Granola 250g (92%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+369,ANU-GRAL_C02010,ML-MLC2967399930,relbase,0.40,description_fuzzy,Fuzzy match: Granola Almendras 260g → Granola Grana Low Carb Almendras Y Semillas (87%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+370,ANU-GRAL_C02010_JUM,ML-MLC2967399930,relbase,0.40,description_fuzzy,Fuzzy match: Granola Almendras 260g → Granola Grana Low Carb Almendras Y Semillas (87%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+371,ANU-GRAL_C02010_UN,ML-MLC2967399930,relbase,0.40,description_fuzzy,Fuzzy match: Granola Almendras 260g → Granola Grana Low Carb Almendras Y Semillas (87%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+372,ANU-GRAL_U26010,ML-MLC2967399930,relbase,0.40,description_fuzzy,Fuzzy match: Granola Almendras 260g → Granola Grana Low Carb Almendras Y Semillas (87%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+373,ANU-GRAL_U26010_WEB,ML-MLC2967399930,relbase,0.50,description_fuzzy,Fuzzy match: Granola Almendras → Granola Grana Low Carb Almendras Y Semillas (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+374,ANU-GRBE_C02010,ML-MLC2978641268,relbase,0.40,description_fuzzy,"Fuzzy match: Granola Berries 260g → Granola Grana Low Carb Berries Y Semillas, Vegana, Sin Aceit (86%)",2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+375,ANU-GRBE_C02010_JUM,ML-MLC2978641268,relbase,0.40,description_fuzzy,"Fuzzy match: Granola Berries 260g → Granola Grana Low Carb Berries Y Semillas, Vegana, Sin Aceit (86%)",2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+376,ANU-GRBE_U26010,ML-MLC2978641268,relbase,0.40,description_fuzzy,"Fuzzy match: Granola Berries 260g → Granola Grana Low Carb Berries Y Semillas, Vegana, Sin Aceit (86%)",2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+377,ANU-GRBE_U26010_WEB,ML-MLC2978641268,relbase,0.50,description_fuzzy,"Fuzzy match: Granola Berries → Granola Grana Low Carb Berries Y Semillas, Vegana, Sin Aceit (100%)",2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+378,ANU-GRCA_C02010,MLC2930070644,relbase,0.40,description_fuzzy,Fuzzy match: Granola Cacao 260g → Granola Grana Cacao 260 G Bolsa Semillas (84%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+379,ANU-GRCA_C02010_JUM,MLC2930070644,relbase,0.40,description_fuzzy,Fuzzy match: Granola Cacao 260g → Granola Grana Cacao 260 G Bolsa Semillas (84%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+380,ANU-GRCA_C02010_UN,MLC2930070644,relbase,0.40,description_fuzzy,Fuzzy match: Granola Cacao 260g → Granola Grana Cacao 260 G Bolsa Semillas (84%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+381,ANU-GRCA_U26010,MLC2930070644,relbase,0.40,description_fuzzy,Fuzzy match: Granola Cacao 260g → Granola Grana Cacao 260 G Bolsa Semillas (84%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+382,ANU-GRCA_U26010_WEB,MLC2930070644,relbase,0.50,description_fuzzy,Fuzzy match: Granola Cacao → Granola Grana Cacao 260 G Bolsa Semillas (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+383,ANU-GRKC_C02010,GRA-250-001,relbase,0.50,description_fuzzy,Fuzzy match: Granola 260g → Granola 250g (92%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+384,ANU-GRKC_U21010,GRKC_U21010,relbase,0.40,description_fuzzy,Fuzzy match: Granola Nuez 210g → Granola Keto Nuez 210 grs (83%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+385,ANU-GRKC_U21010_WEB,GRKC_U21010,relbase,0.50,description_fuzzy,Fuzzy match: Granola Nuez → Granola Keto Nuez 210 grs (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+386,ANU-IGUAZÚ_BAcacao16ud,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+387,ANU-IGUAZÚ_BAcacao5ud,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+388,ANU-IGUAZÚ_GRAberries260,ML-MLC2978641268,relbase,0.40,description_fuzzy,"Fuzzy match: Granola Berries 260g → Granola Grana Low Carb Berries Y Semillas, Vegana, Sin Aceit (86%)",2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+389,ANU-IGUAZÚ_GRAcacao260,MLC2930070644,relbase,0.40,description_fuzzy,Fuzzy match: Granola Cacao 260g → Granola Grana Cacao 260 G Bolsa Semillas (84%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+390,ANU-IGUAZÚ_GRAclásica260,GRA-250-001,relbase,0.50,description_fuzzy,Fuzzy match: Granola 260g → Granola 250g (92%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+391,ANU-JUMBO_GRAberries260x20,MLC1630337051,relbase,0.50,description_fuzzy,Fuzzy match: Berries → Barra Cereal Grana Sour Berries 5 Un (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+392,ANU-JUMBO_GRAcacao260x20,MLC2929973548,relbase,0.50,description_fuzzy,Fuzzy match: Chocolate → Barras Keto Chocolate Nuez Grana Vegana 35 Gr - 16 Un (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+393,ANU-JUMBO_GRAclásica260x20,GRA-250-001,relbase,0.50,description_fuzzy,Fuzzy match: Granola 260g → Granola 250g (92%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+394,ANU-KETOCLUB_GRAketo210,GRA-250-001,relbase,0.50,description_fuzzy,Fuzzy match: Granola 210g → Granola 250g (92%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+395,ANU-KSMC_U03010,KSMC_U03010,relbase,0.50,description_fuzzy,Fuzzy match: Keeper → Keeper Chocolate Maní 30 gr - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+396,ANU-LAN_BAcacao1ud,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+397,ANU-MY-CD-717549,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+398,ANU-O-CD-478774-1,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Maní → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+399,ANU-O-P3-935361,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+400,ANU-SC-CD-1955,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+401,ANU-TREMUS_AJOALBAHACA,CRAA_U13510,relbase,0.50,description_fuzzy,Fuzzy match: Crackers → Crackers Keto Ajo Albahaca 135 grs (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+402,ANU-TREMUS_BACACAO5UDS,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+403,ANU-TREMUS_BAKETO5UDS,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+404,ANU-TREMUS_CURCUMA,CRAA_U13510,relbase,0.50,description_fuzzy,Fuzzy match: Crackers → Crackers Keto Ajo Albahaca 135 grs (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+405,ANU-TREMUS_GRABERRIES,ML-MLC2978641268,relbase,0.50,description_fuzzy,"Fuzzy match: Granola Berries → Granola Grana Low Carb Berries Y Semillas, Vegana, Sin Aceit (100%)",2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+406,ANU-TREMUS_GRACACAO,MLC2930070644,relbase,0.50,description_fuzzy,Fuzzy match: Granola Cacao → Granola Grana Cacao 260 G Bolsa Semillas (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+407,ANU-TREMUS_GRACLASICA,GRA-250-001,relbase,0.50,description_fuzzy,Fuzzy match: Granola → Granola 250g (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+408,ANU-TREMUS_PIMIENTA,CRAA_U13510,relbase,0.50,description_fuzzy,Fuzzy match: Crackers → Crackers Keto Ajo Albahaca 135 grs (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+409,ANU-TREMUS_ROMERO,CRRO_U13510,relbase,0.50,description_fuzzy,Fuzzy match: Crackers Romero → Crackers Keto Romero 135 grs (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+410,ANU-TREMUS_SALDEMAR,CRSM_U25010,relbase,0.50,description_fuzzy,Fuzzy match: Crackers Sal de Mar → Crackers Keto Sal de Mar (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+411,ANU-TRICAO_BAcacao5ud,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+412,ANU-UNIMARC_GRAcacao260x20,GRA-250-001,relbase,0.50,description_fuzzy,Fuzzy match: Granola 260g → Granola 250g (92%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+413,ANU-UNIMARC_GRAcacao260x25,GRA-250-001,relbase,0.50,description_fuzzy,Fuzzy match: Granola 260g → Granola 250g (92%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+414,ANU-WALMART_BAketo5ud,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+415,ANU-WEB_BAcacao16ud,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+416,ANU-WEB_DESchipscacao,BACM_U04010,relbase,0.50,description_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+417,BABE_U04010,BABE_U04010,relbase,1.00,exact,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+418,BABE_U20010,BABE_U20010,relbase,1.00,exact,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+419,BACM_U04010,BACM_U04010,relbase,1.00,exact,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+420,BACM_U04010_EM,BACM_U04010,relbase,0.85,name_fuzzy,Fuzzy match: Barra Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+421,BACM_U20010,BACM_U20010,relbase,1.00,exact,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+422,BACM_U20010_EM,BACM_U04010,relbase,0.85,name_fuzzy,Fuzzy match: Barra Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+423,BACM_U64010,BACM_U64010,relbase,1.00,exact,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+424,BACM_U64010_EM,BACM_U04010,relbase,0.85,name_fuzzy,Fuzzy match: Barra Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+425,BAKC_C02810,BAKC_U20010,relbase,0.50,caja_master,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+426,BAKC_U04010,BAKC_U04010,relbase,1.00,exact,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+427,BAKC_U04010_EM,BACM_U04010,relbase,0.85,name_fuzzy,Fuzzy match: Barra Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+428,BAKC_U20010,BAKC_U20010,relbase,1.00,exact,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+429,BAKC_U20010_EM,BACM_U04010,relbase,0.85,name_fuzzy,Fuzzy match: Barra Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+430,BAKC_U64010,BAKC_U64010,relbase,1.00,exact,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+431,BAKC_U64010_EM,BACM_U04010,relbase,0.85,name_fuzzy,Fuzzy match: Barra Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+432,BAMC_C02810,BAMC_U20010,relbase,0.50,caja_master,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+433,BAMC_U04010,BAMC_U04010,relbase,1.00,exact,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+434,BAMC_U04010_EM,MLC1630337051,relbase,0.85,name_fuzzy,Fuzzy match: Barra → Barra Cereal Grana Sour Berries 5 Un (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+435,BAMC_U04010_NR,MLC1630337051,relbase,0.85,name_fuzzy,Fuzzy match: Barra → Barra Cereal Grana Sour Berries 5 Un (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+437,BAMC_U20010_EM,MLC1630337051,relbase,0.85,name_fuzzy,Fuzzy match: Barra → Barra Cereal Grana Sour Berries 5 Un (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+438,BAMC_U64010,BAMC_U64010,relbase,1.00,exact,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+439,BAMC_U64010_EM,MLC1630337051,relbase,0.85,name_fuzzy,Fuzzy match: Barra → Barra Cereal Grana Sour Berries 5 Un (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+440,CRAA_C01010,CRAA_U13510,relbase,0.50,caja_master,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+441,CRAA_U12010,ML-MLC2930200766,relbase,0.85,name_fuzzy,Fuzzy match: Crackers 135g → Galletas Crackers Grana Keto Sabor Ajo Albahaca 135g Vegana (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+442,CRAA_U13510,CRAA_U13510,relbase,1.00,exact,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+443,CRAA_U13510_EM,ML-MLC2930200766,relbase,0.85,name_fuzzy,Fuzzy match: Crackers 135g → Galletas Crackers Grana Keto Sabor Ajo Albahaca 135g Vegana (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+444,CRCU_C01010,CRCU_U13510,relbase,0.50,caja_master,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+445,CRCU_U12010,CRAA_U13510,relbase,0.75,name_fuzzy,Fuzzy match: Crackers 120g → Crackers Keto Ajo Albahaca 135 grs (76%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+446,CRCU_U13510,CRCU_U13510,relbase,1.00,exact,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+447,CRCU_U13510_EM,ML-MLC2930200766,relbase,0.85,name_fuzzy,Fuzzy match: Crackers 135g → Galletas Crackers Grana Keto Sabor Ajo Albahaca 135g Vegana (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+448,CRPM_U1000,CRAA_U13510,relbase,0.85,name_fuzzy,Fuzzy match: Crackers → Crackers Keto Ajo Albahaca 135 grs (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+449,CRPM_U12010,CRAA_U13510,relbase,0.75,name_fuzzy,Fuzzy match: Crackers 120g → Crackers Keto Ajo Albahaca 135 grs (76%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+450,CRPM_U13510,CRPM_U13510,relbase,1.00,exact,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+451,CRPM_U13510_EM,ML-MLC2930200766,relbase,0.85,name_fuzzy,Fuzzy match: Crackers 135g → Galletas Crackers Grana Keto Sabor Ajo Albahaca 135g Vegana (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+452,CRPM_U13520,ML-MLC2930200766,relbase,0.85,name_fuzzy,Fuzzy match: Crackers 135g → Galletas Crackers Grana Keto Sabor Ajo Albahaca 135g Vegana (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+453,CRRO_C01010,CRRO_U13510,relbase,0.50,caja_master,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+454,CRRO_C01410,CRRO_U13510,relbase,0.40,caja_fuzzy,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+455,CRRO_U12010,CRRO_U13510,relbase,0.75,name_fuzzy,Fuzzy match: Crackers Romero 120g → Crackers Keto Romero 135 grs (86%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+456,CRRO_U13510,CRRO_U13510,relbase,1.00,exact,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+457,CRRO_U13510_EM,MLC2933751572,relbase,0.85,name_fuzzy,Fuzzy match: Crackers Romero 135g → Galletas Crackers Grana Keto Sabor Romero 135g Vegana (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+458,CRSM_C00810,CRSM_U25010,relbase,0.50,caja_master,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+459,CRSM_C01010,CRSM_U13510,relbase,0.50,caja_master,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+460,CRSM_C01410,CRSM_U13510,relbase,0.40,caja_fuzzy,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+461,CRSM_U02510,CRSM_U02510,relbase,1.00,exact,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+462,CRSM_U1000,CRSM_U25010,relbase,0.85,name_fuzzy,Fuzzy match: Crackers Sal de Mar → Crackers Keto Sal de Mar (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+463,CRSM_U12010,CRSM_U25010,relbase,0.75,name_fuzzy,Fuzzy match: Crackers Sal de Mar 120g → Crackers Keto Sal de Mar (88%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+464,CRSM_U13510,CRSM_U13510,relbase,1.00,exact,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+465,CRSM_U13510_EM,CRSM_U25010,relbase,0.75,name_fuzzy,Fuzzy match: Crackers Sal de Mar 135g → Crackers Keto Sal de Mar (88%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+466,CRSM_U25020,CRSM_U25010,relbase,0.85,name_fuzzy,Fuzzy match: Crackers Sal de Mar → Crackers Keto Sal de Mar (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+467,G-GK-914023,GRA-250-001,relbase,0.85,name_fuzzy,Fuzzy match: Granola → Granola 250g (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+468,GRAL_C02010,ML-MLC2967399930,relbase,0.75,name_fuzzy,Fuzzy match: Granola Almendras 260g → Granola Grana Low Carb Almendras Y Semillas (87%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+469,GRAL_U26010,GRAL_U26010,relbase,1.00,exact,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+470,GRAL_U26010_EM,ML-MLC2967399930,relbase,0.75,name_fuzzy,Fuzzy match: Granola Almendras 260g → Granola Grana Low Carb Almendras Y Semillas (87%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+471,GRBE_C02010,ML-MLC2978641268,relbase,0.75,name_fuzzy,"Fuzzy match: Granola Berries 260g → Granola Grana Low Carb Berries Y Semillas, Vegana, Sin Aceit (86%)",2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+472,GRBE_U26010,GRBE_U26010,relbase,1.00,exact,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+473,GRBE_U26010_EM,ML-MLC2978641268,relbase,0.75,name_fuzzy,"Fuzzy match: Granola Berries 260g → Granola Grana Low Carb Berries Y Semillas, Vegana, Sin Aceit (86%)",2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+474,GRCA_C02010,GRCA_U26010,relbase,0.50,caja_master,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+475,GRCA_U26010,GRCA_U26010,relbase,1.00,exact,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+476,GRCA_U26010_EM,MLC2930070644,relbase,0.75,name_fuzzy,Fuzzy match: Granola Cacao 260g → Granola Grana Cacao 260 G Bolsa Semillas (84%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+477,GRKC_U21010,GRKC_U21010,relbase,1.00,exact,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+478,GRKC_U21010_EM,MLC2930070644,relbase,0.75,name_fuzzy,Fuzzy match: Granola Cacao 210g → Granola Grana Cacao 260 G Bolsa Semillas (84%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+479,KEEPER_PIONEROS,KSMC_U03010,relbase,0.85,name_fuzzy,Fuzzy match: Keeper → Keeper Chocolate Maní 30 gr - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+480,KSMC_U03010,KSMC_U03010,relbase,1.00,exact,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+481,KSMC_U15010,KSMC_U15010,relbase,1.00,exact,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+482,KSMC_U54010,KSMC_U54010,relbase,1.00,exact,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+483,PACKBABE_U20010,BABE_U20010,relbase,0.50,pack_variant,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+484,PACKBACM_U20010,BACM_U20010,relbase,0.50,pack_variant,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+485,PACKBAKC_U20010,BAKC_U20010,relbase,0.50,pack_variant,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+486,PACKBAMC_U20010,BAMC_U20010,relbase,0.50,pack_variant,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+487,PACKCRAA_U13510,CRAA_U13510,relbase,0.50,pack_variant,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+488,PACKCRPM_U13510,CRPM_U13510,relbase,0.50,pack_variant,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+489,PACKCRRO_U13510,CRRO_U13510,relbase,0.50,pack_variant,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+490,PACKCRSM_U13510,CRSM_U13510,relbase,0.50,pack_variant,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+491,PACKCRSM_U25020,CRSM_U25010,relbase,0.85,name_fuzzy,Fuzzy match: Crackers Sal de Mar → Crackers Keto Sal de Mar (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+492,PACKCRSURTIDO,CRAA_U13510,relbase,0.85,name_fuzzy,Fuzzy match: Crackers → Crackers Keto Ajo Albahaca 135 grs (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+493,PACKGRAL_U26010,GRAL_U26010,relbase,0.50,pack_variant,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+495,PACKGRCA_U26010,GRCA_U26010,relbase,0.50,pack_variant,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+496,PACKGRKC_U21010,GRKC_U21010,relbase,0.50,pack_variant,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+497,PACKKSMC_U15010,KSMC_U15010,relbase,0.50,pack_variant,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+498,PACKKSMC_U54010,KSMC_U54010,relbase,0.50,pack_variant,,2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563
+499,WEB_DESchipscacao,BACM_U04010,relbase,0.85,name_fuzzy,Fuzzy match: Cacao → Barra Low Carb Cacao Maní - 1 unidad (100%),2025-10-24 04:34:50.952563,2025-10-24 04:34:50.952563

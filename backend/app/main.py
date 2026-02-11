@@ -18,7 +18,7 @@ else:
 load_dotenv(env_path)
 
 # Import API routers
-from app.api import conversion, shopify, products, orders, mercadolibre, product_mapping, audit, inventory, sales_analytics, sales_analytics_realtime, admin, warehouses, chat, sync, sku_mappings, analytics, auth, product_catalog, inventory_planning, channel_mappings, debug_mapping
+from app.api import conversion, shopify, products, orders, mercadolibre, product_mapping, audit, inventory, sales_analytics, sales_analytics_realtime, admin, warehouses, chat, sync, sku_mappings, analytics, auth, product_catalog, inventory_planning, channel_mappings, debug_mapping, forecasting
 
 # Import centralized database connection with retry logic
 from app.core.database import get_db_connection_with_retry, CONNECTION_TIMEOUT
@@ -151,6 +151,9 @@ app.include_router(auth.router)
 
 # Inventory Planning API (production recommendations)
 app.include_router(inventory_planning.router)
+
+# Demand Forecasting API (stockout risk, lost revenue analysis)
+app.include_router(forecasting.router)
 
 # Debug Mapping API (visual debugging for SKU mapping)
 app.include_router(debug_mapping.router, prefix="/api/v1/debug-mapping", tags=["Debug Mapping"])

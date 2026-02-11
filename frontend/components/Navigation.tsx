@@ -12,7 +12,6 @@ import {
   Table2,
   Package,
   Boxes,
-  Warehouse,
   Factory,
   Tags,
   BookOpen,
@@ -91,9 +90,8 @@ export default function Navigation() {
       icon: Package,
       isDropdown: true,
       subItems: [
-        { name: 'General', href: '/dashboard/warehouse-inventory', icon: Boxes },
-        { name: 'Por Bodega', href: '/dashboard/warehouse-inventory/by-warehouse', icon: Warehouse },
-        { name: 'Planificación', href: '/dashboard/production-planning', icon: Factory },
+        { name: 'Estado Actual', href: '/dashboard/inventario/estado-actual', icon: Boxes },
+        { name: 'Planificación', href: '/dashboard/inventario/planificacion', icon: Factory },
       ]
     },
     {

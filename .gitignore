@@ -61,6 +61,9 @@ temp/
 # Claude Code sessions (debug scripts, exploration, temp tests)
 .claude_sessions/
 
+# Analysis outputs (generated reports)
+backend/output/
+
 # Database
 *.db
 *.sqlite

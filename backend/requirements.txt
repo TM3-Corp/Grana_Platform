@@ -40,3 +40,7 @@ flake8>=7.0.0
 
 # AI Integration
 anthropic>=0.39.0
+
+# Demand Forecasting
+prophet>=1.1.5
+holidays>=0.40

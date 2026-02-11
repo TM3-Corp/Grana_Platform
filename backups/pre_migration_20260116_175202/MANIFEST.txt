@@ -1,0 +1,17 @@
+Backup Manifest
+===============
+
+Timestamp: 20260116_175202
+Purpose: Pre-migration backup before database cleanup
+
+Tables Status:
+  product_variants: BACKED UP (10 rows)
+  channel_product_equivalents: BACKED UP (306 rows)
+  relbase_product_mappings: BACKED UP (348 rows)
+  dim_date: BACKED UP (4018 rows)
+  ml_tokens: BACKED UP (5 rows)
+  inventory_movements: BACKED UP (15162 rows)
+  customer_channel_rules: BACKED UP (4 rows)
+  api_keys: EMPTY (0 rows)
+  alerts: BACKED UP (4101 rows)
+  manual_corrections: EMPTY (0 rows)
