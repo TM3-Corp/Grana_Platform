@@ -469,17 +469,20 @@ async def get_sales_analytics(
             timeline = list(timeline_dict.values())
 
         # === 3. TOP ITEMS ===
+        # When stack_by is active, top items should reflect the stack dimension
+        # so both TimelineChart and TopItemsChart show the same taxonomy
+        top_group = stack_field if stack_field else group_field
         top_query = f"""
             SELECT
-                {group_field} as group_value,
+                {top_group} as group_value,
                 SUM(mv.revenue) as revenue,
                 {units_expr} as units,
                 {items_expr} as items,
                 COUNT(DISTINCT mv.order_id) as orders
             FROM sales_facts_mv mv
             WHERE {where_clause}
-            GROUP BY {group_field}
-            HAVING {group_field} IS NOT NULL
+            GROUP BY {top_group}
+            HAVING {top_group} IS NOT NULL
             ORDER BY revenue DESC
             LIMIT %s
         """

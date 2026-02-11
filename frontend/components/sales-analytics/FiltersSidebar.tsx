@@ -19,6 +19,7 @@ import {
   ChevronLeft,
   RotateCcw
 } from 'lucide-react'
+import { DIMENSIONS, getDimensionLabel } from '@/lib/dimensions'
 
 interface FiltersSidebarProps {
   // Date filters
@@ -106,10 +107,9 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
 
   const groupByOptions = [
     { value: '', label: 'Sin agrupación' },
-    { value: 'category', label: 'Familia' },
-    { value: 'channel', label: 'Canal' },
-    { value: 'format', label: 'Tipo Empaque' },
-    { value: 'sku_primario', label: 'SKU Primario' },
+    ...Object.entries(DIMENSIONS)
+      .filter(([key]) => key !== 'customer')
+      .map(([key, dim]) => ({ value: key, label: dim.label })),
   ]
 
   const topLimitOptions = [5, 10, 15, 20, 25, 30]
@@ -462,9 +462,9 @@ export default function FiltersSidebar(props: FiltersSidebarProps) {
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent hover:border-green-300 transition-colors"
           >
             <option value="">Sin apilación</option>
-            {props.groupBy !== 'category' && <option value="category">Familia</option>}
-            {props.groupBy !== 'channel' && <option value="channel">Canal</option>}
-            {props.groupBy !== 'format' && <option value="format">Formato</option>}
+            {props.groupBy !== 'category' && <option value="category">{getDimensionLabel('category')}</option>}
+            {props.groupBy !== 'channel' && <option value="channel">{getDimensionLabel('channel')}</option>}
+            {props.groupBy !== 'format' && <option value="format">{getDimensionLabel('format')}</option>}
           </select>
           <p className="text-xs text-gray-500 mt-1">
             {props.stackBy ? 'Barras apiladas por dimensión seleccionada' : 'Gráfico de líneas'}

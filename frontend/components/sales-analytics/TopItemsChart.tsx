@@ -2,6 +2,7 @@
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import { Trophy } from 'lucide-react'
+import { getDimensionLabel } from '@/lib/dimensions'
 
 interface TopItem {
   group_value: string
@@ -14,22 +15,14 @@ interface TopItem {
 interface TopItemsChartProps {
   data: TopItem[] | null
   groupBy: string | null
+  stackBy?: string | null
   topLimit: number
   loading?: boolean
 }
 
-export default function TopItemsChart({ data, groupBy, topLimit, loading }: TopItemsChartProps) {
-  // Helper function - must be defined before any returns that use it
-  const getGroupLabel = (group: string): string => {
-    const labels: Record<string, string> = {
-      category: 'Familia',
-      channel: 'Canal',
-      customer: 'Cliente',
-      format: 'Formato',
-      sku_primario: 'SKU Primario'
-    }
-    return labels[group] || group
-  }
+export default function TopItemsChart({ data, groupBy, stackBy, topLimit, loading }: TopItemsChartProps) {
+  // When stackBy is active, top items reflect the stack dimension
+  const effectiveGroupBy = stackBy || groupBy
 
   if (loading) {
     return (
@@ -44,7 +37,7 @@ export default function TopItemsChart({ data, groupBy, topLimit, loading }: TopI
       <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8">
         <h2 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
           <Trophy className="w-5 h-5 text-amber-500" strokeWidth={1.75} />
-          Top {topLimit} {groupBy ? `por ${getGroupLabel(groupBy)}` : ''}
+          Top {topLimit} {effectiveGroupBy ? `por ${getDimensionLabel(effectiveGroupBy)}` : ''}
         </h2>
         <div className="flex items-center justify-center h-64 text-gray-500 text-sm">
           No hay datos disponibles
@@ -96,7 +89,7 @@ export default function TopItemsChart({ data, groupBy, topLimit, loading }: TopI
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center">
             <Trophy className="w-4 h-4 text-amber-600" strokeWidth={2} />
           </div>
-          Top {topLimit} {groupBy ? `por ${getGroupLabel(groupBy)}` : 'Productos'}
+          Top {topLimit} {effectiveGroupBy ? `por ${getDimensionLabel(effectiveGroupBy)}` : 'Productos'}
         </h2>
         <p className="text-xs text-gray-500 ml-10">
           Ordenado por ingresos totales
@@ -153,7 +146,7 @@ export default function TopItemsChart({ data, groupBy, topLimit, loading }: TopI
             <tr className="border-b border-gray-200">
               <th className="text-left py-2 px-3 font-semibold text-gray-700">#</th>
               <th className="text-left py-2 px-3 font-semibold text-gray-700">
-                {groupBy ? getGroupLabel(groupBy) : 'Item'}
+                {effectiveGroupBy ? getDimensionLabel(effectiveGroupBy) : 'Item'}
               </th>
               <th className="text-right py-2 px-3 font-semibold text-gray-700">Ingresos</th>
               <th className="text-right py-2 px-3 font-semibold text-gray-700">% Total</th>

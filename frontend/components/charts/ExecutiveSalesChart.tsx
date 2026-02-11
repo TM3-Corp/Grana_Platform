@@ -170,10 +170,10 @@ const CustomTooltip = ({ active, payload, label, previousYear, currentYear, next
         {showProjections && revenueCurrYearEstimated !== undefined && revenueCurrYearEstimated !== null && (
           <div className="flex justify-between items-center">
             <span className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: '#14B8A6', border: '2px dashed #14B8A6' }}></span>
+              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: '#F43F5E', border: '2px dashed #F43F5E' }}></span>
               <span className="text-gray-500 text-xs">{currentYear} Estimado mes:</span>
             </span>
-            <span className="font-medium text-sm" style={{ color: '#14B8A6' }}>
+            <span className="font-medium text-sm" style={{ color: '#F43F5E' }}>
               ${revenueCurrYearEstimated.toLocaleString('es-CL')}
             </span>
           </div>
@@ -183,10 +183,10 @@ const CustomTooltip = ({ active, payload, label, previousYear, currentYear, next
         {revenueCurrYearProjected !== undefined && revenueCurrYearProjected !== null && !isMtd && (
           <div className="flex justify-between items-center">
             <span className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: '#14B8A6', border: '2px dashed #14B8A6' }}></span>
+              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: '#F43F5E', border: '2px dashed #F43F5E' }}></span>
               <span className="text-gray-600">{currentYear} Proyección:</span>
             </span>
-            <span className="font-semibold" style={{ color: '#14B8A6' }}>
+            <span className="font-semibold" style={{ color: '#F43F5E' }}>
               ${revenueCurrYearProjected.toLocaleString('es-CL')}
             </span>
           </div>
@@ -281,7 +281,7 @@ export default function ExecutiveSalesChart({
   const seriesConfigs: SeriesConfig[] = [
     { key: 'currentYear', label: `${current_year} Real`, color: '#0D9488', defaultEnabled: true },
     { key: 'previousYear', label: `${previous_year} Real`, color: '#6366F1', defaultEnabled: true },
-    { key: 'projectedCurrentYear', label: `${current_year} Proy.`, color: '#14B8A6', defaultEnabled: true },
+    { key: 'projectedCurrentYear', label: `${current_year} Proy.`, color: '#F43F5E', defaultEnabled: true },
     { key: 'projectedNextYear', label: `${next_year} Proy.`, color: '#8B5CF6', defaultEnabled: false },
   ]
 
@@ -613,17 +613,17 @@ export default function ExecutiveSalesChart({
             />
           )}
 
-          {/* Current year projected line - TEAL dashed (remaining months) */}
+          {/* Current year projected line - ROSE dashed (remaining months) */}
           {visibleSeries.projectedCurrentYear && (
             <Line
               type="monotone"
               dataKey="revenue_current_year_projected"
-              stroke="#14B8A6"
+              stroke="#F43F5E"
               strokeWidth={2}
               strokeDasharray="6 3"
               name={`${current_year} (Proyección)`}
-              dot={{ r: 4, fill: '#14B8A6', strokeWidth: 1, stroke: '#0D9488' }}
-              activeDot={{ r: 6, fill: '#14B8A6' }}
+              dot={{ r: 4, fill: '#F43F5E', strokeWidth: 1, stroke: '#E11D48' }}
+              activeDot={{ r: 6, fill: '#F43F5E' }}
             />
           )}
 
@@ -643,26 +643,26 @@ export default function ExecutiveSalesChart({
           )}
 
 
-          {/* Striped teal line for estimated current year full month (incomplete months only) */}
+          {/* Striped rose line for estimated current year full month (incomplete months only) */}
           {visibleSeries.projectedCurrentYear && (
             <Line
               type="monotone"
               dataKey="revenue_current_year_estimated"
-              stroke="#14B8A6"
+              stroke="#F43F5E"
               strokeWidth={2}
               strokeDasharray="5 5"
               name={`${current_year} Estimado`}
               dot={((props: any) => {
                 // Only show dot at MTD month
                 if (!props.payload?.is_mtd) return null
-                return <circle key={`dot-curr-est-${props.index}`} cx={props.cx} cy={props.cy} r={5} fill="#14B8A6" stroke="#0D9488" strokeWidth={2} />
+                return <circle key={`dot-curr-est-${props.index}`} cx={props.cx} cy={props.cy} r={5} fill="#F43F5E" stroke="#E11D48" strokeWidth={2} />
               }) as any}
               connectNulls={false}
               legendType="none"
               label={(props: any) => {
                 // Only show label at MTD month
                 if (!props.payload?.is_mtd) return null
-                return <CustomLabel key={`label-curr-est-${props.index}`} {...props} color="#14B8A6" />
+                return <CustomLabel key={`label-curr-est-${props.index}`} {...props} color="#F43F5E" />
               }}
             />
           )}
@@ -687,10 +687,17 @@ export default function ExecutiveSalesChart({
                 <span>{current_year} real</span>
               </div>
             )}
+            {visibleSeries.projectedCurrentYear && (
+              <div className="flex items-center gap-1.5">
+                <div className="w-4 h-0.5" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #F43F5E 0px, #F43F5E 3px, transparent 3px, transparent 6px)' }}></div>
+                <div className="w-2 h-2 rounded-full -ml-1" style={{ backgroundColor: '#F43F5E' }}></div>
+                <span>{current_year} proy.</span>
+              </div>
+            )}
             {visibleSeries.projectedCurrentYear && chartData.some(d => d.is_mtd) && (
               <div className="flex items-center gap-1.5">
-                <div className="w-4 h-0.5" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #14B8A6 0px, #14B8A6 2px, transparent 2px, transparent 4px)' }}></div>
-                <div className="w-2 h-2 rounded-full -ml-1" style={{ backgroundColor: '#14B8A6' }}></div>
+                <div className="w-4 h-0.5" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #F43F5E 0px, #F43F5E 2px, transparent 2px, transparent 4px)' }}></div>
+                <div className="w-2 h-2 rounded-full -ml-1" style={{ backgroundColor: '#F43F5E' }}></div>
                 <span>{current_year} estimado</span>
               </div>
             )}

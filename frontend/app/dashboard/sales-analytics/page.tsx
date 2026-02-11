@@ -517,6 +517,7 @@ export default function SalesAnalyticsPage() {
         <TopItemsChart
           data={data?.top_items || null}
           groupBy={groupBy}
+          stackBy={stackBy}
           topLimit={topLimit}
           loading={loading}
         />
