@@ -252,6 +252,12 @@ class SyncService:
             if response is None:
                 return None
             return response.json()
+        except requests.exceptions.HTTPError as e:
+            if e.response is not None and e.response.status_code == 404:
+                logger.info(f"DTE type {doc_type} not available in RelBase API (404)")
+                return None
+            logger.error(f"Error fetching RelBase DTEs (type={doc_type}): {e}")
+            return None
         except Exception as e:
             logger.error(f"Error fetching RelBase DTEs (type={doc_type}): {e}")
             return None
@@ -262,13 +268,14 @@ class SyncService:
 
         try:
             response = self._relbase_request_with_retry(
-                'GET', url, timeout=30, max_retries=2
+                'GET', url, timeout=30, max_retries=3
             )
             if response is None:
+                logger.warning(f"DTE_DETAIL_SKIPPED: Could not fetch detail for DTE {dte_id} after retries")
                 return {}
             return response.json()
         except Exception as e:
-            logger.error(f"Error fetching DTE {dte_id}: {e}")
+            logger.error(f"DTE_DETAIL_FAILED: Error fetching DTE {dte_id}: {e}")
             return {}
 
     def _fetch_relbase_warehouses(self) -> List[Dict]:
@@ -836,9 +843,11 @@ class SyncService:
             except Exception as e:
                 logger.warning(f"Could not pre-fetch RelBase channels: {e}")
 
-            # Fetch DTEs from RelBase for both Facturas (33) and Boletas (39)
+            # Fetch DTEs from RelBase
             total_dtes = 0
-            document_types = [33, 39]  # 33=Factura, 39=Boleta
+            # 33=Factura, 39=Boleta, 43=Liquidación Factura
+            document_types = [33, 39, 43]
+            DTE_TYPE_MAP = {33: 'factura', 39: 'boleta', 43: 'liquidacion_factura'}
             MAX_PAGES = 100  # Safety limit to prevent infinite pagination
 
             for doc_type in document_types:
@@ -849,7 +858,10 @@ class SyncService:
                     dte_response = self._fetch_relbase_dtes(date_from, date_to, page, doc_type)
 
                     if dte_response is None:
-                        errors.append(f"Failed to fetch DTEs page {page} (type={doc_type})")
+                        if page == 1:
+                            logger.info(f"No DTEs available for type={doc_type} (API returned error/404)")
+                        else:
+                            errors.append(f"Failed to fetch DTEs page {page} (type={doc_type})")
                         break  # stop this doc_type on API error
 
                     dtes = dte_response.get('data', {}).get('dtes', [])
@@ -875,8 +887,15 @@ class SyncService:
                             existing = cursor.fetchone()
 
                             if existing:
-                                # Order exists, could update if needed
+                                # Update invoice_status if changed in RelBase
+                                rb_status = dte.get('sii_status')
+                                if rb_status:
+                                    cursor.execute("""
+                                        UPDATE orders SET invoice_status = %s
+                                        WHERE id = %s AND invoice_status != %s
+                                    """, (rb_status, existing[0], rb_status))
                                 orders_updated += 1
+                                cursor.execute(f"RELEASE SAVEPOINT sp_dte_{int(dte_id)}")
                                 continue
 
                             # Fetch DTE details for products
@@ -884,7 +903,7 @@ class SyncService:
                             time.sleep(self.rate_limit_delay)  # Rate limiting
 
                             if not dte_detail:
-                                errors.append(f"Could not fetch details for DTE {dte_id}")
+                                errors.append(f"DTE_SKIPPED: type={doc_type} id={dte_id} folio={dte.get('folio')}")
                                 continue
 
                             # API returns data directly (not nested in 'dte')
@@ -1028,7 +1047,7 @@ class SyncService:
                                 sii_status,  # Use SII status from RelBase API
                                 order_date,
                                 folio,
-                                'factura' if dte_data.get('type_document') == 33 else 'boleta',
+                                DTE_TYPE_MAP.get(dte_data.get('type_document'), 'boleta'),
                                 order_date,
                                 json.dumps({
                                     'relbase_id': dte_id,
@@ -1047,37 +1066,72 @@ class SyncService:
                             # This approach uses 13 smart rules (exact match, ANU- prefix, _WEB suffix, etc.)
                             # instead of the legacy relbase_product_mappings table.
                             products = dte_data.get('products', [])
-                            invoice_type = dte_data.get('type_document')  # 33=Factura, 39=Boleta
-                            for product in products:
-                                product_code = product.get('code', '')
-                                product_name = product.get('name', '')
-                                quantity = float(product.get('quantity', 0))  # Can be decimal
-                                price = float(product.get('price', 0))
+                            invoice_type = dte_data.get('type_document')  # 33=Factura, 39=Boleta, 43=Liquidación
 
-                                # CRITICAL FIX: For Boletas, RelBase returns Gross prices (includes 19% IVA)
-                                # Convert to Net to match order.subtotal (from amount_neto)
-                                # Facturas already return Net prices, so no conversion needed
-                                if invoice_type == 39:  # Boleta DTE type
-                                    price = price / 1.19
+                            if invoice_type == 39 and products:
+                                # Boleta: RelBase product prices are GROSS but amount_neto
+                                # includes per-item discounts not visible in product.price.
+                                # Proportionally allocate order-level net across items by
+                                # their gross weight so SUM(item.subtotal) = orders.subtotal.
+                                gross_items = []
+                                gross_total = 0.0
+                                for product in products:
+                                    qty = float(product.get('quantity', 0))
+                                    price_gross = float(product.get('price', 0))
+                                    line_gross = qty * price_gross
+                                    gross_total += line_gross
+                                    gross_items.append((product, qty, price_gross, line_gross))
 
-                                subtotal = quantity * price
+                                for product, qty, price_gross, line_gross in gross_items:
+                                    if gross_total > 0 and qty > 0:
+                                        share = line_gross / gross_total
+                                        item_net = round(net * share, 2)
+                                        unit_price_net = round(item_net / qty, 2)
+                                    else:
+                                        unit_price_net = 0.0
+                                        item_net = 0.0
 
-                                cursor.execute("""
-                                    INSERT INTO order_items
-                                    (order_id, product_id, product_sku, product_name,
-                                     quantity, unit_price, subtotal, total, created_at)
-                                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
-                                """, (
-                                    order_id,
-                                    None,  # product_id not used - mapping done at display time
-                                    product_code,  # Store raw RelBase code
-                                    product_name,
-                                    quantity,
-                                    price,
-                                    subtotal,
-                                    subtotal
-                                ))
-                                order_items_created += 1
+                                    cursor.execute("""
+                                        INSERT INTO order_items
+                                        (order_id, product_id, product_sku, product_name,
+                                         quantity, unit_price, subtotal, total, created_at)
+                                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                                    """, (
+                                        order_id,
+                                        None,
+                                        product.get('code', ''),
+                                        product.get('name', ''),
+                                        qty,
+                                        unit_price_net,
+                                        item_net,
+                                        item_net
+                                    ))
+                                    order_items_created += 1
+                            else:
+                                # Factura: prices are already net, no conversion needed
+                                for product in products:
+                                    product_code = product.get('code', '')
+                                    product_name = product.get('name', '')
+                                    quantity = float(product.get('quantity', 0))
+                                    price = float(product.get('price', 0))
+                                    subtotal_item = quantity * price
+
+                                    cursor.execute("""
+                                        INSERT INTO order_items
+                                        (order_id, product_id, product_sku, product_name,
+                                         quantity, unit_price, subtotal, total, created_at)
+                                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                                    """, (
+                                        order_id,
+                                        None,
+                                        product_code,
+                                        product_name,
+                                        quantity,
+                                        price,
+                                        subtotal_item,
+                                        subtotal_item
+                                    ))
+                                    order_items_created += 1
 
                             # Release savepoint on success
                             cursor.execute(f"RELEASE SAVEPOINT sp_dte_{int(dte_id)}")
