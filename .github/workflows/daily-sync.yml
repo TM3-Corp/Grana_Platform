@@ -4,6 +4,8 @@ on:
   schedule:
     # Run daily at 6 AM Chile time (UTC-3 = 9 AM UTC)
     - cron: '0 9 * * *'
+    # Run monthly full sync on 1st at 5 AM Chile time (8 AM UTC)
+    - cron: '0 8 1 * *'
 
   # Allow manual trigger with options
   workflow_dispatch:
@@ -33,9 +35,16 @@ jobs:
         run: |
           DAYS_BACK="${{ github.event.inputs.days_back || '7' }}"
 
-          echo "Triggering sales sync with days_back=$DAYS_BACK (synchronous mode)"
-
-          ENDPOINT="https://granaplatform-production.up.railway.app/api/v1/sync/sales?days_back=$DAYS_BACK"
+          # Monthly full sync on 1st of month (cron '0 8 1 * *')
+          DAY_OF_MONTH=$(date -u +%d)
+          HOUR_UTC=$(date -u +%H)
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "$DAY_OF_MONTH" = "01" ] && [ "$HOUR_UTC" = "08" ]; then
+            echo "Monthly full sync triggered (1st of month)"
+            ENDPOINT="https://granaplatform-production.up.railway.app/api/v1/sync/sales?force_full=true"
+          else
+            echo "Triggering sales sync with days_back=$DAYS_BACK (synchronous mode)"
+            ENDPOINT="https://granaplatform-production.up.railway.app/api/v1/sync/sales?days_back=$DAYS_BACK"
+          fi
           echo "Calling: $ENDPOINT"
 
           # Make the API call with 120s timeout (now runs in threadpool, should not block)

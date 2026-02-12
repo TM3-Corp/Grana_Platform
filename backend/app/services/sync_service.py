@@ -1166,6 +1166,41 @@ class SyncService:
                     logger.error(f"Hit MAX_PAGES={MAX_PAGES} for doc_type={doc_type} — possible infinite pagination")
                     errors.append(f"Pagination limit reached for doc_type={doc_type}")
 
+            # === CHECK STALE sent_sii ORDERS ===
+            # These may have changed to accepted/cancel in RelBase since they
+            # were first synced, but fall outside the current date range.
+            try:
+                cursor.execute("""
+                    SELECT id, external_id FROM orders
+                    WHERE source = 'relbase' AND invoice_status = 'sent_sii'
+                """)
+                sent_sii_orders = cursor.fetchall()
+                sent_sii_updated = 0
+                for order_row in sent_sii_orders:
+                    order_id_local, ext_id = order_row
+                    try:
+                        dte_list_resp = requests.get(
+                            f"{self.relbase_base_url}/api/v1/dtes/{ext_id}",
+                            headers=self._get_relbase_headers(),
+                            timeout=15
+                        )
+                        if dte_list_resp.status_code == 200:
+                            current_status = dte_list_resp.json().get('data', {}).get('sii_status')
+                            if current_status and current_status != 'sent_sii':
+                                cursor.execute("""
+                                    UPDATE orders SET invoice_status = %s, updated_at = NOW()
+                                    WHERE id = %s
+                                """, (current_status, order_id_local))
+                                sent_sii_updated += 1
+                                logger.info(f"SENT_SII_RESOLVED: order {ext_id} -> {current_status}")
+                        time.sleep(0.2)
+                    except Exception as e:
+                        logger.warning(f"Could not check sent_sii order {ext_id}: {e}")
+                if sent_sii_orders:
+                    logger.info(f"Checked {len(sent_sii_orders)} sent_sii orders, {sent_sii_updated} status updated")
+            except Exception as e:
+                logger.warning(f"sent_sii check failed: {e}")
+
             # === CLEANUP: Fix any orders with missing customer/channel data ===
             customers_fixed, channels_fixed = self._fix_missing_order_references(cursor)
             if customers_fixed > 0 or channels_fixed > 0:
