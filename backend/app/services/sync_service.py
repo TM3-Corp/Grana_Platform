@@ -1166,40 +1166,69 @@ class SyncService:
                     logger.error(f"Hit MAX_PAGES={MAX_PAGES} for doc_type={doc_type} — possible infinite pagination")
                     errors.append(f"Pagination limit reached for doc_type={doc_type}")
 
-            # === CHECK STALE sent_sii ORDERS ===
-            # These may have changed to accepted/cancel in RelBase since they
-            # were first synced, but fall outside the current date range.
+            # === CHECK STALE ORDER STATUSES ===
+            # Orders may change status in RelBase (e.g. accepted->cancel,
+            # sent_sii->accepted) after they fall outside the sync window.
+            # Strategy: re-fetch the DTE *list* for the 60 days before the
+            # sync window (list includes sii_status, ~2-4 API calls vs 200+
+            # individual detail calls). Then diff against DB statuses.
             try:
+                drift_start = (datetime.strptime(date_from, '%Y-%m-%d') - timedelta(days=60)).strftime('%Y-%m-%d')
+                drift_end = date_from  # up to where the main sync started
+
+                # Build a map of ext_id -> current RelBase status from list endpoint
+                rb_statuses = {}
+                for dt in document_types:
+                    rb_dtes = self._fetch_relbase_dtes(drift_start, drift_end, page=1, doc_type=dt)
+                    if rb_dtes is None:
+                        continue
+                    for dte in rb_dtes.get('data', {}).get('dtes', []):
+                        rb_statuses[str(dte['id'])] = dte.get('sii_status')
+                    # Handle pagination
+                    total_pages = rb_dtes.get('meta', {}).get('total_pages', 1)
+                    for pg in range(2, total_pages + 1):
+                        rb_page = self._fetch_relbase_dtes(drift_start, drift_end, page=pg, doc_type=dt)
+                        if rb_page is None:
+                            break
+                        for dte in rb_page.get('data', {}).get('dtes', []):
+                            rb_statuses[str(dte['id'])] = dte.get('sii_status')
+
+                # Also always check ALL sent_sii orders (regardless of date)
                 cursor.execute("""
-                    SELECT id, external_id FROM orders
+                    SELECT id, external_id, invoice_status FROM orders
                     WHERE source = 'relbase' AND invoice_status = 'sent_sii'
                 """)
-                sent_sii_orders = cursor.fetchall()
-                sent_sii_updated = 0
-                for order_row in sent_sii_orders:
-                    order_id_local, ext_id = order_row
-                    try:
-                        dte_list_resp = requests.get(
-                            f"{self.relbase_base_url}/api/v1/dtes/{ext_id}",
-                            headers=self._get_relbase_headers(),
-                            timeout=15
-                        )
-                        if dte_list_resp.status_code == 200:
-                            current_status = dte_list_resp.json().get('data', {}).get('sii_status')
-                            if current_status and current_status != 'sent_sii':
-                                cursor.execute("""
-                                    UPDATE orders SET invoice_status = %s, updated_at = NOW()
-                                    WHERE id = %s
-                                """, (current_status, order_id_local))
-                                sent_sii_updated += 1
-                                logger.info(f"SENT_SII_RESOLVED: order {ext_id} -> {current_status}")
-                        time.sleep(0.2)
-                    except Exception as e:
-                        logger.warning(f"Could not check sent_sii order {ext_id}: {e}")
-                if sent_sii_orders:
-                    logger.info(f"Checked {len(sent_sii_orders)} sent_sii orders, {sent_sii_updated} status updated")
+                for order_id_local, ext_id, db_status in cursor.fetchall():
+                    if ext_id not in rb_statuses:
+                        try:
+                            resp = requests.get(
+                                f"{self.relbase_base_url}/api/v1/dtes/{ext_id}",
+                                headers=self._get_relbase_headers(), timeout=15)
+                            if resp.status_code == 200:
+                                rb_statuses[ext_id] = resp.json().get('data', {}).get('sii_status')
+                            time.sleep(0.2)
+                        except Exception:
+                            pass
+
+                # Compare and update mismatches
+                if rb_statuses:
+                    cursor.execute("""
+                        SELECT id, external_id, invoice_status FROM orders
+                        WHERE source = 'relbase' AND external_id = ANY(%s)
+                    """, (list(rb_statuses.keys()),))
+                    stale_updated = 0
+                    for order_id_local, ext_id, db_status in cursor.fetchall():
+                        rb_status = rb_statuses.get(ext_id)
+                        if rb_status and rb_status != db_status:
+                            cursor.execute("""
+                                UPDATE orders SET invoice_status = %s, updated_at = NOW()
+                                WHERE id = %s
+                            """, (rb_status, order_id_local))
+                            stale_updated += 1
+                            logger.info(f"STATUS_DRIFT_FIXED: order {ext_id} {db_status} -> {rb_status}")
+                    logger.info(f"Status drift check: {len(rb_statuses)} DTEs checked, {stale_updated} updated")
             except Exception as e:
-                logger.warning(f"sent_sii check failed: {e}")
+                logger.warning(f"Status drift check failed: {e}")
 
             # === CLEANUP: Fix any orders with missing customer/channel data ===
             customers_fixed, channels_fixed = self._fix_missing_order_references(cursor)
