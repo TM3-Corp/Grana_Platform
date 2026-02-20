@@ -86,13 +86,13 @@ async def get_production_recommendations(
                     at.sku,
                     COALESCE(
                         pc.product_name,
-                        pc_master.master_box_name,
+                        pmb.master_box_name,
                         (SELECT name FROM products WHERE sku = at.sku LIMIT 1),
                         at.sku
                     ) as name,
                     COALESCE(
                         pc.category,
-                        CASE WHEN pc_master.sku IS NOT NULL THEN 'CAJA MASTER' END,
+                        pc_via_pmb.category,
                         (SELECT category FROM products WHERE sku = at.sku LIMIT 1)
                     ) as category,
                     COALESCE(at.stock_total, 0) as stock_total,
@@ -133,8 +133,8 @@ async def get_production_recommendations(
                             0
                         ) * 1.2 - COALESCE(ipf.stock_usable, at.stock_total, 0))::INTEGER
                     ) as production_needed,
-                    CASE WHEN pc.sku IS NOT NULL OR pc_master.sku IS NOT NULL THEN true ELSE false END as in_catalog,
-                    COALESCE(pc.is_inventory_active, pc_master.is_inventory_active, true) as is_inventory_active
+                    CASE WHEN pc.sku IS NOT NULL OR pmb.sku_master IS NOT NULL THEN true ELSE false END as in_catalog,
+                    COALESCE(pc.is_inventory_active, pc_via_pmb.is_inventory_active, true) as is_inventory_active
                 FROM (
                     -- Get aggregated stock per SKU
                     SELECT
@@ -153,7 +153,8 @@ async def get_production_recommendations(
                     GROUP BY COALESCE(sm.target_sku, p.sku)
                 ) at
                 LEFT JOIN product_catalog pc ON pc.sku = at.sku AND pc.is_active = TRUE
-                LEFT JOIN product_catalog pc_master ON pc_master.sku_master = at.sku AND pc_master.is_active = TRUE AND pc.sku IS NULL
+                LEFT JOIN product_master_boxes pmb ON pmb.sku_master = at.sku AND pmb.is_active = TRUE AND pc.sku IS NULL
+                LEFT JOIN product_catalog pc_via_pmb ON pc_via_pmb.sku = pmb.product_sku AND pc.sku IS NULL
                 LEFT JOIN product_inventory_settings pis ON pis.sku = at.sku
                 LEFT JOIN inventory_planning_facts ipf ON ipf.sku = at.sku
             )

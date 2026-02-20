@@ -251,14 +251,14 @@ async def get_catalog_skus(
             sku_where.append("category = %s")
             sku_params.append(category)
 
-        # Build WHERE conditions for master box SKUs
-        master_where = ["is_active = TRUE", "sku_master IS NOT NULL"]
+        # Build WHERE conditions for master box SKUs (from junction table)
+        master_where = ["pmb.is_active = TRUE"]
         master_params = []
         if search:
-            master_where.append("(sku_master ILIKE %s OR master_box_name ILIKE %s)")
+            master_where.append("(pmb.sku_master ILIKE %s OR pmb.master_box_name ILIKE %s)")
             master_params.extend([search_param, search_param])
         if category:
-            master_where.append("category = %s")
+            master_where.append("pc2.category = %s")
             master_params.append(category)
 
         sku_where_sql = " AND ".join(sku_where)
@@ -271,8 +271,9 @@ async def get_catalog_skus(
 
             UNION
 
-            SELECT sku_master as sku, master_box_name as product_name, category, units_per_display, 'master' as sku_type
-            FROM product_catalog
+            SELECT pmb.sku_master as sku, pmb.master_box_name as product_name, pc2.category, pc2.units_per_display, 'master' as sku_type
+            FROM product_master_boxes pmb
+            JOIN product_catalog pc2 ON pc2.sku = pmb.product_sku
             WHERE {master_where_sql}
 
             ORDER BY sku
@@ -353,9 +354,11 @@ async def create_mapping(mapping: SKUMappingCreate):
         conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
         cursor = conn.cursor(cursor_factory=RealDictCursor)
 
-        # Validate target_sku exists in product_catalog (check both sku and sku_master columns)
+        # Validate target_sku exists in product_catalog or product_master_boxes
         cursor.execute("""
-            SELECT sku FROM product_catalog WHERE (sku = %s OR sku_master = %s) AND is_active = TRUE
+            SELECT sku FROM product_catalog WHERE sku = %s AND is_active = TRUE
+            UNION
+            SELECT product_sku FROM product_master_boxes WHERE sku_master = %s AND is_active = TRUE
         """, (mapping.target_sku, mapping.target_sku))
 
         if not cursor.fetchone():
@@ -458,10 +461,12 @@ async def update_mapping(mapping_id: int, mapping: SKUMappingUpdate):
             conn.close()
             raise HTTPException(status_code=404, detail=f"Mapping with id {mapping_id} not found")
 
-        # Validate target_sku if provided (check both sku and sku_master columns)
+        # Validate target_sku if provided (check product_catalog and product_master_boxes)
         if mapping.target_sku:
             cursor.execute("""
-                SELECT sku FROM product_catalog WHERE (sku = %s OR sku_master = %s) AND is_active = TRUE
+                SELECT sku FROM product_catalog WHERE sku = %s AND is_active = TRUE
+                UNION
+                SELECT product_sku FROM product_master_boxes WHERE sku_master = %s AND is_active = TRUE
             """, (mapping.target_sku, mapping.target_sku))
 
             if not cursor.fetchone():
@@ -690,9 +695,9 @@ async def get_unmapped_order_skus(
                 AND pc.is_active = TRUE
             )
             AND NOT EXISTS (
-                SELECT 1 FROM product_catalog pc
-                WHERE pc.sku_master = os.sku
-                AND pc.is_active = TRUE
+                SELECT 1 FROM product_master_boxes pmb
+                WHERE pmb.sku_master = os.sku
+                AND pmb.is_active = TRUE
             )
             ORDER BY os.total_revenue DESC NULLS LAST, os.order_count DESC
         """
@@ -722,9 +727,9 @@ async def get_unmapped_order_skus(
                 AND pc.is_active = TRUE
             )
             AND NOT EXISTS (
-                SELECT 1 FROM product_catalog pc
-                WHERE pc.sku_master = os.sku
-                AND pc.is_active = TRUE
+                SELECT 1 FROM product_master_boxes pmb
+                WHERE pmb.sku_master = os.sku
+                AND pmb.is_active = TRUE
             )
         """
         cursor.execute(count_query, params)
@@ -820,9 +825,9 @@ async def get_all_order_skus(
                 os.sku,
                 -- Use canonical product name from product_catalog when available
                 COALESCE(
-                    pc_direct.product_name,      -- SKU matches product_catalog.sku
-                    pc_master.master_box_name,   -- SKU matches product_catalog.sku_master (caja master)
-                    os.product_name              -- Fallback to order_items name for unmapped
+                    pc_direct.product_name,
+                    pmb.master_box_name,
+                    os.product_name
                 ) as product_name,
                 os.order_count,
                 os.total_quantity,
@@ -831,37 +836,37 @@ async def get_all_order_skus(
                 CASE
                     WHEN mc.source_pattern IS NOT NULL THEN 'mapped'
                     WHEN pc_direct.sku IS NOT NULL THEN 'in_catalog'
-                    WHEN pc_master.sku IS NOT NULL THEN 'in_catalog'
+                    WHEN pmb.sku_master IS NOT NULL THEN 'in_catalog'
                     ELSE 'unmapped'
                 END as mapping_status,
                 COALESCE(
                     (mc.components->0->>'target_sku'),
-                    pc_master.sku
+                    pmb.product_sku
                 ) as mapped_to,
                 COALESCE(
                     (mc.components->0->>'quantity_multiplier')::int,
-                    pc_master.items_per_master_box
+                    pmb.items_per_master_box
                 ) as quantity_multiplier,
                 COALESCE(
                     (mc.components->0->>'rule_name'),
-                    CASE WHEN pc_master.sku IS NOT NULL THEN 'Caja Master' ELSE NULL END
+                    CASE WHEN pmb.sku_master IS NOT NULL THEN 'Caja Master' ELSE NULL END
                 ) as rule_name,
                 mc.components as mapping_components,
                 COALESCE(mc.component_count, 0) as component_count
             FROM order_skus os
             LEFT JOIN mapping_components mc ON mc.source_pattern = os.sku
             LEFT JOIN product_catalog pc_direct ON pc_direct.sku = os.sku AND pc_direct.is_active = TRUE
-            LEFT JOIN product_catalog pc_master ON pc_master.sku_master = os.sku AND pc_master.is_active = TRUE
+            LEFT JOIN product_master_boxes pmb ON pmb.sku_master = os.sku AND pmb.is_active = TRUE
         """
 
-        # Add filter for mapped/unmapped (check both sku and sku_master)
+        # Add filter for mapped/unmapped
         filter_clause = ""
         if mapped_only:
-            filter_clause = "WHERE mc.source_pattern IS NOT NULL OR pc_direct.sku IS NOT NULL OR pc_master.sku IS NOT NULL"
+            filter_clause = "WHERE mc.source_pattern IS NOT NULL OR pc_direct.sku IS NOT NULL OR pmb.sku_master IS NOT NULL"
         elif unmapped_only:
-            filter_clause = "WHERE mc.source_pattern IS NULL AND pc_direct.sku IS NULL AND pc_master.sku IS NULL"
+            filter_clause = "WHERE mc.source_pattern IS NULL AND pc_direct.sku IS NULL AND pmb.sku_master IS NULL"
 
-        # Count query (2024+ orders, check both sku and sku_master)
+        # Count query (2024+ orders)
         count_query = f"""
             WITH order_skus AS (
                 SELECT DISTINCT oi.product_sku as sku
@@ -881,7 +886,7 @@ async def get_all_order_skus(
             FROM order_skus os
             LEFT JOIN mapping_sources mc ON mc.source_pattern = os.sku
             LEFT JOIN product_catalog pc_direct ON pc_direct.sku = os.sku AND pc_direct.is_active = TRUE
-            LEFT JOIN product_catalog pc_master ON pc_master.sku_master = os.sku AND pc_master.is_active = TRUE
+            LEFT JOIN product_master_boxes pmb ON pmb.sku_master = os.sku AND pmb.is_active = TRUE
             {filter_clause}
         """
         cursor.execute(count_query, params)
@@ -903,7 +908,7 @@ async def get_all_order_skus(
             # Default: unmapped first, then by revenue
             order_clause = """
                 ORDER BY
-                    CASE WHEN mc.source_pattern IS NULL AND pc_direct.sku IS NULL AND pc_master.sku IS NULL THEN 0 ELSE 1 END,
+                    CASE WHEN mc.source_pattern IS NULL AND pc_direct.sku IS NULL AND pmb.sku_master IS NULL THEN 0 ELSE 1 END,
                     os.total_revenue DESC NULLS LAST,
                     os.order_count DESC
             """
@@ -963,13 +968,13 @@ async def get_order_skus_stats():
                     CASE
                         WHEN sm.id IS NOT NULL THEN 'mapped'
                         WHEN pc_direct.sku IS NOT NULL THEN 'in_catalog'
-                        WHEN pc_master.sku IS NOT NULL THEN 'in_catalog'
+                        WHEN pmb.sku_master IS NOT NULL THEN 'in_catalog'
                         ELSE 'unmapped'
                     END as status
                 FROM order_skus os
                 LEFT JOIN sku_mappings sm ON sm.source_pattern = os.sku AND sm.is_active = TRUE
                 LEFT JOIN product_catalog pc_direct ON pc_direct.sku = os.sku AND pc_direct.is_active = TRUE
-                LEFT JOIN product_catalog pc_master ON pc_master.sku_master = os.sku AND pc_master.is_active = TRUE
+                LEFT JOIN product_master_boxes pmb ON pmb.sku_master = os.sku AND pmb.is_active = TRUE
             )
             SELECT
                 COUNT(*) as total_skus,
@@ -1009,9 +1014,9 @@ async def get_order_skus_stats():
                 AND pc.is_active = TRUE
             )
             AND NOT EXISTS (
-                SELECT 1 FROM product_catalog pc
-                WHERE pc.sku_master = os.sku
-                AND pc.is_active = TRUE
+                SELECT 1 FROM product_master_boxes pmb
+                WHERE pmb.sku_master = os.sku
+                AND pmb.is_active = TRUE
             )
         """)
 

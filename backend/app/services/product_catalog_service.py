@@ -115,33 +115,29 @@ class ProductCatalogService:
 
             products = cursor.fetchall()
 
-            # Build initial catalog and master SKU reverse lookup
-            master_sku_lookup = {}
-
+            # Build initial catalog
             for product in products:
-                # Add to main catalog (indexed by normal SKU)
                 catalog[product['sku']] = dict(product)
 
-                # ALSO add to master SKU lookup (indexed by sku_master)
-                # This allows us to find products when orders contain master box SKUs
-                if product['sku_master']:
-                    master_sku_lookup[product['sku_master']] = dict(product)
-
-            # Use stored sku_primario from database (Migration 019)
-            # No more dynamic calculation - the primario relationship is explicitly stored
-            # This was necessary because:
-            # 1. Some base_codes had multiple products with units_per_display=1 (ambiguous)
-            # 2. Some base_codes had NO products with units_per_display=1 (missing primario)
-            # Now admins can explicitly set the correct primario for each product
+            # Build master SKU lookup from junction table (supports multiple master boxes per product)
+            master_sku_lookup = {}
+            cursor.execute("""
+                SELECT pmb.sku_master, pmb.items_per_master_box, pmb.units_per_master_box,
+                       pmb.master_box_name, pc.sku, pc.category, pc.units_per_display,
+                       pc.sku_primario, pc.base_code
+                FROM product_master_boxes pmb
+                JOIN product_catalog pc ON pc.sku = pmb.product_sku
+                WHERE pmb.is_active = TRUE
+            """)
+            for row in cursor.fetchall():
+                master_sku_lookup[row['sku_master']] = dict(row)
 
             # Set primario field from stored sku_primario
             for sku, data in catalog.items():
-                # Use stored sku_primario, fallback to SKU itself if NULL
                 data['primario'] = data.get('sku_primario') or sku
 
-            # ALSO set primario for master SKUs in lookup
+            # Set primario for master SKUs in lookup
             for master_sku, data in master_sku_lookup.items():
-                # Use stored sku_primario, fallback to product SKU
                 data['primario'] = data.get('sku_primario') or data.get('sku', master_sku)
 
             cursor.close()

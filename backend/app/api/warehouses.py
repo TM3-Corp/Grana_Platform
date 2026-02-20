@@ -323,13 +323,13 @@ async def get_inventory_general(
                     at.original_skus_detail,
                     COALESCE(
                         pc.product_name,
-                        pc_master.master_box_name,
+                        pmb.master_box_name,
                         (SELECT name FROM products WHERE sku = at.sku LIMIT 1),
                         at.sku
                     ) as name,
                     COALESCE(
                         pc.category,
-                        CASE WHEN pc_master.sku IS NOT NULL THEN 'CAJA MASTER' END,
+                        pc_via_pmb.category,
                         (SELECT category FROM products WHERE sku = at.sku LIMIT 1)
                     ) as category,
                     NULL as subfamily,  -- product_catalog doesn't have subfamily column
@@ -337,8 +337,8 @@ async def get_inventory_general(
                     COALESCE(at.stock_total, 0) as stock_total,
                     COALESCE(at.lot_count, 0) as lot_count,
                     at.last_updated,
-                    COALESCE(pc.sku_value, pc_master.sku_value, 0) as sku_value,
-                    COALESCE(at.stock_total, 0) * COALESCE(pc.sku_value, pc_master.sku_value, 0) as valor,
+                    COALESCE(pc.sku_value, pc_via_pmb.sku_value, 0) as sku_value,
+                    COALESCE(at.stock_total, 0) * COALESCE(pc.sku_value, pc_via_pmb.sku_value, 0) as valor,
                     -- Get min_stock from products table (user-editable value)
                     COALESCE(
                         (SELECT min_stock FROM products WHERE sku = at.sku AND is_active = true LIMIT 1),
@@ -390,19 +390,22 @@ async def get_inventory_general(
                             0
                         ) * 1.2 - COALESCE(ipf.stock_usable, at.stock_total, 0))::INTEGER
                     ) as production_needed,
-                    -- in_catalog: TRUE if SKU found in product_catalog (sku or sku_master)
-                    CASE WHEN pc.sku IS NOT NULL OR pc_master.sku IS NOT NULL THEN true ELSE false END as in_catalog,
+                    -- in_catalog: TRUE if SKU found in product_catalog or product_master_boxes
+                    CASE WHEN pc.sku IS NOT NULL OR pmb.sku_master IS NOT NULL THEN true ELSE false END as in_catalog,
                     -- is_inventory_active: NULL means active (default), FALSE means hidden
-                    COALESCE(pc.is_inventory_active, pc_master.is_inventory_active, true) as is_inventory_active
+                    COALESCE(pc.is_inventory_active, pc_via_pmb.is_inventory_active, true) as is_inventory_active
                 FROM aggregated_total at
                 -- Direct match on product_catalog.sku
                 LEFT JOIN product_catalog pc
                     ON pc.sku = at.sku
                     AND pc.is_active = TRUE
-                -- Match on product_catalog.sku_master (for CAJA MASTER)
-                LEFT JOIN product_catalog pc_master
-                    ON pc_master.sku_master = at.sku
-                    AND pc_master.is_active = TRUE
+                -- Match via product_master_boxes junction table (for CAJA MASTER)
+                LEFT JOIN product_master_boxes pmb
+                    ON pmb.sku_master = at.sku
+                    AND pmb.is_active = TRUE
+                    AND pc.sku IS NULL
+                LEFT JOIN product_catalog pc_via_pmb
+                    ON pc_via_pmb.sku = pmb.product_sku
                     AND pc.sku IS NULL
                 -- Join inventory planning settings (per-product estimation period)
                 LEFT JOIN product_inventory_settings pis

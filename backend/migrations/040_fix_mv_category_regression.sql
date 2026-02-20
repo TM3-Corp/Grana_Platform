@@ -1,44 +1,39 @@
--- Migration 035: Remove Boleta Price Conversion from sales_facts_mv
--- Purpose: Boleta price conversion now happens at sync time (in sync_service.py)
--- Author: Claude Code
--- Date: 2026-02-06
+-- Migration 040: Fix MV category regression from migration 039
+-- Date: 2026-02-17
 --
--- RATIONALE:
--- - Migration 034 applied /1.19 division at query time in sales_facts_mv
--- - This was a workaround for Boleta prices being stored as Gross in order_items
--- - Fix implemented in sync_service.py (line 1053): Boleta prices converted to Net during sync
--- - Now that sync stores correct Net prices for all invoice types, the MV division is no longer needed
--- - This change:
---   - Simplifies the MV query (no invoice_type conditional)
---   - Improves query performance (no runtime division)
---   - Ensures consistency: revenue = subtotal directly (no conversion)
---   - Prevents double-conversion errors in future syncs
+-- Migration 039 recreated the MV with hardcoded 'CAJA MASTER' categories:
+--
+--   CASE WHEN pc_master.sku IS NOT NULL THEN 'CAJA MASTER' END
+--
+-- This overrode the Supabase migration 20260115000001 which correctly uses
+-- the product's real category from product_catalog. The result: caja master
+-- sales appear in a separate "CAJA MASTER" category row instead of under
+-- their actual product family (GRANOLAS, BARRAS, etc.).
+--
+-- Fix: Use pc_master.category / pc_mapped_master.category in the COALESCE.
+-- The is_caja_master boolean column remains for when the distinction is needed
+-- (e.g., the API's units_expr CASE expression).
+--
+-- Also adds order_item_id column + unique index to enable
+-- REFRESH MATERIALIZED VIEW CONCURRENTLY (was in Supabase migration
+-- 20260116000001, lost in 039).
 
 -- ============================================
--- 1. DROP EXISTING MATERIALIZED VIEW
+-- 1. DROP AND RECREATE MV
 -- ============================================
 
 DROP MATERIALIZED VIEW IF EXISTS sales_facts_mv CASCADE;
-
--- ============================================
--- 2. RECREATE WITH DIRECT REVENUE (NO CONVERSION)
--- ============================================
 
 CREATE MATERIALIZED VIEW sales_facts_mv AS
 SELECT
     -- UNIQUE KEY: enables REFRESH CONCURRENTLY
     oi.id AS order_item_id,
 
-    -- Date dimension (for OLAP queries)
     TO_CHAR(o.order_date, 'YYYYMMDD')::INTEGER as date_id,
     o.order_date,
-
-    -- Dimension keys
     o.channel_id,
     o.customer_id,
     o.source,
-
-    -- Product info from product_catalog
     oi.product_sku as original_sku,
     COALESCE(pc_direct.sku, pc_master.sku, pc_mapped.sku, pc_mapped_master.sku) as catalog_sku,
     COALESCE(pc_direct.sku_primario, pc_master.sku_primario, pc_mapped.sku_primario, pc_mapped_master.sku_primario) as sku_primario,
@@ -49,7 +44,7 @@ SELECT
         pc_mapped_master.master_box_name,
         oi.product_name
     ) as product_name,
-    -- Category from product_catalog (CAJA MASTER inherits actual category)
+    -- FIX: Use real category from product_catalog (not hardcoded 'CAJA MASTER')
     COALESCE(
         pc_direct.category,
         pc_master.category,
@@ -59,8 +54,6 @@ SELECT
     COALESCE(pc_direct.package_type, pc_master.package_type, pc_mapped.package_type, pc_mapped_master.package_type) as package_type,
     COALESCE(pc_direct.brand, pc_master.brand, pc_mapped.brand, pc_mapped_master.brand) as brand,
     COALESCE(pc_direct.language, pc_master.language, pc_mapped.language, pc_mapped_master.language) as language,
-
-    -- Conversion factors
     COALESCE(pc_direct.units_per_display, pc_mapped.units_per_display, pc_mapped_master.units_per_display, 1) as units_per_display,
     COALESCE(pc_master.items_per_master_box, pc_mapped_master.items_per_master_box, pc_direct.items_per_master_box, pc_mapped.items_per_master_box) as items_per_master_box,
     CASE
@@ -68,8 +61,6 @@ SELECT
         WHEN pc_mapped_master.sku IS NOT NULL THEN TRUE
         ELSE FALSE
     END as is_caja_master,
-
-    -- Mapping info
     CASE
         WHEN pc_direct.sku IS NOT NULL THEN 'direct'
         WHEN pc_master.sku IS NOT NULL THEN 'caja_master'
@@ -79,24 +70,15 @@ SELECT
     END as match_type,
     sm_single.rule_name as mapping_rule,
     COALESCE(sm_agg.total_multiplier, sm_single.quantity_multiplier, 1) as quantity_multiplier,
-
-    -- Channel & Customer names
     ch.name as channel_name,
     c.name as customer_name,
     c.rut as customer_rut,
-
-    -- Measures
     oi.quantity as original_units_sold,
     (oi.quantity * COALESCE(sm_agg.total_multiplier, sm_single.quantity_multiplier, 1)) as units_sold,
-
-    -- REVENUE CORRECTION: Direct subtotal (Boleta conversion now at sync time)
     CAST(oi.subtotal AS DECIMAL(15,2)) as revenue,
-
     oi.unit_price,
     oi.total,
     oi.tax_amount,
-
-    -- Order info
     o.id as order_id,
     o.external_id as order_external_id,
     o.invoice_status,
@@ -107,7 +89,6 @@ SELECT
 FROM orders o
 JOIN order_items oi ON o.id = oi.order_id
 
--- Joins for Product Catalog & Mappings (Unchanged)
 LEFT JOIN product_catalog pc_direct
     ON pc_direct.sku = UPPER(oi.product_sku)
     AND pc_direct.is_active = TRUE
@@ -157,14 +138,14 @@ WHERE
     AND o.status != 'cancelled';
 
 -- ============================================
--- 3. UNIQUE INDEX (enables REFRESH CONCURRENTLY)
+-- 2. UNIQUE INDEX (enables REFRESH CONCURRENTLY)
 -- ============================================
 
 CREATE UNIQUE INDEX idx_sales_facts_mv_unique_order_item
     ON sales_facts_mv(order_item_id);
 
 -- ============================================
--- 4. PERFORMANCE INDEXES
+-- 3. PERFORMANCE INDEXES
 -- ============================================
 
 CREATE INDEX idx_sales_mv_date_id ON sales_facts_mv(date_id);
@@ -191,22 +172,37 @@ CREATE INDEX idx_sales_mv_revenue_desc ON sales_facts_mv(revenue DESC);
 CREATE INDEX idx_sales_mv_date_brin ON sales_facts_mv USING BRIN(order_date);
 
 -- ============================================
--- 5. ANALYZE
+-- 4. ANALYZE
 -- ============================================
 
 ANALYZE sales_facts_mv;
 
 -- ============================================
--- 6. COMMENTS
+-- 5. VERIFICATION
 -- ============================================
 
-COMMENT ON MATERIALIZED VIEW sales_facts_mv IS
-'Pre-aggregated sales facts for OLAP analytics.
-FIXED (Migration 035): Revenue now uses subtotal directly (no conversion).
-- Boleta price conversion now happens at sync time (sync_service.py:1053)
-- All order_items.subtotal values are stored as Net prices (consistent with order.subtotal)
-- Simplified query: revenue = subtotal (no invoice_type conditional)
-- Also includes Migration 024 fix for PACK duplication.
-- order_item_id column enables REFRESH MATERIALIZED VIEW CONCURRENTLY.
-- Category uses real product_catalog category (no hardcoded CAJA MASTER).
-Refresh: REFRESH MATERIALIZED VIEW CONCURRENTLY sales_facts_mv;';
+DO $$
+DECLARE
+    v_caja_master_count INTEGER;
+    v_total_rows INTEGER;
+    v_has_unique BOOLEAN;
+BEGIN
+    SELECT COUNT(*) INTO v_total_rows FROM sales_facts_mv;
+    SELECT COUNT(*) INTO v_caja_master_count FROM sales_facts_mv WHERE category = 'CAJA MASTER';
+    SELECT EXISTS (
+        SELECT 1 FROM pg_indexes
+        WHERE tablename = 'sales_facts_mv'
+        AND indexdef LIKE '%UNIQUE%'
+    ) INTO v_has_unique;
+
+    RAISE NOTICE '';
+    RAISE NOTICE '=== Migration 040 Verification ===';
+    RAISE NOTICE 'Total rows: %', v_total_rows;
+    RAISE NOTICE 'Rows with category=CAJA MASTER: % (should be 0)', v_caja_master_count;
+    RAISE NOTICE 'Has unique index (CONCURRENTLY support): %', v_has_unique;
+    RAISE NOTICE '';
+
+    IF v_caja_master_count > 0 THEN
+        RAISE WARNING 'Category regression NOT fixed — % rows still have CAJA MASTER', v_caja_master_count;
+    END IF;
+END $$;

@@ -5,6 +5,18 @@ import Navigation from '@/components/Navigation';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+interface MasterBox {
+  id: number;
+  product_sku: string;
+  sku_master: string;
+  master_box_name: string | null;
+  items_per_master_box: number | null;
+  units_per_master_box: number | null;
+  is_active: boolean | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
 interface Product {
   id: number;
   sku: string;
@@ -31,6 +43,7 @@ interface Product {
   is_inventory_active: boolean | null;
   created_at: string | null;
   updated_at: string | null;
+  master_boxes: MasterBox[];
 }
 
 interface Stats {
@@ -481,8 +494,10 @@ export default function ProductCatalogPage() {
                           {product.units_per_display || 1}
                         </td>
                         <td className="px-4 py-3 text-center">
-                          {product.sku_master ? (
-                            <span className="text-xs text-purple-600">{product.sku_master}</span>
+                          {product.master_boxes && product.master_boxes.length > 0 ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                              {product.master_boxes.length} caja{product.master_boxes.length !== 1 ? 's' : ''}
+                            </span>
                           ) : (
                             <span className="text-gray-400">-</span>
                           )}
@@ -522,7 +537,7 @@ export default function ProductCatalogPage() {
                       {expandedProductId === product.id && (
                         <tr className="bg-blue-50">
                           <td colSpan={8} className="px-4 py-4">
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-4">
                               <div>
                                 <span className="text-gray-500">Marca:</span>{' '}
                                 <span className="font-medium">{product.brand || '-'}</span>
@@ -538,14 +553,6 @@ export default function ProductCatalogPage() {
                               <div>
                                 <span className="text-gray-500">Código Base:</span>{' '}
                                 <span className="font-medium font-mono">{product.base_code || '-'}</span>
-                              </div>
-                              <div>
-                                <span className="text-gray-500">UDS/Caja Master:</span>{' '}
-                                <span className="font-medium">{product.units_per_master_box || '-'}</span>
-                              </div>
-                              <div>
-                                <span className="text-gray-500">Items/Caja Master:</span>{' '}
-                                <span className="font-medium">{product.items_per_master_box || '-'}</span>
                               </div>
                               <div>
                                 <span className="text-gray-500">Peso Display:</span>{' '}
@@ -577,11 +584,105 @@ export default function ProductCatalogPage() {
                                   {product.is_inventory_active ? 'Sí' : 'No'}
                                 </span>
                               </div>
-                              {product.master_box_name && (
-                                <div className="col-span-2">
-                                  <span className="text-gray-500">Nombre Caja Master:</span>{' '}
-                                  <span className="font-medium">{product.master_box_name}</span>
-                                </div>
+                            </div>
+                            {/* Master Boxes Sub-table */}
+                            <div className="mt-2">
+                              <div className="flex items-center justify-between mb-2">
+                                <h4 className="text-sm font-semibold text-gray-700">Cajas Master</h4>
+                                <button
+                                  onClick={() => {
+                                    const skuMaster = prompt('SKU Caja Master (ej: BAKC_C02810):');
+                                    if (!skuMaster) return;
+                                    const name = prompt('Nombre (ej: Caja Master Barra Keto x140):') || '';
+                                    const items = prompt('Items por Caja Master (ej: 140):');
+                                    const units = prompt('Unidades (paquetes) por Caja Master (ej: 28):');
+                                    fetch(`${API_URL}/api/v1/product-catalog/${product.sku}/master-boxes`, {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({
+                                        sku_master: skuMaster.toUpperCase(),
+                                        master_box_name: name || null,
+                                        items_per_master_box: items ? parseInt(items) : null,
+                                        units_per_master_box: units ? parseInt(units) : null,
+                                      }),
+                                    }).then(r => r.json()).then(data => {
+                                      if (data.status === 'success') {
+                                        fetchProducts();
+                                      } else {
+                                        alert(data.detail || 'Error al crear caja master');
+                                      }
+                                    });
+                                  }}
+                                  className="px-2 py-1 text-xs bg-purple-50 text-purple-700 border border-purple-200 rounded hover:bg-purple-100"
+                                >
+                                  + Agregar Caja Master
+                                </button>
+                              </div>
+                              {product.master_boxes && product.master_boxes.length > 0 ? (
+                                <table className="w-full text-sm border rounded">
+                                  <thead className="bg-purple-50">
+                                    <tr>
+                                      <th className="px-3 py-1.5 text-left text-xs font-medium text-purple-700">SKU Master</th>
+                                      <th className="px-3 py-1.5 text-left text-xs font-medium text-purple-700">Nombre</th>
+                                      <th className="px-3 py-1.5 text-center text-xs font-medium text-purple-700">Items/Caja</th>
+                                      <th className="px-3 py-1.5 text-center text-xs font-medium text-purple-700">UDS/Caja</th>
+                                      <th className="px-3 py-1.5 text-center text-xs font-medium text-purple-700">Activo</th>
+                                      <th className="px-3 py-1.5 text-center text-xs font-medium text-purple-700">Acciones</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-purple-100">
+                                    {product.master_boxes.map(mb => (
+                                      <tr key={mb.id} className={mb.is_active === false ? 'opacity-50' : ''}>
+                                        <td className="px-3 py-1.5 font-mono text-xs">{mb.sku_master}</td>
+                                        <td className="px-3 py-1.5 text-xs">{mb.master_box_name || '-'}</td>
+                                        <td className="px-3 py-1.5 text-center text-xs font-medium">{mb.items_per_master_box || '-'}</td>
+                                        <td className="px-3 py-1.5 text-center text-xs">{mb.units_per_master_box || '-'}</td>
+                                        <td className="px-3 py-1.5 text-center">
+                                          <span className={`text-xs ${mb.is_active !== false ? 'text-green-600' : 'text-red-600'}`}>
+                                            {mb.is_active !== false ? 'Si' : 'No'}
+                                          </span>
+                                        </td>
+                                        <td className="px-3 py-1.5 text-center">
+                                          <button
+                                            onClick={() => {
+                                              const items = prompt(`Items por Caja Master (actual: ${mb.items_per_master_box || '-'}):`, String(mb.items_per_master_box || ''));
+                                              if (items === null) return;
+                                              fetch(`${API_URL}/api/v1/product-catalog/master-boxes/${mb.id}`, {
+                                                method: 'PUT',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({
+                                                  items_per_master_box: items ? parseInt(items) : null,
+                                                }),
+                                              }).then(r => r.json()).then(data => {
+                                                if (data.status === 'success') fetchProducts();
+                                                else alert(data.detail || 'Error');
+                                              });
+                                            }}
+                                            className="px-1.5 py-0.5 text-xs text-blue-700 hover:bg-blue-50 rounded"
+                                          >
+                                            Editar
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              if (!confirm(`Desactivar ${mb.sku_master}?`)) return;
+                                              fetch(`${API_URL}/api/v1/product-catalog/master-boxes/${mb.id}`, {
+                                                method: 'DELETE',
+                                              }).then(r => r.json()).then(data => {
+                                                if (data.status === 'success') fetchProducts();
+                                                else alert(data.detail || 'Error');
+                                              });
+                                            }}
+                                            className="px-1.5 py-0.5 text-xs text-red-700 hover:bg-red-50 rounded ml-1"
+                                          >
+                                            Desactivar
+                                          </button>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              ) : (
+                                <p className="text-xs text-gray-500 italic">Sin cajas master definidas</p>
                               )}
                             </div>
                           </td>
@@ -747,50 +848,12 @@ export default function ProductCatalogPage() {
                     />
                   </div>
 
-                  {/* Master box fields */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">SKU Caja Master</label>
-                    <input
-                      type="text"
-                      value={formData.sku_master || ''}
-                      onChange={(e) => handleInputChange('sku_master', e.target.value.toUpperCase() || null)}
-                      className="w-full border rounded-lg px-3 py-2 font-mono"
-                      placeholder="BAKC_C02810"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nombre Caja Master</label>
-                    <input
-                      type="text"
-                      value={formData.master_box_name || ''}
-                      onChange={(e) => handleInputChange('master_box_name', e.target.value || null)}
-                      className="w-full border rounded-lg px-3 py-2"
-                      placeholder="Caja Master Barra Keto Nuez"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Unidades por Caja Master</label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={formData.units_per_master_box || ''}
-                      onChange={(e) => handleInputChange('units_per_master_box', e.target.value ? parseInt(e.target.value) : null)}
-                      className="w-full border rounded-lg px-3 py-2"
-                      placeholder="28"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Items por Caja Master</label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={formData.items_per_master_box || ''}
-                      onChange={(e) => handleInputChange('items_per_master_box', e.target.value ? parseInt(e.target.value) : null)}
-                      className="w-full border rounded-lg px-3 py-2"
-                      placeholder="140"
-                    />
-                  </div>
+                  {/* Master boxes are managed via the expanded row sub-table, not this form */}
+                  {editingProduct && (
+                    <div className="col-span-2 text-xs text-gray-500 bg-purple-50 border border-purple-200 rounded-lg px-3 py-2">
+                      Las cajas master se gestionan desde la fila expandida del producto (click en el SKU).
+                    </div>
+                  )}
 
                   {/* Weight fields */}
                   <div>

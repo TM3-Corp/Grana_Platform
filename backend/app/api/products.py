@@ -329,13 +329,14 @@ async def update_product_inventory_active(sku: str, update: InventoryActiveUpdat
         cursor = conn.cursor()
 
         # Update is_inventory_active for the product in product_catalog
-        # Check both sku and sku_master columns
+        # Check both sku column and junction table for master box SKUs
         cursor.execute(
             """
             UPDATE product_catalog
             SET is_inventory_active = %s,
                 updated_at = NOW()
-            WHERE sku = %s OR sku_master = %s
+            WHERE sku = %s
+               OR sku IN (SELECT product_sku FROM product_master_boxes WHERE sku_master = %s)
             RETURNING sku, product_name, is_inventory_active, updated_at
             """,
             (update.is_active, sku, sku)

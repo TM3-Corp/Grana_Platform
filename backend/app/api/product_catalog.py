@@ -88,6 +88,42 @@ class ProductCatalogUpdate(BaseModel):
     is_inventory_active: Optional[bool] = None
 
 
+class MasterBoxBase(BaseModel):
+    """Base model for master box"""
+    sku_master: str = Field(..., min_length=1, max_length=100, description="Master box SKU code")
+    master_box_name: Optional[str] = Field(None, description="Master box name")
+    items_per_master_box: Optional[int] = Field(None, ge=1, description="Total individual items in master box")
+    units_per_master_box: Optional[int] = Field(None, ge=1, description="Number of packages in master box")
+    is_active: Optional[bool] = Field(True, description="Is this master box active")
+
+
+class MasterBoxCreate(MasterBoxBase):
+    """Request model for creating a master box"""
+    pass
+
+
+class MasterBoxUpdate(BaseModel):
+    """Request model for updating a master box"""
+    sku_master: Optional[str] = Field(None, min_length=1, max_length=100)
+    master_box_name: Optional[str] = None
+    items_per_master_box: Optional[int] = Field(None, ge=1)
+    units_per_master_box: Optional[int] = Field(None, ge=1)
+    is_active: Optional[bool] = None
+
+
+class MasterBoxResponse(BaseModel):
+    """Response model for master box"""
+    id: int
+    product_sku: str
+    sku_master: str
+    master_box_name: Optional[str]
+    items_per_master_box: Optional[int]
+    units_per_master_box: Optional[int]
+    is_active: Optional[bool]
+    created_at: Optional[str]
+    updated_at: Optional[str]
+
+
 class ProductCatalogResponse(BaseModel):
     """Response model for product catalog"""
     id: int
@@ -115,6 +151,7 @@ class ProductCatalogResponse(BaseModel):
     is_inventory_active: Optional[bool]
     created_at: Optional[str]
     updated_at: Optional[str]
+    master_boxes: Optional[List[dict]] = None
 
 
 # =====================================================================
@@ -243,6 +280,27 @@ async def list_products(
 
         products = cursor.fetchall()
 
+        # Fetch all master boxes in one query (batch for efficiency)
+        product_skus = [p['sku'] for p in products]
+        master_boxes_map = {}
+        if product_skus:
+            placeholders = ','.join(['%s'] * len(product_skus))
+            cursor.execute(f"""
+                SELECT id, product_sku, sku_master, master_box_name,
+                       items_per_master_box, units_per_master_box, is_active,
+                       created_at, updated_at
+                FROM product_master_boxes
+                WHERE product_sku IN ({placeholders})
+                ORDER BY sku_master
+            """, product_skus)
+            for mb in cursor.fetchall():
+                mb_dict = dict(mb)
+                if mb_dict.get('created_at'):
+                    mb_dict['created_at'] = mb_dict['created_at'].isoformat()
+                if mb_dict.get('updated_at'):
+                    mb_dict['updated_at'] = mb_dict['updated_at'].isoformat()
+                master_boxes_map.setdefault(mb_dict['product_sku'], []).append(mb_dict)
+
         # Convert to list of dicts with proper serialization
         result = []
         for p in products:
@@ -256,6 +314,8 @@ async def list_products(
             for key in ['peso_film', 'peso_display_total', 'peso_caja_master_total', 'peso_etiqueta_total', 'sku_value', 'sku_master_value']:
                 if product_dict.get(key) is not None:
                     product_dict[key] = float(product_dict[key])
+            # Attach master boxes from junction table
+            product_dict['master_boxes'] = master_boxes_map.get(product_dict['sku'], [])
             result.append(product_dict)
 
         cursor.close()
@@ -319,9 +379,9 @@ async def get_stats():
                 COUNT(*) as total_products,
                 COUNT(*) FILTER (WHERE is_active = true) as active_products,
                 COUNT(*) FILTER (WHERE is_active = false OR is_active IS NULL) as inactive_products,
-                COUNT(*) FILTER (WHERE is_inventory_active = true) as inventory_active,
+                COUNT(*) FILTER (WHERE is_active = true AND is_inventory_active = true) as inventory_active,
                 COUNT(DISTINCT category) as total_categories,
-                COUNT(*) FILTER (WHERE sku_master IS NOT NULL) as has_master_box
+                (SELECT COUNT(DISTINCT product_sku) FROM product_master_boxes WHERE is_active = TRUE) as has_master_box
             FROM product_catalog
         """)
         stats = dict(cursor.fetchone())
@@ -375,10 +435,10 @@ async def get_product(product_id: int):
         """, [product_id])
 
         product = cursor.fetchone()
-        cursor.close()
-        conn.close()
 
         if not product:
+            cursor.close()
+            conn.close()
             raise HTTPException(status_code=404, detail=f"Product with ID {product_id} not found")
 
         product_dict = dict(product)
@@ -389,6 +449,28 @@ async def get_product(product_id: int):
         for key in ['peso_film', 'peso_display_total', 'peso_caja_master_total', 'peso_etiqueta_total', 'sku_value', 'sku_master_value']:
             if product_dict.get(key) is not None:
                 product_dict[key] = float(product_dict[key])
+
+        # Fetch master boxes for this product
+        cursor.execute("""
+            SELECT id, product_sku, sku_master, master_box_name,
+                   items_per_master_box, units_per_master_box, is_active,
+                   created_at, updated_at
+            FROM product_master_boxes
+            WHERE product_sku = %s
+            ORDER BY sku_master
+        """, [product_dict['sku']])
+        master_boxes = []
+        for mb in cursor.fetchall():
+            mb_dict = dict(mb)
+            if mb_dict.get('created_at'):
+                mb_dict['created_at'] = mb_dict['created_at'].isoformat()
+            if mb_dict.get('updated_at'):
+                mb_dict['updated_at'] = mb_dict['updated_at'].isoformat()
+            master_boxes.append(mb_dict)
+        product_dict['master_boxes'] = master_boxes
+
+        cursor.close()
+        conn.close()
 
         return {
             "status": "success",
@@ -763,3 +845,210 @@ async def bulk_deactivate_by_language(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to bulk deactivate: {str(e)}")
+
+
+# =====================================================================
+# Master Box CRUD Endpoints
+# =====================================================================
+
+@router.get("/{sku}/master-boxes")
+async def list_master_boxes(sku: str):
+    """List all master boxes for a product."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        # Verify product exists
+        cursor.execute("SELECT sku FROM product_catalog WHERE sku = %s", [sku])
+        if not cursor.fetchone():
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail=f"Product '{sku}' not found")
+
+        cursor.execute("""
+            SELECT id, product_sku, sku_master, master_box_name,
+                   items_per_master_box, units_per_master_box, is_active,
+                   created_at, updated_at
+            FROM product_master_boxes
+            WHERE product_sku = %s
+            ORDER BY sku_master
+        """, [sku])
+
+        master_boxes = []
+        for mb in cursor.fetchall():
+            mb_dict = dict(mb)
+            if mb_dict.get('created_at'):
+                mb_dict['created_at'] = mb_dict['created_at'].isoformat()
+            if mb_dict.get('updated_at'):
+                mb_dict['updated_at'] = mb_dict['updated_at'].isoformat()
+            master_boxes.append(mb_dict)
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "status": "success",
+            "data": master_boxes,
+            "count": len(master_boxes)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list master boxes: {str(e)}")
+
+
+@router.post("/{sku}/master-boxes")
+async def create_master_box(sku: str, master_box: MasterBoxCreate):
+    """Add a master box to a product."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        # Verify product exists
+        cursor.execute("SELECT sku FROM product_catalog WHERE sku = %s", [sku])
+        if not cursor.fetchone():
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail=f"Product '{sku}' not found")
+
+        # Check sku_master doesn't already exist
+        cursor.execute("SELECT id FROM product_master_boxes WHERE sku_master = %s", [master_box.sku_master])
+        if cursor.fetchone():
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=400, detail=f"Master box SKU '{master_box.sku_master}' already exists")
+
+        cursor.execute("""
+            INSERT INTO product_master_boxes (
+                product_sku, sku_master, master_box_name,
+                items_per_master_box, units_per_master_box, is_active
+            ) VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, [
+            sku, master_box.sku_master, master_box.master_box_name,
+            master_box.items_per_master_box, master_box.units_per_master_box,
+            master_box.is_active if master_box.is_active is not None else True
+        ])
+
+        new_id = cursor.fetchone()['id']
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        cache_refreshed, mv_refreshed = refresh_product_catalog_cache()
+
+        return {
+            "status": "success",
+            "message": f"Master box '{master_box.sku_master}' added to product '{sku}'",
+            "data": {"id": new_id, "sku_master": master_box.sku_master},
+            "cache_refreshed": cache_refreshed,
+            "mv_refreshed": mv_refreshed
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create master box: {str(e)}")
+
+
+@router.put("/master-boxes/{master_box_id}")
+async def update_master_box(master_box_id: int, master_box: MasterBoxUpdate):
+    """Update a master box."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        cursor.execute("SELECT id FROM product_master_boxes WHERE id = %s", [master_box_id])
+        if not cursor.fetchone():
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail=f"Master box with ID {master_box_id} not found")
+
+        # If updating sku_master, check uniqueness
+        if master_box.sku_master:
+            cursor.execute(
+                "SELECT id FROM product_master_boxes WHERE sku_master = %s AND id != %s",
+                [master_box.sku_master, master_box_id]
+            )
+            if cursor.fetchone():
+                cursor.close()
+                conn.close()
+                raise HTTPException(status_code=400, detail=f"Master box SKU '{master_box.sku_master}' already exists")
+
+        update_fields = []
+        update_values = []
+        update_data = master_box.model_dump(exclude_unset=True)
+        for field, value in update_data.items():
+            update_fields.append(f"{field} = %s")
+            update_values.append(value)
+
+        if not update_fields:
+            cursor.close()
+            conn.close()
+            return {"status": "success", "message": "No fields to update"}
+
+        update_fields.append("updated_at = NOW()")
+
+        cursor.execute(f"""
+            UPDATE product_master_boxes
+            SET {', '.join(update_fields)}
+            WHERE id = %s
+        """, update_values + [master_box_id])
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        cache_refreshed, mv_refreshed = refresh_product_catalog_cache()
+
+        return {
+            "status": "success",
+            "message": "Master box updated successfully",
+            "cache_refreshed": cache_refreshed,
+            "mv_refreshed": mv_refreshed
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update master box: {str(e)}")
+
+
+@router.delete("/master-boxes/{master_box_id}")
+async def delete_master_box(master_box_id: int):
+    """Deactivate a master box (soft delete)."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        cursor.execute("""
+            UPDATE product_master_boxes
+            SET is_active = FALSE, updated_at = NOW()
+            WHERE id = %s
+            RETURNING id, sku_master, product_sku
+        """, [master_box_id])
+
+        result = cursor.fetchone()
+        if not result:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail=f"Master box with ID {master_box_id} not found")
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        cache_refreshed, mv_refreshed = refresh_product_catalog_cache()
+
+        return {
+            "status": "success",
+            "message": f"Master box '{result['sku_master']}' deactivated",
+            "cache_refreshed": cache_refreshed,
+            "mv_refreshed": mv_refreshed
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete master box: {str(e)}")

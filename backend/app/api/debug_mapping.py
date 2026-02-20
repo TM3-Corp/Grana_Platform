@@ -442,24 +442,24 @@ async def get_catalog_coverage():
         cursor.execute("""
             SELECT
                 COUNT(*) as total_products,
-                COUNT(CASE WHEN sku_master IS NOT NULL THEN 1 END) as products_with_master,
+                COUNT(CASE WHEN EXISTS (SELECT 1 FROM product_master_boxes pmb WHERE pmb.product_sku = pc.sku) THEN 1 END) as products_with_master,
                 COUNT(DISTINCT category) as categories,
                 COUNT(CASE WHEN units_per_display > 1 THEN 1 END) as display_products,
-                COUNT(CASE WHEN items_per_master_box IS NOT NULL THEN 1 END) as master_box_products
-            FROM product_catalog
-            WHERE is_active = TRUE
+                (SELECT COUNT(*) FROM product_master_boxes WHERE is_active = TRUE) as master_box_products
+            FROM product_catalog pc
+            WHERE pc.is_active = TRUE
         """)
         catalog_stats = cursor.fetchone()
 
         # Category breakdown
         cursor.execute("""
             SELECT
-                category,
+                pc.category,
                 COUNT(*) as count,
-                COUNT(CASE WHEN sku_master IS NOT NULL THEN 1 END) as with_master
-            FROM product_catalog
-            WHERE is_active = TRUE
-            GROUP BY category
+                COUNT(CASE WHEN EXISTS (SELECT 1 FROM product_master_boxes pmb WHERE pmb.product_sku = pc.sku) THEN 1 END) as with_master
+            FROM product_catalog pc
+            WHERE pc.is_active = TRUE
+            GROUP BY pc.category
             ORDER BY count DESC
         """)
         categories = cursor.fetchall()

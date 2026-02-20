@@ -521,7 +521,7 @@ function DashboardContent() {
           {/* Revenue YTD KPI */}
           <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
             <div className="flex items-center justify-between mb-3">
-              <span className="text-sm font-medium text-gray-500">Ingresos YTD</span>
+              <span className="text-sm font-medium text-gray-500">Ingresos Netos YTD</span>
               {executiveData.kpis.revenue_yoy_change !== 0 && (
                 <span className={`text-sm font-medium ${executiveData.kpis.revenue_yoy_change > 0 ? 'text-green-600' : 'text-red-600'}`}>
                   {executiveData.kpis.revenue_yoy_change > 0 ? '+' : ''}{executiveData.kpis.revenue_yoy_change.toFixed(1)}%

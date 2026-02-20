@@ -1683,11 +1683,11 @@ class SyncService:
                         """)
                         base_skus = set(r[0] for r in cursor.fetchall())
 
-                        # Build master_to_base mapping: sku_master -> (sku, units_per_master_box)
+                        # Build master_to_base mapping: sku_master -> (product_sku, units_per_master_box)
                         cursor.execute("""
-                            SELECT sku_master, sku, units_per_master_box
-                            FROM product_catalog
-                            WHERE sku_master IS NOT NULL AND units_per_master_box IS NOT NULL
+                            SELECT pmb.sku_master, pmb.product_sku AS sku, pmb.units_per_master_box
+                            FROM product_master_boxes pmb
+                            WHERE pmb.is_active = TRUE AND pmb.units_per_master_box IS NOT NULL
                         """)
                         master_to_base = {}
                         for sku_master, sku, units in cursor.fetchall():

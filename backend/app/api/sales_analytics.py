@@ -134,21 +134,20 @@ async def get_sales_analytics(
             params.extend(categories)
 
         if formats:
-            # Include both the product AND its caja master (sku_master) in the filter
+            # Include both the product AND its caja master (via junction table) in the filter
             # This ensures master box sales are counted with their base product
             placeholders = ','.join(['%s'] * len(formats))
-            # Match on catalog_sku (base product) OR original_sku matches sku_master
             where_clauses.append(f"""(
                 mv.catalog_sku IN (
                     SELECT pc.sku FROM product_catalog pc
-                    WHERE pc.product_name IN ({placeholders}) AND pc.is_active = TRUE
+                    WHERE pc.product_name IN ({placeholders})
                 )
                 OR mv.original_sku IN (
-                    SELECT pc.sku_master FROM product_catalog pc
-                    WHERE pc.product_name IN ({placeholders}) AND pc.is_active = TRUE AND pc.sku_master IS NOT NULL
+                    SELECT pmb.sku_master FROM product_master_boxes pmb
+                    JOIN product_catalog pc ON pc.sku = pmb.product_sku
+                    WHERE pc.product_name IN ({placeholders}) AND pmb.is_active = TRUE
                 )
             )""")
-            # Need to pass params twice (for both subqueries)
             params.extend(formats)
             params.extend(formats)
 
@@ -808,7 +807,7 @@ async def get_filter_options(
                 SELECT DISTINCT pc.product_name
                 FROM product_catalog pc
                 WHERE pc.is_active = TRUE
-                  AND pc.sku_master IS NOT NULL
+                  AND EXISTS (SELECT 1 FROM product_master_boxes pmb WHERE pmb.product_sku = pc.sku)
                   AND pc.product_name IS NOT NULL
                   AND pc.product_name != ''
                   AND pc.category IN ({cat_placeholders})
@@ -821,7 +820,7 @@ async def get_filter_options(
                 SELECT DISTINCT pc.product_name
                 FROM product_catalog pc
                 WHERE pc.is_active = TRUE
-                  AND pc.sku_master IS NOT NULL
+                  AND EXISTS (SELECT 1 FROM product_master_boxes pmb WHERE pmb.product_sku = pc.sku)
                   AND pc.product_name IS NOT NULL
                   AND pc.product_name != ''
                 ORDER BY pc.product_name
@@ -932,11 +931,12 @@ async def export_sales_analytics(
             where_clauses.append(f"""(
                 mv.catalog_sku IN (
                     SELECT pc.sku FROM product_catalog pc
-                    WHERE pc.product_name IN ({placeholders}) AND pc.is_active = TRUE
+                    WHERE pc.product_name IN ({placeholders})
                 )
                 OR mv.original_sku IN (
-                    SELECT pc.sku_master FROM product_catalog pc
-                    WHERE pc.product_name IN ({placeholders}) AND pc.is_active = TRUE AND pc.sku_master IS NOT NULL
+                    SELECT pmb.sku_master FROM product_master_boxes pmb
+                    JOIN product_catalog pc ON pc.sku = pmb.product_sku
+                    WHERE pc.product_name IN ({placeholders}) AND pmb.is_active = TRUE
                 )
             )""")
             params.extend(formats)
