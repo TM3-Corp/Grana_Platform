@@ -34,10 +34,13 @@ CREATE INDEX idx_pmb_sku_master ON product_master_boxes(sku_master);
 -- 2. MIGRATE EXISTING DATA FROM product_catalog
 -- ============================================
 
+-- Use DISTINCT ON to handle duplicate sku_master values in product_catalog
+-- (e.g., CRSM_C10020 is shared by CRSM_U02520 and CRPM_U02520 — data issue to fix separately)
 INSERT INTO product_master_boxes (product_sku, sku_master, master_box_name, items_per_master_box, units_per_master_box)
-SELECT sku, sku_master, master_box_name, items_per_master_box, units_per_master_box
+SELECT DISTINCT ON (sku_master) sku, sku_master, master_box_name, items_per_master_box, units_per_master_box
 FROM product_catalog
-WHERE sku_master IS NOT NULL;
+WHERE sku_master IS NOT NULL
+ORDER BY sku_master, sku;
 
 -- ============================================
 -- 3. REVERT MIGRATION 041 HACK
@@ -58,23 +61,31 @@ WHERE product_sku = 'GRBE_U26010' AND sku_master = 'GRBE_C01010';
 -- These master box codes appear in orders but were not in product_catalog.
 -- Per client input, these are confirmed mappings.
 
+-- Some of these may already exist from the product_catalog migration above.
+-- Use ON CONFLICT to skip those and only insert genuinely new entries.
+
 -- GRBE: 20-unit box (the one actually sold most)
 INSERT INTO product_master_boxes (product_sku, sku_master, master_box_name, items_per_master_box)
-VALUES ('GRBE_U26010', 'GRBE_C02010', 'Caja Master Granola Low Carb Berries 260 x20', 20);
+VALUES ('GRBE_U26010', 'GRBE_C02010', 'Caja Master Granola Low Carb Berries 260 x20', 20)
+ON CONFLICT (sku_master) DO NOTHING;
 
 -- GRAL: 10-unit and 20-unit boxes
 INSERT INTO product_master_boxes (product_sku, sku_master, master_box_name, items_per_master_box)
-VALUES ('GRAL_U26010', 'GRAL_C01010', 'Caja Master Granola Low Carb Almendras 260 x10', 10);
+VALUES ('GRAL_U26010', 'GRAL_C01010', 'Caja Master Granola Low Carb Almendras 260 x10', 10)
+ON CONFLICT (sku_master) DO NOTHING;
 
 INSERT INTO product_master_boxes (product_sku, sku_master, master_box_name, items_per_master_box)
-VALUES ('GRAL_U26010', 'GRAL_C02010', 'Caja Master Granola Low Carb Almendras 260 x20', 20);
+VALUES ('GRAL_U26010', 'GRAL_C02010', 'Caja Master Granola Low Carb Almendras 260 x20', 20)
+ON CONFLICT (sku_master) DO NOTHING;
 
 -- GRCA: 10-unit and 20-unit boxes (per client: "va a pasar con GRCA")
 INSERT INTO product_master_boxes (product_sku, sku_master, master_box_name, items_per_master_box)
-VALUES ('GRCA_U26010', 'GRCA_C01010', 'Caja Master Granola Low Carb Cacao 260 x10', 10);
+VALUES ('GRCA_U26010', 'GRCA_C01010', 'Caja Master Granola Low Carb Cacao 260 x10', 10)
+ON CONFLICT (sku_master) DO NOTHING;
 
 INSERT INTO product_master_boxes (product_sku, sku_master, master_box_name, items_per_master_box)
-VALUES ('GRCA_U26010', 'GRCA_C02010', 'Caja Master Granola Low Carb Cacao 260 x20', 20);
+VALUES ('GRCA_U26010', 'GRCA_C02010', 'Caja Master Granola Low Carb Cacao 260 x20', 20)
+ON CONFLICT (sku_master) DO NOTHING;
 
 -- NOTE: Other missing codes (GRBE_C02020, GRAL_C02020, GRCA_C02020, _C3000H bulk codes)
 -- need client confirmation on items_per_master_box. They will show as unmapped until
