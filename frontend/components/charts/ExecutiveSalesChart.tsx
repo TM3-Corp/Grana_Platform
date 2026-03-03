@@ -189,8 +189,8 @@ const CustomTooltip = ({ active, payload, label, previousYear, currentYear, next
           </div>
         )}
 
-        {/* Current year projected (remaining months) - hide if MTD month since it's redundant with estimated */}
-        {revenueCurrYearProjected !== undefined && revenueCurrYearProjected !== null && !isMtd && (
+        {/* Current year projected (future months only) - hide when actual data exists */}
+        {revenueCurrYearProjected !== undefined && revenueCurrYearProjected !== null && !revenueCurrYearActual && (
           <div className="flex justify-between items-center">
             <span className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full" style={{ backgroundColor: COLOR_PROJECTION, border: `2px dashed ${COLOR_PROJECTION}` }}></span>
@@ -358,10 +358,13 @@ export default function ExecutiveSalesChart({
       mtd_day: m.mtd_day ?? null
     }))
 
-    // Add current year projected data
+    // Build set of months that have actual data, so we can suppress projections for them
+    const monthsWithActuals = new Set(sales_current_year.map(m => m.month))
+
+    // Add current year projected data — only for months WITHOUT actual data (future months)
     sales_current_year_projected.forEach(m => {
       const index = m.month - 1
-      if (data[index]) {
+      if (data[index] && !monthsWithActuals.has(m.month)) {
         data[index].revenue_current_year_projected = m.total_revenue
       }
     })
