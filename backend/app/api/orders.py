@@ -572,7 +572,7 @@ async def get_executive_kpis(
                 }
 
                 # Add metadata for incomplete month estimation
-                if is_incomplete_month and month in monthly_prev and month in monthly_prev_mtd:
+                if is_incomplete_month and current_day >= MIN_DAYS_FOR_ESTIMATE and month in monthly_prev and month in monthly_prev_mtd:
                     projection_entry['is_estimated_from_mtd'] = True
                     projection_entry['estimated_curr_full_month'] = baseline_revenue
                     # Only include mtd_ratio if it was actually calculated (both mtd_prev and full_prev > 0)
