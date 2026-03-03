@@ -35,6 +35,10 @@ interface YTDProgressChartProps {
   currentDayOfMonth: number
   currentDate: string
   loading?: boolean
+  selectedMonth?: number
+  availableMonths?: number[]
+  onMonthChange?: (month: number) => void
+  isCompleteMonth?: boolean
 }
 
 // Custom tooltip
@@ -117,7 +121,11 @@ export default function YTDProgressChart({
   currentMonth,
   currentDayOfMonth,
   currentDate,
-  loading
+  loading,
+  selectedMonth,
+  availableMonths,
+  onMonthChange,
+  isCompleteMonth
 }: YTDProgressChartProps) {
   // Get month name in Spanish
   const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -174,9 +182,31 @@ export default function YTDProgressChart({
               <TrendingUp className="w-4 h-4 text-emerald-600" strokeWidth={2} />
             </div>
             Progreso {currentMonthName} Acumulado
+            {/* Month selector */}
+            {availableMonths && availableMonths.length > 0 && onMonthChange && (
+              <select
+                value={selectedMonth ?? currentMonth}
+                onChange={(e) => onMonthChange(Number(e.target.value))}
+                className="ml-2 text-sm font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded-lg px-2 py-1 cursor-pointer hover:bg-gray-200 transition-colors"
+              >
+                {monthNames.map((name, idx) => {
+                  const m = idx + 1
+                  const isAvailable = availableMonths.includes(m) || m === new Date().getMonth() + 1
+                  if (!isAvailable && m > new Date().getMonth() + 1) return null
+                  return (
+                    <option key={m} value={m}>
+                      {name}
+                    </option>
+                  )
+                })}
+              </select>
+            )}
           </h2>
           <p className="text-sm text-gray-500 mt-1 ml-10">
-            Comparación día a día: {currentMonthName} {previousYear} vs {currentMonthName} {currentYear}
+            {isCompleteMonth
+              ? `Mes completo: ${currentMonthName} ${previousYear} vs ${currentMonthName} ${currentYear}`
+              : `Comparación día a día: ${currentMonthName} ${previousYear} vs ${currentMonthName} ${currentYear}`
+            }
           </p>
         </div>
 
@@ -190,7 +220,7 @@ export default function YTDProgressChart({
               {isPositive ? '+' : ''}{summary.mtd_difference_percent}%
             </div>
             <div className="text-xs text-gray-500">
-              Día {currentDayOfMonth}
+              {isCompleteMonth ? 'Mes completo' : `Día ${currentDayOfMonth}`}
             </div>
           </div>
         </div>

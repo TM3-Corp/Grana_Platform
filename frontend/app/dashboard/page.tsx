@@ -97,6 +97,8 @@ interface YTDProgressData {
   current_month: number
   current_day_of_month: number
   current_date: string
+  is_complete_month?: boolean
+  available_months?: number[]
   summary: {
     mtd_previous_year: number
     mtd_current_year: number
@@ -369,6 +371,7 @@ function DashboardContent() {
   // YTD Progress data
   const [ytdData, setYtdData] = useState<YTDProgressData | null>(null)
   const [ytdLoading, setYtdLoading] = useState(true)
+  const [ytdSelectedMonth, setYtdSelectedMonth] = useState<number>(new Date().getMonth() + 1)
 
   // Fetch executive KPIs
   useEffect(() => {
@@ -409,6 +412,7 @@ function DashboardContent() {
         if (filters.family) {
           params.append('product_family', filters.family)
         }
+        params.append('month', String(ytdSelectedMonth))
 
         const response = await fetch(`${apiUrl}/api/v1/orders/executive/ytd-progress?${params}`)
         if (!response.ok) throw new Error(`Error fetching YTD data (${response.status})`)
@@ -423,7 +427,7 @@ function DashboardContent() {
     }
 
     fetchYTDData()
-  }, [filters.family])
+  }, [filters.family, ytdSelectedMonth])
 
   // Fetch distribution data (YTD)
   useEffect(() => {
@@ -624,6 +628,10 @@ function DashboardContent() {
               currentMonth={ytdData.current_month}
               currentDayOfMonth={ytdData.current_day_of_month}
               currentDate={ytdData.current_date}
+              selectedMonth={ytdSelectedMonth}
+              availableMonths={ytdData.available_months}
+              onMonthChange={setYtdSelectedMonth}
+              isCompleteMonth={ytdData.is_complete_month}
             />
           ) : null}
         </div>

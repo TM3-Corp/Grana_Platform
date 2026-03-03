@@ -28,6 +28,10 @@ const QUARTER_NAMES: Record<number, string> = {
   4: 'Q4',
 }
 
+// Projection colors (sky blue)
+const COLOR_PROJECTION = '#38BDF8'      // sky-400
+const COLOR_PROJECTION_DARK = '#0EA5E9' // sky-500
+
 type TimePeriod = 'monthly' | 'quarterly'
 
 // Type for series visibility
@@ -103,10 +107,16 @@ const CustomTooltip = ({ active, payload, label, previousYear, currentYear, next
   // For MTD months, compare MTD vs MTD for fair comparison
   let gapYearsAmount = 0
   let gapYearsPercent = 0
-  const prevYearForComparison = isMtd && revenuePrevYearMtd ? revenuePrevYearMtd : revenuePrevYear
-  if (prevYearForComparison && revenueCurrYearActual) {
+  const prevYearForComparison = isMtd && revenuePrevYearMtd !== null && revenuePrevYearMtd !== undefined
+    ? revenuePrevYearMtd
+    : revenuePrevYear
+  let gapYearsPercentValid = false
+  if (prevYearForComparison != null && revenueCurrYearActual) {
     gapYearsAmount = revenueCurrYearActual - prevYearForComparison
-    gapYearsPercent = ((revenueCurrYearActual - prevYearForComparison) / prevYearForComparison) * 100
+    if (prevYearForComparison > 0) {
+      gapYearsPercent = ((revenueCurrYearActual - prevYearForComparison) / prevYearForComparison) * 100
+      gapYearsPercentValid = true
+    }
   }
 
   // Calculate gap between current and next year
@@ -170,10 +180,10 @@ const CustomTooltip = ({ active, payload, label, previousYear, currentYear, next
         {showProjections && revenueCurrYearEstimated !== undefined && revenueCurrYearEstimated !== null && (
           <div className="flex justify-between items-center">
             <span className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: '#F43F5E', border: '2px dashed #F43F5E' }}></span>
+              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: COLOR_PROJECTION, border: `2px dashed ${COLOR_PROJECTION}` }}></span>
               <span className="text-gray-500 text-xs">{currentYear} Estimado mes:</span>
             </span>
-            <span className="font-medium text-sm" style={{ color: '#F43F5E' }}>
+            <span className="font-medium text-sm" style={{ color: COLOR_PROJECTION }}>
               ${revenueCurrYearEstimated.toLocaleString('es-CL')}
             </span>
           </div>
@@ -183,10 +193,10 @@ const CustomTooltip = ({ active, payload, label, previousYear, currentYear, next
         {revenueCurrYearProjected !== undefined && revenueCurrYearProjected !== null && !isMtd && (
           <div className="flex justify-between items-center">
             <span className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: '#F43F5E', border: '2px dashed #F43F5E' }}></span>
+              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: COLOR_PROJECTION, border: `2px dashed ${COLOR_PROJECTION}` }}></span>
               <span className="text-gray-600">{currentYear} Proyección:</span>
             </span>
-            <span className="font-semibold" style={{ color: '#F43F5E' }}>
+            <span className="font-semibold" style={{ color: COLOR_PROJECTION }}>
               ${revenueCurrYearProjected.toLocaleString('es-CL')}
             </span>
           </div>
@@ -206,14 +216,18 @@ const CustomTooltip = ({ active, payload, label, previousYear, currentYear, next
       </div>
 
       {/* Gap between previous and current year */}
-      {revenuePrevYear && revenueCurrYearActual && (
+      {(prevYearForComparison != null || revenuePrevYear) && revenueCurrYearActual && gapYearsAmount !== 0 && (
         <div className="pt-3 border-t border-gray-200">
           <div className="flex justify-between items-center">
             <span className="text-gray-600 font-medium text-sm">{previousYear} vs {currentYear}:</span>
             <div className="text-right">
-              <span className={`font-bold ${gapYearsAmount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {gapYearsAmount >= 0 ? '+' : ''}{gapYearsPercent.toFixed(1)}%
-              </span>
+              {gapYearsPercentValid ? (
+                <span className={`font-bold ${gapYearsAmount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {gapYearsAmount >= 0 ? '+' : ''}{gapYearsPercent.toFixed(1)}%
+                </span>
+              ) : (
+                <span className="font-bold text-gray-400">N/A</span>
+              )}
               <p className={`text-xs ${gapYearsAmount >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                 {gapYearsAmount >= 0 ? '+' : ''}${Math.round(gapYearsAmount).toLocaleString('es-CL')}
               </p>
@@ -281,7 +295,7 @@ export default function ExecutiveSalesChart({
   const seriesConfigs: SeriesConfig[] = [
     { key: 'currentYear', label: `${current_year} Real`, color: '#0D9488', defaultEnabled: true },
     { key: 'previousYear', label: `${previous_year} Real`, color: '#6366F1', defaultEnabled: true },
-    { key: 'projectedCurrentYear', label: `${current_year} Proy.`, color: '#F43F5E', defaultEnabled: true },
+    { key: 'projectedCurrentYear', label: `${current_year} Proy.`, color: COLOR_PROJECTION, defaultEnabled: true },
     { key: 'projectedNextYear', label: `${next_year} Proy.`, color: '#8B5CF6', defaultEnabled: false },
   ]
 
@@ -360,22 +374,30 @@ export default function ExecutiveSalesChart({
         data[index].is_mtd = m.is_mtd ?? false
         data[index].mtd_day = m.mtd_day ?? null
 
-        // For incomplete months, add estimated full month
+        // For incomplete months, add estimated full month (with sanity cap)
         if (m.is_mtd && m.estimated_full_month) {
-          data[index].revenue_current_year_estimated = m.estimated_full_month
-          if (index > 0 && data[index - 1].revenue_current_year_actual) {
-            data[index - 1].revenue_current_year_estimated = data[index - 1].revenue_current_year_actual
+          // Sanity check: estimated shouldn't exceed 3x the previous year full month
+          const prevYearFull = data[index].revenue_previous_year
+          const maxReasonable = prevYearFull ? prevYearFull * 3 : Infinity
+          if (m.estimated_full_month <= maxReasonable) {
+            data[index].revenue_current_year_estimated = m.estimated_full_month
+            if (index > 0 && data[index - 1].revenue_current_year_actual) {
+              data[index - 1].revenue_current_year_estimated = data[index - 1].revenue_current_year_actual
+            }
           }
         }
 
         // Calculate gap vs previous year
         const isMtdMonth = data[index].is_mtd
-        const revPrev = isMtdMonth && data[index].revenue_previous_year_mtd
+        const revPrev = isMtdMonth && data[index].revenue_previous_year_mtd !== null
           ? data[index].revenue_previous_year_mtd
           : data[index].revenue_previous_year
-        if (revPrev) {
-          data[index].gap_years_percent = ((m.total_revenue - revPrev) / revPrev) * 100
+        if (revPrev !== null && revPrev !== undefined) {
           data[index].gap_years_amount = m.total_revenue - revPrev
+          // Can't calculate % change from a 0 base
+          data[index].gap_years_percent = revPrev > 0
+            ? ((m.total_revenue - revPrev) / revPrev) * 100
+            : null
         }
       }
     })
@@ -613,17 +635,17 @@ export default function ExecutiveSalesChart({
             />
           )}
 
-          {/* Current year projected line - ROSE dashed (remaining months) */}
+          {/* Current year projected line - SKY BLUE dashed (remaining months) */}
           {visibleSeries.projectedCurrentYear && (
             <Line
               type="monotone"
               dataKey="revenue_current_year_projected"
-              stroke="#F43F5E"
+              stroke={COLOR_PROJECTION}
               strokeWidth={2}
               strokeDasharray="6 3"
               name={`${current_year} (Proyección)`}
-              dot={{ r: 4, fill: '#F43F5E', strokeWidth: 1, stroke: '#E11D48' }}
-              activeDot={{ r: 6, fill: '#F43F5E' }}
+              dot={{ r: 4, fill: COLOR_PROJECTION, strokeWidth: 1, stroke: COLOR_PROJECTION_DARK }}
+              activeDot={{ r: 6, fill: COLOR_PROJECTION }}
             />
           )}
 
@@ -643,26 +665,26 @@ export default function ExecutiveSalesChart({
           )}
 
 
-          {/* Striped rose line for estimated current year full month (incomplete months only) */}
+          {/* Striped sky blue line for estimated current year full month (incomplete months only) */}
           {visibleSeries.projectedCurrentYear && (
             <Line
               type="monotone"
               dataKey="revenue_current_year_estimated"
-              stroke="#F43F5E"
+              stroke={COLOR_PROJECTION}
               strokeWidth={2}
               strokeDasharray="5 5"
               name={`${current_year} Estimado`}
               dot={((props: any) => {
                 // Only show dot at MTD month
                 if (!props.payload?.is_mtd) return null
-                return <circle key={`dot-curr-est-${props.index}`} cx={props.cx} cy={props.cy} r={5} fill="#F43F5E" stroke="#E11D48" strokeWidth={2} />
+                return <circle key={`dot-curr-est-${props.index}`} cx={props.cx} cy={props.cy} r={5} fill={COLOR_PROJECTION} stroke={COLOR_PROJECTION_DARK} strokeWidth={2} />
               }) as any}
               connectNulls={false}
               legendType="none"
               label={(props: any) => {
                 // Only show label at MTD month
                 if (!props.payload?.is_mtd) return null
-                return <CustomLabel key={`label-curr-est-${props.index}`} {...props} color="#F43F5E" />
+                return <CustomLabel key={`label-curr-est-${props.index}`} {...props} color={COLOR_PROJECTION} />
               }}
             />
           )}
@@ -689,15 +711,15 @@ export default function ExecutiveSalesChart({
             )}
             {visibleSeries.projectedCurrentYear && (
               <div className="flex items-center gap-1.5">
-                <div className="w-4 h-0.5" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #F43F5E 0px, #F43F5E 3px, transparent 3px, transparent 6px)' }}></div>
-                <div className="w-2 h-2 rounded-full -ml-1" style={{ backgroundColor: '#F43F5E' }}></div>
+                <div className="w-4 h-0.5" style={{ backgroundImage: `repeating-linear-gradient(90deg, ${COLOR_PROJECTION} 0px, ${COLOR_PROJECTION} 3px, transparent 3px, transparent 6px)` }}></div>
+                <div className="w-2 h-2 rounded-full -ml-1" style={{ backgroundColor: COLOR_PROJECTION }}></div>
                 <span>{current_year} proy.</span>
               </div>
             )}
             {visibleSeries.projectedCurrentYear && chartData.some(d => d.is_mtd) && (
               <div className="flex items-center gap-1.5">
-                <div className="w-4 h-0.5" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #F43F5E 0px, #F43F5E 2px, transparent 2px, transparent 4px)' }}></div>
-                <div className="w-2 h-2 rounded-full -ml-1" style={{ backgroundColor: '#F43F5E' }}></div>
+                <div className="w-4 h-0.5" style={{ backgroundImage: `repeating-linear-gradient(90deg, ${COLOR_PROJECTION} 0px, ${COLOR_PROJECTION} 2px, transparent 2px, transparent 4px)` }}></div>
+                <div className="w-2 h-2 rounded-full -ml-1" style={{ backgroundColor: COLOR_PROJECTION }}></div>
                 <span>{current_year} estimado</span>
               </div>
             )}
@@ -747,11 +769,15 @@ export default function ExecutiveSalesChart({
                   {d.month.substring(0, 3)}
                   {d.is_mtd && <span className="text-[8px] text-blue-500 block">1-{d.mtd_day}</span>}
                 </div>
-                {hasData && d.gap_years_percent !== null && d.gap_years_amount !== null ? (
+                {hasData && d.gap_years_amount !== null ? (
                   <>
-                    <div className={`font-bold ${d.gap_years_percent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {d.gap_years_percent >= 0 ? '+' : ''}{d.gap_years_percent.toFixed(0)}%
-                    </div>
+                    {d.gap_years_percent !== null ? (
+                      <div className={`font-bold ${d.gap_years_percent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {d.gap_years_percent >= 0 ? '+' : ''}{d.gap_years_percent.toFixed(0)}%
+                      </div>
+                    ) : (
+                      <div className="font-bold text-gray-400">N/A</div>
+                    )}
                     <div className={`text-[10px] ${d.gap_years_amount >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                       {formatAmount(d.gap_years_amount)}
                     </div>

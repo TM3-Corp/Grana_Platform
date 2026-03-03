@@ -348,6 +348,10 @@ async def get_executive_kpis(
                     'total_revenue': 0,
                 })
 
+        # Estimation thresholds: need enough days for reliable full-month estimates
+        MIN_DAYS_FOR_ESTIMATE = 5
+        MIN_MTD_RATIO = 0.05
+
         # CURRENT YEAR actual data (up to current month) - e.g., 2026
         for month in range(1, current_month + 1):
             month_name = datetime(current_year, month, 1).strftime('%b')
@@ -366,12 +370,12 @@ async def get_executive_kpis(
                 if is_current_month_flag:
                     entry['mtd_day'] = current_day
                     # For incomplete month, estimate full month based on previous year pattern
-                    if month in monthly_prev and month in monthly_prev_mtd:
+                    if current_day >= MIN_DAYS_FOR_ESTIMATE and month in monthly_prev and month in monthly_prev_mtd:
                         mtd_prev = float(monthly_prev_mtd[month]['total_revenue'])
                         full_prev = float(monthly_prev[month]['total_revenue'])
                         if mtd_prev > 0 and full_prev > 0:
                             mtd_ratio = mtd_prev / full_prev
-                            if mtd_ratio > 0:
+                            if mtd_ratio >= MIN_MTD_RATIO:
                                 entry['estimated_full_month'] = float(monthly_curr[month]['total_revenue']) / mtd_ratio
                 sales_by_month_curr.append(entry)
             else:
@@ -517,7 +521,7 @@ async def get_executive_kpis(
                 # This answers: "How am I doing until this date vs last year?" and projects the full month
                 is_incomplete_month = (month == current_month)
 
-                if is_incomplete_month and month in monthly_prev and month in monthly_prev_mtd:
+                if is_incomplete_month and current_day >= MIN_DAYS_FOR_ESTIMATE and month in monthly_prev and month in monthly_prev_mtd:
                     # Calculate MTD ratio from previous year: what % of the month is days 1-current_day?
                     mtd_prev = float(monthly_prev_mtd[month]['total_revenue'])
                     full_prev = float(monthly_prev[month]['total_revenue'])
@@ -526,7 +530,7 @@ async def get_executive_kpis(
                         # mtd_ratio = portion of month represented by days 1-current_day
                         mtd_ratio = mtd_prev / full_prev
 
-                        if mtd_ratio > 0:
+                        if mtd_ratio >= MIN_MTD_RATIO:
                             # Estimate current year full month: current_mtd / ratio
                             mtd_curr = float(monthly_curr[month]['total_revenue'])
                             estimated_full_curr = mtd_curr / mtd_ratio
@@ -781,22 +785,23 @@ async def get_orders_by_source(source: str, limit: int = Query(50, ge=1, le=500)
 
 @router.get("/executive/ytd-progress")
 async def get_ytd_progress(
-    product_family: Optional[str] = Query(None, description="Filter by product family (BARRAS, CRACKERS, GRANOLAS, KEEPERS)")
+    product_family: Optional[str] = Query(None, description="Filter by product family (BARRAS, CRACKERS, GRANOLAS, KEEPERS)"),
+    month: Optional[int] = Query(None, ge=1, le=12, description="Month (1-12). Defaults to current month.")
 ):
     """
     Get cumulative Month-To-Date (MTD) progress comparison between current and previous year.
 
-    Returns daily cumulative revenue for the CURRENT MONTH only:
-    - Previous year same month (e.g., Feb 2025 when current is Feb 2026)
-    - Current year current month (up to today)
+    Returns daily cumulative revenue for a specific month:
+    - Previous year same month (e.g., Feb 2025 when viewing Feb 2026)
+    - Current year same month (up to today for current month, full month for past months)
 
-    This allows comparing "On day X of the month, last year I had $Y, this year I have $Z"
-    The chart resets each month to show only current month progress.
+    Supports a `month` parameter to view any month, not just the current one.
     """
     conn = None
     cursor = None
     try:
         from app.core.database import get_db_connection_dict_with_retry
+        import calendar
 
         conn = get_db_connection_dict_with_retry()
         cursor = conn.cursor()
@@ -805,8 +810,19 @@ async def get_ytd_progress(
         current_date = datetime.now()
         current_year = current_date.year
         previous_year = current_year - 1
-        current_month = current_date.month
-        current_day_of_month = current_date.day
+
+        # Target month: use parameter or default to current month
+        target_month = month if month is not None else current_date.month
+        is_current_month = (target_month == current_date.month)
+
+        # For current month: use today's day. For past months: use last day of month (full comparison)
+        if is_current_month:
+            max_day = current_date.day
+        else:
+            # Past month: use last day of that month in current year
+            max_day = calendar.monthrange(current_year, target_month)[1]
+
+        is_complete_month = not is_current_month
 
         # Build WHERE clause for product family filter
         family_filter = ""
@@ -816,7 +832,19 @@ async def get_ytd_progress(
             family_filter = "AND category = %s"
             params = [product_family.upper()]
 
-        # Query for PREVIOUS YEAR same month daily cumulative data (up to same day of month)
+        # Query which months in current year have sales data
+        query_available_months = f"""
+            SELECT DISTINCT EXTRACT(MONTH FROM order_date)::int as month_num
+            FROM sales_facts_mv
+            WHERE EXTRACT(YEAR FROM order_date) = %s
+            AND source = 'relbase'
+            {family_filter}
+            ORDER BY month_num
+        """
+        cursor.execute(query_available_months, [current_year] + params)
+        available_months = [row['month_num'] for row in cursor.fetchall()]
+
+        # Query for PREVIOUS YEAR same month daily cumulative data (up to max_day)
         query_prev_year = f"""
             WITH daily_sales AS (
                 SELECT
@@ -841,10 +869,10 @@ async def get_ytd_progress(
             ORDER BY day_of_month
         """
 
-        cursor.execute(query_prev_year, [previous_year, current_month, current_day_of_month] + params)
+        cursor.execute(query_prev_year, [previous_year, target_month, max_day] + params)
         data_prev_year = cursor.fetchall()
 
-        # Query for CURRENT YEAR current month daily cumulative data
+        # Query for CURRENT YEAR target month daily cumulative data
         query_curr_year = f"""
             WITH daily_sales AS (
                 SELECT
@@ -854,6 +882,7 @@ async def get_ytd_progress(
                 FROM sales_facts_mv
                 WHERE EXTRACT(YEAR FROM order_date) = %s
                 AND EXTRACT(MONTH FROM order_date) = %s
+                AND EXTRACT(DAY FROM order_date) <= %s
                 AND source = 'relbase'
                 {family_filter}
                 GROUP BY order_date
@@ -868,7 +897,7 @@ async def get_ytd_progress(
             ORDER BY day_of_month
         """
 
-        cursor.execute(query_curr_year, [current_year, current_month] + params)
+        cursor.execute(query_curr_year, [current_year, target_month, max_day] + params)
         data_curr_year = cursor.fetchall()
 
         # Query for MONTHLY GOAL: Full month revenue from previous year (same month)
@@ -881,7 +910,7 @@ async def get_ytd_progress(
             AND source = 'relbase'
             {family_filter}
         """
-        cursor.execute(query_monthly_goal, [previous_year, current_month] + params)
+        cursor.execute(query_monthly_goal, [previous_year, target_month] + params)
         monthly_goal_result = cursor.fetchone()
         monthly_goal = float(monthly_goal_result['monthly_total']) if monthly_goal_result else 0
 
@@ -891,8 +920,6 @@ async def get_ytd_progress(
 
         # Build combined daily data for the month
         daily_data = []
-        # Include up to current day of month
-        max_day = current_day_of_month
 
         # Track running totals for days without sales
         prev_cumulative = 0
@@ -939,9 +966,11 @@ async def get_ytd_progress(
             "status": "success",
             "previous_year": previous_year,
             "current_year": current_year,
-            "current_month": current_month,
-            "current_day_of_month": current_day_of_month,
+            "current_month": target_month,
+            "current_day_of_month": max_day,
             "current_date": current_date.strftime('%Y-%m-%d'),
+            "is_complete_month": is_complete_month,
+            "available_months": available_months,
             "summary": {
                 "mtd_previous_year": final_prev,
                 "mtd_current_year": final_curr,
