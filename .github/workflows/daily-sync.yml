@@ -30,6 +30,21 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Wake Up Railway Container
+        run: |
+          echo "Warming up Railway container..."
+          for i in 1 2 3; do
+            STATUS=$(curl -s --max-time 30 -o /dev/null -w "%{http_code}" \
+              "https://granaplatform-production.up.railway.app/api/v1/sync/health")
+            echo "Attempt $i: HTTP $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              echo "Container is ready"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::warning::Container did not respond after 3 attempts, proceeding anyway"
+
       - name: Trigger Sales Sync (Synchronous)
         id: trigger_sales
         run: |
@@ -242,3 +257,71 @@ jobs:
           echo "- Verify SYNC_API_KEY secret is set in repository" >> $GITHUB_STEP_SUMMARY
           echo "- Check Railway service health: https://granaplatform-production.up.railway.app/api/v1/sync/health" >> $GITHUB_STEP_SUMMARY
           echo "- Run manual sync to test: /api/v1/sync/debug-relbase" >> $GITHUB_STEP_SUMMARY
+
+      - name: Notify Slack on Failure
+        if: failure()
+        run: |
+          # Skip if no webhook configured
+          if [ -z "${{ secrets.SLACK_WEBHOOK_URL }}" ]; then
+            echo "SLACK_WEBHOOK_URL not configured — skipping Slack notification"
+            exit 0
+          fi
+
+          # Detect which step failed
+          FAILED_STEP="unknown"
+          if [ "${{ steps.trigger_sales.outcome }}" = "failure" ]; then
+            FAILED_STEP="Sales Sync"
+          elif [ "${{ steps.trigger_inventory.outcome }}" = "failure" ]; then
+            FAILED_STEP="Inventory Sync"
+          elif [ "${{ steps.verify.outcome }}" = "failure" ]; then
+            FAILED_STEP="Verification"
+          fi
+
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          # Check consecutive failures (count recent failed runs)
+          CONSECUTIVE_FAILURES=$(curl -s \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            "${{ github.api_url }}/repos/${{ github.repository }}/actions/workflows/daily-sync.yml/runs?status=failure&per_page=5" \
+            | jq '[.workflow_runs[] | select(.conclusion == "failure")] | length')
+
+          if [ "$CONSECUTIVE_FAILURES" -gt 2 ]; then
+            ESCALATION="<!channel> *${CONSECUTIVE_FAILURES} fallos consecutivos* — requiere atención inmediata"
+          else
+            ESCALATION=""
+          fi
+
+          # Send Slack notification
+          curl -s -X POST "${{ secrets.SLACK_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d "$(cat <<SLACKEOF
+          {
+            "blocks": [
+              {
+                "type": "header",
+                "text": {"type": "plain_text", "text": "Sync Diario Falló", "emoji": true}
+              },
+              {
+                "type": "section",
+                "fields": [
+                  {"type": "mrkdwn", "text": "*Paso fallido:*\n${FAILED_STEP}"},
+                  {"type": "mrkdwn", "text": "*Fecha:*\n$(date -u '+%Y-%m-%d %H:%M UTC')"}
+                ]
+              },
+              $([ -n "$ESCALATION" ] && echo "{\"type\": \"section\", \"text\": {\"type\": \"mrkdwn\", \"text\": \"${ESCALATION}\"}},")
+              {
+                "type": "actions",
+                "elements": [
+                  {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "Ver logs"},
+                    "url": "${RUN_URL}"
+                  }
+                ]
+              }
+            ]
+          }
+          SLACKEOF
+          )"
+
+          echo "Slack notification sent"

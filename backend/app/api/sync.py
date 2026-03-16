@@ -79,6 +79,10 @@ class SyncStatusResponse(BaseModel):
     last_order_date: Optional[datetime]
     warehouses_count: int
     products_with_stock: int
+    sales_sync_age_hours: Optional[float] = None
+    inventory_sync_age_hours: Optional[float] = None
+    is_stale: bool = False
+    staleness_level: str = "fresh"  # fresh | warning | critical
 
 
 class SalesSyncResponse(BaseModel):
@@ -134,6 +138,37 @@ def get_sync_status():
     """
     try:
         status = sync_service.get_sync_status()
+
+        # Compute staleness from timestamps
+        now = datetime.utcnow()
+        sales_age = None
+        inventory_age = None
+
+        if status.get("last_sales_sync"):
+            ts = status["last_sales_sync"]
+            if isinstance(ts, str):
+                ts = datetime.fromisoformat(ts.replace("Z", "+00:00")).replace(tzinfo=None)
+            sales_age = (now - ts).total_seconds() / 3600
+
+        if status.get("last_inventory_sync"):
+            ts = status["last_inventory_sync"]
+            if isinstance(ts, str):
+                ts = datetime.fromisoformat(ts.replace("Z", "+00:00")).replace(tzinfo=None)
+            inventory_age = (now - ts).total_seconds() / 3600
+
+        max_age = max(filter(None, [sales_age, inventory_age]), default=0)
+        if max_age > 48:
+            staleness_level = "critical"
+        elif max_age > 26:
+            staleness_level = "warning"
+        else:
+            staleness_level = "fresh"
+
+        status["sales_sync_age_hours"] = round(sales_age, 1) if sales_age is not None else None
+        status["inventory_sync_age_hours"] = round(inventory_age, 1) if inventory_age is not None else None
+        status["is_stale"] = staleness_level != "fresh"
+        status["staleness_level"] = staleness_level
+
         return status
     except Exception as e:
         logger.error(f"Error getting sync status: {e}")
