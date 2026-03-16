@@ -98,7 +98,7 @@ class SyncService:
             cursor.execute("""
                 SELECT MAX(completed_at) as last_sync
                 FROM sync_logs
-                WHERE sync_type = 'orders' AND status = 'success'
+                WHERE sync_type = 'orders' AND status IN ('success', 'partial')
             """)
             last_sales_sync = cursor.fetchone()[0]
 
@@ -106,7 +106,7 @@ class SyncService:
             cursor.execute("""
                 SELECT MAX(completed_at) as last_sync
                 FROM sync_logs
-                WHERE sync_type = 'inventory' AND status = 'success'
+                WHERE sync_type = 'inventory' AND status IN ('success', 'partial')
             """)
             last_inventory_sync = cursor.fetchone()[0]
 
